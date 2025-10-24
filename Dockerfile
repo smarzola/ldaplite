@@ -1,5 +1,9 @@
 # Build stage
-FROM golang:1.22-alpine AS builder
+FROM golang:1.23-alpine AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
 
 WORKDIR /build
 
@@ -13,9 +17,9 @@ RUN go mod download
 # Copy source
 COPY . .
 
-# Build static binary (pure Go, no CGC needed for modernc.org/sqlite)
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags='-w -s -extldflags "-static"' \
+# Build static binary (pure Go, no CGO needed for modernc.org/sqlite)
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+    -ldflags="-w -s -extldflags '-static' -X main.version=${VERSION}" \
     -o ldaplite \
     ./cmd/ldaplite
 
