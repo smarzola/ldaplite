@@ -56,6 +56,8 @@ func startServer() error {
 	// Initialize structured logging (slog only, no unstructured logs)
 	initLogging(cfg.Logging.Level, cfg.Logging.Format)
 
+	slog.Info("Starting LDAPLite", "version", version, "commit", commit)
+
 	ctx := context.Background()
 
 	// Initialize SQLite store
@@ -68,7 +70,7 @@ func startServer() error {
 	slog.Info("Database initialized successfully")
 
 	// Create and start LDAP server
-	srv := server.NewServer(cfg, st)
+	srv := server.NewServer(cfg, st, version)
 	if err := srv.Start(); err != nil {
 		return fmt.Errorf("failed to start server: %w", err)
 	}

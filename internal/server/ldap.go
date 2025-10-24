@@ -26,18 +26,20 @@ func (n *NullWriter) Write(b []byte) (int, error) {
 
 // Server represents an LDAP server
 type Server struct {
-	cfg    *config.Config
-	store  store.Store
-	hasher *crypto.PasswordHasher
-	srv    *ldapserver.Server
+	cfg     *config.Config
+	store   store.Store
+	hasher  *crypto.PasswordHasher
+	srv     *ldapserver.Server
+	version string
 }
 
 // NewServer creates a new LDAP server
-func NewServer(cfg *config.Config, st store.Store) *Server {
+func NewServer(cfg *config.Config, st store.Store, version string) *Server {
 	return &Server{
-		cfg:    cfg,
-		store:  st,
-		hasher: crypto.NewPasswordHasher(cfg.Security.Argon2Config),
+		cfg:     cfg,
+		store:   st,
+		hasher:  crypto.NewPasswordHasher(cfg.Security.Argon2Config),
+		version: version,
 	}
 }
 
@@ -446,7 +448,7 @@ func (s *Server) handleRootDSE(w ldapserver.ResponseWriter, m *ldapserver.Messag
 	)
 	entry.AddAttribute(
 		message.AttributeDescription("vendorVersion"),
-		message.AttributeValue("0.1.0"),
+		message.AttributeValue(s.version),
 	)
 
 	// Write the entry
