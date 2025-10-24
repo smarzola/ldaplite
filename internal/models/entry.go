@@ -18,25 +18,25 @@ const (
 
 // Entry represents an LDAP entry (object)
 type Entry struct {
-	ID         int64
-	DN         string            // Distinguished Name
-	ParentDN   string            // Parent DN for hierarchy
-	ObjectClass string            // Primary object class
-	Attributes map[string][]string // Multi-valued attributes
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID          int64
+	DN          string              // Distinguished Name
+	ParentDN    string              // Parent DN for hierarchy
+	ObjectClass string              // Primary object class
+	Attributes  map[string][]string // Multi-valued attributes
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // NewEntry creates a new LDAP entry
 func NewEntry(dn string, objectClass string) *Entry {
 	parentDN := extractParentDN(dn)
 	return &Entry{
-		DN:         dn,
-		ParentDN:   parentDN,
+		DN:          dn,
+		ParentDN:    parentDN,
 		ObjectClass: objectClass,
-		Attributes: make(map[string][]string),
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		Attributes:  make(map[string][]string),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 }
 

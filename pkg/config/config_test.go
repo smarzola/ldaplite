@@ -107,9 +107,9 @@ func TestLoadArgon2Config(t *testing.T) {
 
 func TestParseBaseDNComponents(t *testing.T) {
 	tests := []struct {
-		name      string
-		baseDN    string
-		expected  []string
+		name     string
+		baseDN   string
+		expected []string
 	}{
 		{
 			name:     "single component",

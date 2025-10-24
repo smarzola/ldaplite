@@ -27,9 +27,9 @@ type LDAPConfig struct {
 }
 
 type DatabaseConfig struct {
-	Path           string
-	MaxOpenConns   int
-	MaxIdleConns   int
+	Path            string
+	MaxOpenConns    int
+	MaxIdleConns    int
 	ConnMaxLifetime int // seconds
 }
 

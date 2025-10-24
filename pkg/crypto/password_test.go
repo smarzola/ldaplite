@@ -3,9 +3,9 @@ package crypto
 import (
 	"testing"
 
+	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/smarzola/ldaplite/pkg/config"
 )
 
 func TestNewPasswordHasher(t *testing.T) {

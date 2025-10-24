@@ -3,8 +3,8 @@ package schema
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/smarzola/ldaplite/internal/models"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseSimpleEquality(t *testing.T) {

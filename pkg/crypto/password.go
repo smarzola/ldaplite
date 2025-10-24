@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/argon2"
 	"github.com/smarzola/ldaplite/pkg/config"
+	"golang.org/x/crypto/argon2"
 )
 
 const (
