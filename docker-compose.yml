@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  ldaplite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ldaplite:latest
+    container_name: ldaplite
+    restart: unless-stopped
+
+    ports:
+      - "3389:3389"
+
+    environment:
+      # Required on first run
+      LDAP_BASE_DN: "dc=example,dc=com"
+      LDAP_ADMIN_PASSWORD: "ChangeMe123!"
+
+      # Optional configuration
+      LDAP_PORT: "3389"
+      LDAP_BIND_ADDRESS: "0.0.0.0"
+      LDAP_LOG_LEVEL: "info"
+      LDAP_LOG_FORMAT: "json"
+      LDAP_READ_TIMEOUT: "30"
+      LDAP_WRITE_TIMEOUT: "30"
+      LDAP_DATABASE_PATH: "/data/ldaplite.db"
+      LDAP_DATABASE_MAX_OPEN_CONNS: "25"
+      LDAP_DATABASE_MAX_IDLE_CONNS: "5"
+      LDAP_DATABASE_CONN_MAX_LIFETIME: "300"
+
+      # Argon2id parameters (OWASP recommended)
+      LDAP_ARGON2_MEMORY: "65536"
+      LDAP_ARGON2_ITERATIONS: "3"
+      LDAP_ARGON2_PARALLELISM: "2"
+      LDAP_ARGON2_SALT_LENGTH: "16"
+      LDAP_ARGON2_KEY_LENGTH: "32"
+
+    volumes:
+      - ldap_data:/data
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+
+    # Read-only root filesystem (requires /tmp for some operations)
+    read_only: true
+    tmpfs:
+      - /tmp
+
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+volumes:
+  ldap_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+
+networks:
+  default:
+    name: ldaplite_network
+    driver: bridge

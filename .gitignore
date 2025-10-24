@@ -1,0 +1,54 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+ldaplite
+bin/
+dist/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+cover.out
+coverage.txt
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+data/
+
+# Log files
+*.log
+
+# Environment files
+.env
+.env.local
+.env*.local
+
+# Claude Code user-specific configuration
+.claude/
+
+# Documentation (build artifacts)
+IMPLEMENTATION.md
+IMPLEMENTATION_COMPLETE.md
+COMPLETION_SUMMARY.md
+TEST_REPORT.md

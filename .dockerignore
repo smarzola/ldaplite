@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+bin/
+dist/
+*.o
+*.a
+
+# Test
+cover.out
+*.test
+
+# Data
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Local development
+.env.local
+.env*.local
+
+# Documentation
+docs/
+
+# GitHub
+.github/
+.gitpod.yml
+
+# CI/CD
+.gitlab-ci.yml
+.travis.yml
+
+# Misc
+README.md
+LICENSE
+CONTRIBUTING.md
+Makefile
