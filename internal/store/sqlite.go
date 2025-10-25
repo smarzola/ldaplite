@@ -12,7 +12,7 @@ import (
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/sqlite"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "modernc.org/sqlite"
 
 	"github.com/smarzola/ldaplite/internal/models"
@@ -65,11 +65,14 @@ func (s *SQLiteStore) Initialize(ctx context.Context) error {
 	s.db = db
 	slog.Info("Database connection established", "path", s.cfg.Database.Path)
 
-	// Run migrations
-	migrationsPath := "file://./migrations"
-	dbURL := fmt.Sprintf("sqlite://%s", s.cfg.Database.Path)
+	// Run migrations from embedded filesystem
+	srcDriver, err := iofs.New(migrationsFS, "migrations")
+	if err != nil {
+		return fmt.Errorf("failed to create migration source: %w", err)
+	}
 
-	m, err := migrate.New(migrationsPath, dbURL)
+	dbURL := fmt.Sprintf("sqlite://%s", s.cfg.Database.Path)
+	m, err := migrate.NewWithSourceInstance("iofs", srcDriver, dbURL)
 	if err != nil {
 		return fmt.Errorf("failed to initialize migrations: %w", err)
 	}

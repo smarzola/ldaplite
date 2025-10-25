@@ -26,11 +26,8 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
 # Runtime stage - distroless for minimal image
 FROM gcr.io/distroless/static-debian12:nonroot
 
-# Copy binary
+# Copy binary (migrations are embedded in the binary)
 COPY --from=builder /build/ldaplite /usr/local/bin/ldaplite
-
-# Copy migrations
-COPY --from=builder /build/migrations /migrations
 
 # Use non-root user (distroless nonroot UID: 65532)
 USER 65532:65532

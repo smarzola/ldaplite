@@ -146,12 +146,12 @@ ldaplite/
 ├── internal/
 │   ├── server/                # LDAP server implementation
 │   ├── store/                 # SQLite storage layer
+│   │   └── migrations/        # SQL migrations (embedded in binary)
 │   ├── models/                # LDAP entry models
 │   └── schema/                # Schema definitions (future)
 ├── pkg/
 │   ├── config/                # Configuration management
 │   └── crypto/                # Password hashing
-├── migrations/                # SQL migrations
 ├── Dockerfile                 # Container image
 └── docker-compose.yml        # Compose configuration
 ```
