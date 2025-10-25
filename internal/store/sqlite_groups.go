@@ -85,6 +85,9 @@ func (s *SQLiteStore) GetGroupByName(ctx context.Context, name string) (*models.
 		return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 	}
 
+	// Add operational attributes (objectClass, timestamps)
+	entry.AddOperationalAttributes()
+
 	group := &models.Group{
 		Entry:   &entry,
 		CN:      name,
@@ -281,6 +284,9 @@ func (s *SQLiteStore) GetGroupMembers(ctx context.Context, groupDN string) ([]*m
 			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 		}
 
+		// Add operational attributes (objectClass, timestamps)
+		entry.AddOperationalAttributes()
+
 		members = append(members, entry)
 	}
 
@@ -387,6 +393,9 @@ func (s *SQLiteStore) GetUserGroups(ctx context.Context, userDN string) ([]*mode
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 		}
+
+		// Add operational attributes (objectClass, timestamps)
+		entry.AddOperationalAttributes()
 
 		group := &models.Group{
 			Entry:   entry,

@@ -85,6 +85,9 @@ func (s *SQLiteStore) GetUserByUID(ctx context.Context, uid string) (*models.Use
 		return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 	}
 
+	// Add operational attributes (objectClass, timestamps)
+	entry.AddOperationalAttributes()
+
 	user := &models.User{
 		Entry:    &entry,
 		UID:      uid,

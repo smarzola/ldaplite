@@ -118,6 +118,9 @@ func (s *SQLiteStore) SearchOUs(ctx context.Context, baseDN string) ([]*models.O
 			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 		}
 
+		// Add operational attributes (objectClass, timestamps)
+		entry.AddOperationalAttributes()
+
 		ou := &models.OrganizationalUnit{
 			Entry: entry,
 			OU:    entry.GetAttribute("ou"),

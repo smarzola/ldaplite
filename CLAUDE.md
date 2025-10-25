@@ -179,6 +179,13 @@ All configuration via environment variables (see `pkg/config/config.go`):
 - `groupOfNames`: Groups with member references
 - `top`: Root object class
 
+**Operational Attributes (Automatic):**
+- `createTimestamp`: Entry creation time in LDAP Generalized Time format (RFC 4517)
+- `modifyTimestamp`: Last modification time in LDAP Generalized Time format
+- `objectClass`: Structural object class
+
+These attributes are automatically added to all entries by the server and cannot be modified by clients. They conform to RFC 4512 (LDAP Directory Information Models). Format: `YYYYMMDDHHMMSSz` (e.g., `20251025143045Z`)
+
 ## Development Notes
 
 ### Adding New Features

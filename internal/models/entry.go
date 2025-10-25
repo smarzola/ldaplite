@@ -167,3 +167,28 @@ func (e *Entry) ToLDIF() string {
 
 	return strings.Join(lines, "\n")
 }
+
+// FormatLDAPTimestamp formats a time.Time into LDAP Generalized Time format
+// Format: YYYYMMDDHHMMSSz (UTC)
+// Example: 20250125143045Z
+// This format is defined in RFC 4517 (LDAP Syntaxes and Matching Rules)
+func FormatLDAPTimestamp(t time.Time) string {
+	return t.UTC().Format("20060102150405Z")
+}
+
+// AddOperationalAttributes adds LDAP operational attributes to the entry
+// These are computed from the Entry's fields and are read-only
+// Operational attributes include:
+//   - objectClass: Structural object class
+//   - createTimestamp: Entry creation time (RFC 4512)
+//   - modifyTimestamp: Last modification time (RFC 4512)
+func (e *Entry) AddOperationalAttributes() {
+	// Add objectClass (structural attribute)
+	if e.ObjectClass != "" {
+		e.Attributes["objectclass"] = []string{e.ObjectClass}
+	}
+
+	// Add operational timestamp attributes (RFC 4512 compliance)
+	e.Attributes["createtimestamp"] = []string{FormatLDAPTimestamp(e.CreatedAt)}
+	e.Attributes["modifytimestamp"] = []string{FormatLDAPTimestamp(e.UpdatedAt)}
+}

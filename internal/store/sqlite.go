@@ -211,6 +211,9 @@ func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, e
 		return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 	}
 
+	// Add operational attributes (objectClass, timestamps)
+	entry.AddOperationalAttributes()
+
 	return &entry, nil
 }
 
@@ -464,10 +467,8 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filterSt
 			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 		}
 
-		// Add objectClass to attributes map for filter matching
-		if entry.ObjectClass != "" {
-			entry.Attributes["objectclass"] = []string{entry.ObjectClass}
-		}
+		// Add operational attributes (objectClass, timestamps)
+		entry.AddOperationalAttributes()
 
 		// Apply in-memory filter if needed (fallback for unsupported filters)
 		if useInMemoryFilter {
@@ -532,10 +533,8 @@ func (s *SQLiteStore) GetAllEntries(ctx context.Context) ([]*models.Entry, error
 			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 		}
 
-		// Add objectClass to attributes map for filter matching
-		if entry.ObjectClass != "" {
-			entry.Attributes["objectclass"] = []string{entry.ObjectClass}
-		}
+		// Add operational attributes (objectClass, timestamps)
+		entry.AddOperationalAttributes()
 
 		entries = append(entries, entry)
 	}
@@ -594,10 +593,8 @@ func (s *SQLiteStore) GetChildren(ctx context.Context, dn string) ([]*models.Ent
 			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 		}
 
-		// Add objectClass to attributes map for filter matching
-		if entry.ObjectClass != "" {
-			entry.Attributes["objectclass"] = []string{entry.ObjectClass}
-		}
+		// Add operational attributes (objectClass, timestamps)
+		entry.AddOperationalAttributes()
 
 		entries = append(entries, entry)
 	}

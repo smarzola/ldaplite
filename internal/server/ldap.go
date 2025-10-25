@@ -42,6 +42,24 @@ func NewServer(cfg *config.Config, st store.Store, version string) *Server {
 	}
 }
 
+// protectedAttributes lists LDAP operational attributes that cannot be modified by clients
+var protectedAttributes = []string{
+	"createtimestamp",
+	"modifytimestamp",
+	"objectclass", // structural attribute, cannot be changed after creation
+}
+
+// isProtectedAttribute checks if an attribute name is protected from modification
+func isProtectedAttribute(attrName string) bool {
+	attrLower := strings.ToLower(attrName)
+	for _, protected := range protectedAttributes {
+		if attrLower == protected {
+			return true
+		}
+	}
+	return false
+}
+
 // Start starts the LDAP server
 func (s *Server) Start() error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Server.BindAddress, s.cfg.Server.Port)
@@ -257,6 +275,14 @@ func (s *Server) handleAdd(w ldapserver.ResponseWriter, m *ldapserver.Message) {
 	attrs := addReq.Attributes()
 	for _, attr := range attrs {
 		name := string(attr.Type_())
+
+		// Check if trying to set protected operational attributes
+		if isProtectedAttribute(name) {
+			slog.Debug("Attempt to set protected attribute", "dn", dn, "attribute", name)
+			w.Write(ldapserver.NewAddResponse(ldapserver.LDAPResultUnwillingToPerform))
+			return
+		}
+
 		values := attr.Vals()
 		for _, val := range values {
 			entry.AddAttribute(name, string(val))
@@ -350,6 +376,14 @@ func (s *Server) handleModify(w ldapserver.ResponseWriter, m *ldapserver.Message
 	for _, change := range changes {
 		modification := change.Modification()
 		attrType := string(modification.Type_())
+
+		// Check if trying to modify protected operational attributes
+		if isProtectedAttribute(attrType) {
+			slog.Debug("Attempt to modify protected attribute", "dn", dn, "attribute", attrType)
+			w.Write(ldapserver.NewModifyResponse(ldapserver.LDAPResultUnwillingToPerform))
+			return
+		}
+
 		vals := modification.Vals()
 
 		// Get operation type
