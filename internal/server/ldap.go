@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/lor00x/goldap/message"
 	"github.com/vjeantet/ldapserver"
@@ -43,10 +44,10 @@ func NewServer(cfg *config.Config, st store.Store, version string) *Server {
 }
 
 // protectedAttributes lists LDAP operational attributes that cannot be modified by clients
+// Note: objectClass is NOT protected - it's a required user attribute that clients must provide
 var protectedAttributes = []string{
 	"createtimestamp",
 	"modifytimestamp",
-	"objectclass", // structural attribute, cannot be changed after creation
 }
 
 // isProtectedAttribute checks if an attribute name is protected from modification
@@ -264,11 +265,13 @@ func (s *Server) handleAdd(w ldapserver.ResponseWriter, m *ldapserver.Message) {
 		parentDN = dn[idx+1:]
 	}
 
-	// Create new entry
+	// Create new entry with proper timestamps
 	entry := &models.Entry{
 		DN:         dn,
 		ParentDN:   parentDN,
 		Attributes: make(map[string][]string),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 	}
 
 	// Parse and add attributes from request
