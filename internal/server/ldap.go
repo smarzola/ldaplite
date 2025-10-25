@@ -11,7 +11,6 @@ import (
 	"github.com/vjeantet/ldapserver"
 
 	"github.com/smarzola/ldaplite/internal/models"
-	"github.com/smarzola/ldaplite/internal/schema"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/smarzola/ldaplite/pkg/crypto"
@@ -168,15 +167,8 @@ func (s *Server) handleSearch(w ldapserver.ResponseWriter, m *ldapserver.Message
 		return
 	}
 
-	// Parse filter
-	filter, err := schema.ParseFilter(filterStr)
-	if err != nil {
-		slog.Error("Invalid filter", "filter", filterStr, "error", err)
-		w.Write(ldapserver.NewSearchResultDoneResponse(ldapserver.LDAPResultOperationsError))
-		return
-	}
-
 	// Return matching entries with attributes
+	// Note: entries are already filtered by SearchEntries (SQL or in-memory)
 	for _, entry := range entries {
 		// Apply scope filtering
 		// Scope: 0=base (only baseDN), 1=one level (immediate children), 2=subtree (all descendants)
@@ -192,34 +184,33 @@ func (s *Server) handleSearch(w ldapserver.ResponseWriter, m *ldapserver.Message
 			// case 2: subtree - return all (default behavior)
 		}
 
-		if filter.Matches(entry) {
-			result := ldapserver.NewSearchResultEntry(entry.DN)
+		// Build and send the LDAP search result entry
+		result := ldapserver.NewSearchResultEntry(entry.DN)
 
-			// Add objectClass attribute
-			if entry.ObjectClass != "" {
-				result.AddAttribute(
-					message.AttributeDescription("objectClass"),
-					message.AttributeValue(entry.ObjectClass),
-				)
-			}
-
-			// Add all other attributes from the entry
-			for attrName, attrValues := range entry.Attributes {
-				// Convert string values to goldap AttributeValue types
-				goldapValues := make([]message.AttributeValue, len(attrValues))
-				for i, val := range attrValues {
-					goldapValues[i] = message.AttributeValue(val)
-				}
-
-				// Add the attribute with all its values
-				result.AddAttribute(
-					message.AttributeDescription(attrName),
-					goldapValues...,
-				)
-			}
-
-			w.Write(result)
+		// Add objectClass attribute
+		if entry.ObjectClass != "" {
+			result.AddAttribute(
+				message.AttributeDescription("objectClass"),
+				message.AttributeValue(entry.ObjectClass),
+			)
 		}
+
+		// Add all other attributes from the entry
+		for attrName, attrValues := range entry.Attributes {
+			// Convert string values to goldap AttributeValue types
+			goldapValues := make([]message.AttributeValue, len(attrValues))
+			for i, val := range attrValues {
+				goldapValues[i] = message.AttributeValue(val)
+			}
+
+			// Add the attribute with all its values
+			result.AddAttribute(
+				message.AttributeDescription(attrName),
+				goldapValues...,
+			)
+		}
+
+		w.Write(result)
 	}
 
 	slog.Debug("Search completed", "baseDN", baseDN, "results", len(entries))

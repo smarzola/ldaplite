@@ -16,6 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/smarzola/ldaplite/internal/models"
+	"github.com/smarzola/ldaplite/internal/schema"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/smarzola/ldaplite/pkg/crypto"
 )
@@ -368,9 +369,39 @@ func (s *SQLiteStore) EntryExists(ctx context.Context, dn string) (bool, error) 
 }
 
 // SearchEntries searches for entries matching a filter
-func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filter string) ([]*models.Entry, error) {
+func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filterStr string) ([]*models.Entry, error) {
+	// Parse the LDAP filter
+	parsedFilter, err := schema.ParseFilter(filterStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse filter: %w", err)
+	}
+
+	// Try to compile filter to SQL (hybrid approach)
+	compiler := schema.NewFilterCompiler()
+	var filterClause string
+	var filterArgs []interface{}
+	var useInMemoryFilter bool
+
+	if compiler.CanCompileToSQL(parsedFilter) {
+		// Compile filter to SQL WHERE clause
+		filterClause, filterArgs, err = compiler.CompileToSQL(parsedFilter)
+		if err != nil {
+			// If compilation fails, fall back to in-memory filtering
+			filterClause = "1=1"
+			filterArgs = nil
+			useInMemoryFilter = true
+		} else {
+			useInMemoryFilter = false
+		}
+	} else {
+		// Filter not supported in SQL, use in-memory filtering
+		filterClause = "1=1"
+		filterArgs = nil
+		useInMemoryFilter = true
+	}
+
+	// Build query with filter clause
 	// Use JSON aggregation to fetch entries with attributes in a single query
-	// This eliminates the N+1 query pattern
 	query := `
 		SELECT
 			e.id,
@@ -387,11 +418,16 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filter s
 		FROM entries e
 		LEFT JOIN attributes a ON e.id = a.entry_id
 		WHERE (e.dn = ? OR e.parent_dn LIKE ?)
+		  AND (` + filterClause + `)
 		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
+	// Combine args: baseDN args + filter args
 	likePattern := "%" + baseDN
-	rows, err := s.db.QueryContext(ctx, query, baseDN, likePattern)
+	args := []interface{}{baseDN, likePattern}
+	args = append(args, filterArgs...)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search entries: %w", err)
 	}
@@ -423,6 +459,13 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filter s
 		// Add objectClass to attributes map for filter matching
 		if entry.ObjectClass != "" {
 			entry.Attributes["objectclass"] = []string{entry.ObjectClass}
+		}
+
+		// Apply in-memory filter if needed (fallback for unsupported filters)
+		if useInMemoryFilter {
+			if !parsedFilter.Matches(entry) {
+				continue
+			}
 		}
 
 		entries = append(entries, entry)

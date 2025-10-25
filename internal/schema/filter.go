@@ -155,8 +155,13 @@ func parseFilterRecursive(filterStr string, pos int) (*Filter, int, error) {
 
 	var filterType FilterType
 	if value == "*" {
+		// Presence filter: (attr=*)
 		filterType = FilterTypePresent
+	} else if strings.Contains(value, "*") {
+		// Substring filter: (attr=*value*), (attr=value*), (attr=*value)
+		filterType = FilterTypeSubstrings
 	} else {
+		// Equality filter: (attr=value)
 		filterType = FilterTypeEquality
 	}
 
@@ -167,6 +172,53 @@ func parseFilterRecursive(filterStr string, pos int) (*Filter, int, error) {
 	}
 
 	return filter, pos + endPos + 1, nil
+}
+
+// matchSubstring checks if a value matches an LDAP substring pattern
+// Pattern can contain wildcards: a* (starts with), *a (ends with), *a* (contains), a*b (complex)
+// Matching is case-insensitive per LDAP RFC 4517
+func matchSubstring(value, pattern string) bool {
+	// Case-insensitive matching
+	value = strings.ToLower(value)
+	pattern = strings.ToLower(pattern)
+
+	// Split pattern by wildcards
+	parts := strings.Split(pattern, "*")
+
+	// No wildcards (shouldn't happen for substring filter, but handle it)
+	if len(parts) == 1 {
+		return value == pattern
+	}
+
+	// Check first part (if not empty, must be at start)
+	if parts[0] != "" {
+		if !strings.HasPrefix(value, parts[0]) {
+			return false
+		}
+		value = value[len(parts[0]):]
+	}
+
+	// Check last part (if not empty, must be at end)
+	if parts[len(parts)-1] != "" {
+		if !strings.HasSuffix(value, parts[len(parts)-1]) {
+			return false
+		}
+		value = value[:len(value)-len(parts[len(parts)-1])]
+	}
+
+	// Check middle parts (must appear in order)
+	for i := 1; i < len(parts)-1; i++ {
+		if parts[i] == "" {
+			continue
+		}
+		idx := strings.Index(value, parts[i])
+		if idx == -1 {
+			return false
+		}
+		value = value[idx+len(parts[i]):]
+	}
+
+	return true
 }
 
 // Matches checks if an entry matches this filter
@@ -198,15 +250,28 @@ func (f *Filter) Matches(entry *models.Entry) bool {
 		return entry.HasAttribute(f.Attribute)
 
 	case FilterTypeEquality:
+		// Case-insensitive equality matching per LDAP RFC 4517
 		values := entry.GetAttributes(f.Attribute)
+		filterValue := strings.ToLower(f.Value)
 		for _, v := range values {
-			if v == f.Value {
+			if strings.ToLower(v) == filterValue {
 				return true
 			}
 		}
 		return false
 
-	case FilterTypeApproxMatch, FilterTypeGreaterOrEqual, FilterTypeLessOrEqual, FilterTypeSubstrings:
+	case FilterTypeSubstrings:
+		// Substring matching with wildcards
+		// Convert LDAP wildcard pattern to Go regexp-like matching
+		values := entry.GetAttributes(f.Attribute)
+		for _, v := range values {
+			if matchSubstring(v, f.Value) {
+				return true
+			}
+		}
+		return false
+
+	case FilterTypeApproxMatch, FilterTypeGreaterOrEqual, FilterTypeLessOrEqual:
 		// Not implemented yet, treat as equality
 		values := entry.GetAttributes(f.Attribute)
 		for _, v := range values {
