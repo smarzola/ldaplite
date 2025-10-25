@@ -164,13 +164,29 @@ func (s *SQLiteStore) Close() error {
 
 // GetEntry retrieves an entry by DN
 func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, error) {
+	// Use JSON aggregation to fetch entry with attributes in a single query
 	query := `
-		SELECT id, dn, parent_dn, object_class, created_at, updated_at
-		FROM entries
-		WHERE dn = ?
+		SELECT
+			e.id,
+			e.dn,
+			e.parent_dn,
+			e.object_class,
+			e.created_at,
+			e.updated_at,
+			json_group_array(
+				CASE WHEN a.name IS NOT NULL
+				THEN json_object('name', a.name, 'value', a.value)
+				ELSE NULL END
+			) as attributes_json
+		FROM entries e
+		LEFT JOIN attributes a ON e.id = a.entry_id
+		WHERE e.dn = ?
+		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
 	var entry models.Entry
+	var attrsJSON string
+
 	err := s.db.QueryRowContext(ctx, query, dn).Scan(
 		&entry.ID,
 		&entry.DN,
@@ -178,6 +194,7 @@ func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, e
 		&entry.ObjectClass,
 		&entry.CreatedAt,
 		&entry.UpdatedAt,
+		&attrsJSON,
 	)
 
 	if err == sql.ErrNoRows {
@@ -187,21 +204,10 @@ func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, e
 		return nil, fmt.Errorf("failed to get entry: %w", err)
 	}
 
-	// Load attributes
-	entry.Attributes = make(map[string][]string)
-	attrQuery := `SELECT name, value FROM attributes WHERE entry_id = ?`
-	rows, err := s.db.QueryContext(ctx, attrQuery, entry.ID)
+	// Decode attributes from JSON
+	entry.Attributes, err = decodeAttributesJSON(attrsJSON)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get attributes: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var name, value string
-		if err := rows.Scan(&name, &value); err != nil {
-			return nil, fmt.Errorf("failed to scan attribute: %w", err)
-		}
-		entry.Attributes[strings.ToLower(name)] = append(entry.Attributes[strings.ToLower(name)], value)
+		return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 	}
 
 	return &entry, nil
@@ -363,12 +369,25 @@ func (s *SQLiteStore) EntryExists(ctx context.Context, dn string) (bool, error) 
 
 // SearchEntries searches for entries matching a filter
 func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filter string) ([]*models.Entry, error) {
-	// For now, implement basic search that finds entries under baseDN
-	// More complex filter parsing will be implemented in a separate module
+	// Use JSON aggregation to fetch entries with attributes in a single query
+	// This eliminates the N+1 query pattern
 	query := `
-		SELECT id, dn, parent_dn, object_class, created_at, updated_at
-		FROM entries
-		WHERE (dn = ? OR parent_dn LIKE ?)
+		SELECT
+			e.id,
+			e.dn,
+			e.parent_dn,
+			e.object_class,
+			e.created_at,
+			e.updated_at,
+			json_group_array(
+				CASE WHEN a.name IS NOT NULL
+				THEN json_object('name', a.name, 'value', a.value)
+				ELSE NULL END
+			) as attributes_json
+		FROM entries e
+		LEFT JOIN attributes a ON e.id = a.entry_id
+		WHERE (e.dn = ? OR e.parent_dn LIKE ?)
+		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
 	likePattern := "%" + baseDN
@@ -380,7 +399,9 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filter s
 
 	var entries []*models.Entry
 	for rows.Next() {
-		entry := &models.Entry{Attributes: make(map[string][]string)}
+		entry := &models.Entry{}
+		var attrsJSON string
+
 		if err := rows.Scan(
 			&entry.ID,
 			&entry.DN,
@@ -388,26 +409,16 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filter s
 			&entry.ObjectClass,
 			&entry.CreatedAt,
 			&entry.UpdatedAt,
+			&attrsJSON,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan entry: %w", err)
 		}
 
-		// Load attributes
-		attrQuery := `SELECT name, value FROM attributes WHERE entry_id = ?`
-		attrRows, err := s.db.QueryContext(ctx, attrQuery, entry.ID)
+		// Decode attributes from JSON
+		entry.Attributes, err = decodeAttributesJSON(attrsJSON)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get attributes: %w", err)
+			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 		}
-
-		for attrRows.Next() {
-			var name, value string
-			if err := attrRows.Scan(&name, &value); err != nil {
-				attrRows.Close()
-				return nil, fmt.Errorf("failed to scan attribute: %w", err)
-			}
-			entry.Attributes[strings.ToLower(name)] = append(entry.Attributes[strings.ToLower(name)], value)
-		}
-		attrRows.Close()
 
 		// Add objectClass to attributes map for filter matching
 		if entry.ObjectClass != "" {
@@ -422,9 +433,23 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filter s
 
 // GetAllEntries returns all entries
 func (s *SQLiteStore) GetAllEntries(ctx context.Context) ([]*models.Entry, error) {
+	// Use JSON aggregation to fetch entries with attributes in a single query
 	query := `
-		SELECT id, dn, parent_dn, object_class, created_at, updated_at
-		FROM entries
+		SELECT
+			e.id,
+			e.dn,
+			e.parent_dn,
+			e.object_class,
+			e.created_at,
+			e.updated_at,
+			json_group_array(
+				CASE WHEN a.name IS NOT NULL
+				THEN json_object('name', a.name, 'value', a.value)
+				ELSE NULL END
+			) as attributes_json
+		FROM entries e
+		LEFT JOIN attributes a ON e.id = a.entry_id
+		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
 	rows, err := s.db.QueryContext(ctx, query)
@@ -435,7 +460,9 @@ func (s *SQLiteStore) GetAllEntries(ctx context.Context) ([]*models.Entry, error
 
 	var entries []*models.Entry
 	for rows.Next() {
-		entry := &models.Entry{Attributes: make(map[string][]string)}
+		entry := &models.Entry{}
+		var attrsJSON string
+
 		if err := rows.Scan(
 			&entry.ID,
 			&entry.DN,
@@ -443,26 +470,16 @@ func (s *SQLiteStore) GetAllEntries(ctx context.Context) ([]*models.Entry, error
 			&entry.ObjectClass,
 			&entry.CreatedAt,
 			&entry.UpdatedAt,
+			&attrsJSON,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan entry: %w", err)
 		}
 
-		// Load attributes
-		attrQuery := `SELECT name, value FROM attributes WHERE entry_id = ?`
-		attrRows, err := s.db.QueryContext(ctx, attrQuery, entry.ID)
+		// Decode attributes from JSON
+		entry.Attributes, err = decodeAttributesJSON(attrsJSON)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get attributes: %w", err)
+			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 		}
-
-		for attrRows.Next() {
-			var name, value string
-			if err := attrRows.Scan(&name, &value); err != nil {
-				attrRows.Close()
-				return nil, fmt.Errorf("failed to scan attribute: %w", err)
-			}
-			entry.Attributes[strings.ToLower(name)] = append(entry.Attributes[strings.ToLower(name)], value)
-		}
-		attrRows.Close()
 
 		// Add objectClass to attributes map for filter matching
 		if entry.ObjectClass != "" {
@@ -477,10 +494,24 @@ func (s *SQLiteStore) GetAllEntries(ctx context.Context) ([]*models.Entry, error
 
 // GetChildren returns all children of a given DN
 func (s *SQLiteStore) GetChildren(ctx context.Context, dn string) ([]*models.Entry, error) {
+	// Use JSON aggregation to fetch entries with attributes in a single query
 	query := `
-		SELECT id, dn, parent_dn, object_class, created_at, updated_at
-		FROM entries
-		WHERE parent_dn = ?
+		SELECT
+			e.id,
+			e.dn,
+			e.parent_dn,
+			e.object_class,
+			e.created_at,
+			e.updated_at,
+			json_group_array(
+				CASE WHEN a.name IS NOT NULL
+				THEN json_object('name', a.name, 'value', a.value)
+				ELSE NULL END
+			) as attributes_json
+		FROM entries e
+		LEFT JOIN attributes a ON e.id = a.entry_id
+		WHERE e.parent_dn = ?
+		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
 	rows, err := s.db.QueryContext(ctx, query, dn)
@@ -491,7 +522,9 @@ func (s *SQLiteStore) GetChildren(ctx context.Context, dn string) ([]*models.Ent
 
 	var entries []*models.Entry
 	for rows.Next() {
-		entry := &models.Entry{Attributes: make(map[string][]string)}
+		entry := &models.Entry{}
+		var attrsJSON string
+
 		if err := rows.Scan(
 			&entry.ID,
 			&entry.DN,
@@ -499,26 +532,16 @@ func (s *SQLiteStore) GetChildren(ctx context.Context, dn string) ([]*models.Ent
 			&entry.ObjectClass,
 			&entry.CreatedAt,
 			&entry.UpdatedAt,
+			&attrsJSON,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan entry: %w", err)
 		}
 
-		// Load attributes
-		attrQuery := `SELECT name, value FROM attributes WHERE entry_id = ?`
-		attrRows, err := s.db.QueryContext(ctx, attrQuery, entry.ID)
+		// Decode attributes from JSON
+		entry.Attributes, err = decodeAttributesJSON(attrsJSON)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get attributes: %w", err)
+			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 		}
-
-		for attrRows.Next() {
-			var name, value string
-			if err := attrRows.Scan(&name, &value); err != nil {
-				attrRows.Close()
-				return nil, fmt.Errorf("failed to scan attribute: %w", err)
-			}
-			entry.Attributes[strings.ToLower(name)] = append(entry.Attributes[strings.ToLower(name)], value)
-		}
-		attrRows.Close()
 
 		// Add objectClass to attributes map for filter matching
 		if entry.ObjectClass != "" {

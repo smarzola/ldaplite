@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/smarzola/ldaplite/internal/models"
 )
@@ -60,11 +59,25 @@ func (s *SQLiteStore) DeleteOU(ctx context.Context, dn string) error {
 
 // SearchOUs searches for OUs
 func (s *SQLiteStore) SearchOUs(ctx context.Context, baseDN string) ([]*models.OrganizationalUnit, error) {
+	// Use JSON aggregation to fetch OUs with attributes in a single query
 	query := `
-		SELECT e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
+		SELECT
+			e.id,
+			e.dn,
+			e.parent_dn,
+			e.object_class,
+			e.created_at,
+			e.updated_at,
+			json_group_array(
+				CASE WHEN a.name IS NOT NULL
+				THEN json_object('name', a.name, 'value', a.value)
+				ELSE NULL END
+			) as attributes_json
 		FROM entries e
+		LEFT JOIN attributes a ON e.id = a.entry_id
 		WHERE (e.dn = ? OR e.parent_dn LIKE ?)
 		AND e.object_class = ?
+		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
 	likePattern := "%" + baseDN
@@ -76,7 +89,9 @@ func (s *SQLiteStore) SearchOUs(ctx context.Context, baseDN string) ([]*models.O
 
 	var ous []*models.OrganizationalUnit
 	for rows.Next() {
-		entry := &models.Entry{Attributes: make(map[string][]string)}
+		entry := &models.Entry{}
+		var attrsJSON string
+
 		if err := rows.Scan(
 			&entry.ID,
 			&entry.DN,
@@ -84,26 +99,16 @@ func (s *SQLiteStore) SearchOUs(ctx context.Context, baseDN string) ([]*models.O
 			&entry.ObjectClass,
 			&entry.CreatedAt,
 			&entry.UpdatedAt,
+			&attrsJSON,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan entry: %w", err)
 		}
 
-		// Load attributes
-		attrQuery := `SELECT name, value FROM attributes WHERE entry_id = ?`
-		attrRows, err := s.db.QueryContext(ctx, attrQuery, entry.ID)
+		// Decode attributes from JSON
+		entry.Attributes, err = decodeAttributesJSON(attrsJSON)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get attributes: %w", err)
+			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 		}
-
-		for attrRows.Next() {
-			var name, value string
-			if err := attrRows.Scan(&name, &value); err != nil {
-				attrRows.Close()
-				return nil, fmt.Errorf("failed to scan attribute: %w", err)
-			}
-			entry.Attributes[strings.ToLower(name)] = append(entry.Attributes[strings.ToLower(name)], value)
-		}
-		attrRows.Close()
 
 		ou := &models.OrganizationalUnit{
 			Entry: entry,

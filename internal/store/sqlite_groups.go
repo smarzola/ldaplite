@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"github.com/smarzola/ldaplite/internal/models"
 )
@@ -39,14 +38,30 @@ func (s *SQLiteStore) GetGroup(ctx context.Context, dn string) (*models.Group, e
 
 // GetGroupByName retrieves a group by name (CN)
 func (s *SQLiteStore) GetGroupByName(ctx context.Context, name string) (*models.Group, error) {
+	// Use JSON aggregation to fetch group with attributes in a single query
 	query := `
-		SELECT e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
+		SELECT
+			e.id,
+			e.dn,
+			e.parent_dn,
+			e.object_class,
+			e.created_at,
+			e.updated_at,
+			json_group_array(
+				CASE WHEN a.name IS NOT NULL
+				THEN json_object('name', a.name, 'value', a.value)
+				ELSE NULL END
+			) as attributes_json
 		FROM entries e
 		INNER JOIN groups g ON e.id = g.entry_id
+		LEFT JOIN attributes a ON e.id = a.entry_id
 		WHERE g.cn = ?
+		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
 	var entry models.Entry
+	var attrsJSON string
+
 	err := s.db.QueryRowContext(ctx, query, name).Scan(
 		&entry.ID,
 		&entry.DN,
@@ -54,6 +69,7 @@ func (s *SQLiteStore) GetGroupByName(ctx context.Context, name string) (*models.
 		&entry.ObjectClass,
 		&entry.CreatedAt,
 		&entry.UpdatedAt,
+		&attrsJSON,
 	)
 
 	if err == sql.ErrNoRows {
@@ -63,21 +79,10 @@ func (s *SQLiteStore) GetGroupByName(ctx context.Context, name string) (*models.
 		return nil, fmt.Errorf("failed to get group by name: %w", err)
 	}
 
-	// Load attributes
-	entry.Attributes = make(map[string][]string)
-	attrQuery := `SELECT name, value FROM attributes WHERE entry_id = ?`
-	rows, err := s.db.QueryContext(ctx, attrQuery, entry.ID)
+	// Decode attributes from JSON
+	entry.Attributes, err = decodeAttributesJSON(attrsJSON)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get attributes: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var attrName, value string
-		if err := rows.Scan(&attrName, &value); err != nil {
-			return nil, fmt.Errorf("failed to scan attribute: %w", err)
-		}
-		entry.Attributes[attrName] = append(entry.Attributes[attrName], value)
+		return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 	}
 
 	group := &models.Group{
@@ -226,11 +231,25 @@ func (s *SQLiteStore) RemoveGroupMember(ctx context.Context, groupDN, memberDN s
 
 // GetGroupMembers returns direct members of a group
 func (s *SQLiteStore) GetGroupMembers(ctx context.Context, groupDN string) ([]*models.Entry, error) {
+	// Use JSON aggregation to fetch members with attributes in a single query
 	query := `
-		SELECT e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
+		SELECT
+			e.id,
+			e.dn,
+			e.parent_dn,
+			e.object_class,
+			e.created_at,
+			e.updated_at,
+			json_group_array(
+				CASE WHEN a.name IS NOT NULL
+				THEN json_object('name', a.name, 'value', a.value)
+				ELSE NULL END
+			) as attributes_json
 		FROM entries e
 		INNER JOIN group_members gm ON e.id = gm.member_entry_id
+		LEFT JOIN attributes a ON e.id = a.entry_id
 		WHERE gm.group_entry_id = (SELECT id FROM entries WHERE dn = ?)
+		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
 	rows, err := s.db.QueryContext(ctx, query, groupDN)
@@ -241,7 +260,9 @@ func (s *SQLiteStore) GetGroupMembers(ctx context.Context, groupDN string) ([]*m
 
 	var members []*models.Entry
 	for rows.Next() {
-		entry := &models.Entry{Attributes: make(map[string][]string)}
+		entry := &models.Entry{}
+		var attrsJSON string
+
 		if err := rows.Scan(
 			&entry.ID,
 			&entry.DN,
@@ -249,26 +270,16 @@ func (s *SQLiteStore) GetGroupMembers(ctx context.Context, groupDN string) ([]*m
 			&entry.ObjectClass,
 			&entry.CreatedAt,
 			&entry.UpdatedAt,
+			&attrsJSON,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan entry: %w", err)
 		}
 
-		// Load attributes
-		attrQuery := `SELECT name, value FROM attributes WHERE entry_id = ?`
-		attrRows, err := s.db.QueryContext(ctx, attrQuery, entry.ID)
+		// Decode attributes from JSON
+		entry.Attributes, err = decodeAttributesJSON(attrsJSON)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get attributes: %w", err)
+			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 		}
-
-		for attrRows.Next() {
-			var name, value string
-			if err := attrRows.Scan(&name, &value); err != nil {
-				attrRows.Close()
-				return nil, fmt.Errorf("failed to scan attribute: %w", err)
-			}
-			entry.Attributes[strings.ToLower(name)] = append(entry.Attributes[strings.ToLower(name)], value)
-		}
-		attrRows.Close()
 
 		members = append(members, entry)
 	}
@@ -322,12 +333,28 @@ func (s *SQLiteStore) resolveGroupMembersRecursive(ctx context.Context, groupDN 
 
 // GetUserGroups returns direct groups a user belongs to
 func (s *SQLiteStore) GetUserGroups(ctx context.Context, userDN string) ([]*models.Group, error) {
+	// Use JSON aggregation to fetch groups with attributes in a single query
 	query := `
-		SELECT e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
+		SELECT
+			e.id,
+			e.dn,
+			e.parent_dn,
+			e.object_class,
+			e.created_at,
+			e.updated_at,
+			g.cn,
+			json_group_array(
+				CASE WHEN a.name IS NOT NULL
+				THEN json_object('name', a.name, 'value', a.value)
+				ELSE NULL END
+			) as attributes_json
 		FROM entries e
 		INNER JOIN group_members gm ON e.id = gm.group_entry_id
+		INNER JOIN groups g ON e.id = g.entry_id
+		LEFT JOIN attributes a ON e.id = a.entry_id
 		WHERE gm.member_entry_id = (SELECT id FROM entries WHERE dn = ?)
 		AND e.object_class = ?
+		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at, g.cn
 	`
 
 	rows, err := s.db.QueryContext(ctx, query, userDN, string(models.ObjectClassGroupOfNames))
@@ -338,7 +365,10 @@ func (s *SQLiteStore) GetUserGroups(ctx context.Context, userDN string) ([]*mode
 
 	var groups []*models.Group
 	for rows.Next() {
-		entry := &models.Entry{Attributes: make(map[string][]string)}
+		entry := &models.Entry{}
+		var cn string
+		var attrsJSON string
+
 		if err := rows.Scan(
 			&entry.ID,
 			&entry.DN,
@@ -346,26 +376,17 @@ func (s *SQLiteStore) GetUserGroups(ctx context.Context, userDN string) ([]*mode
 			&entry.ObjectClass,
 			&entry.CreatedAt,
 			&entry.UpdatedAt,
+			&cn,
+			&attrsJSON,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan entry: %w", err)
 		}
 
-		// Load attributes
-		attrQuery := `SELECT name, value FROM attributes WHERE entry_id = ?`
-		attrRows, err := s.db.QueryContext(ctx, attrQuery, entry.ID)
+		// Decode attributes from JSON
+		entry.Attributes, err = decodeAttributesJSON(attrsJSON)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get attributes: %w", err)
+			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 		}
-
-		for attrRows.Next() {
-			var name, value string
-			if err := attrRows.Scan(&name, &value); err != nil {
-				attrRows.Close()
-				return nil, fmt.Errorf("failed to scan attribute: %w", err)
-			}
-			entry.Attributes[strings.ToLower(name)] = append(entry.Attributes[strings.ToLower(name)], value)
-		}
-		attrRows.Close()
 
 		group := &models.Group{
 			Entry:   entry,

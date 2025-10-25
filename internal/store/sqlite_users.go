@@ -38,14 +38,30 @@ func (s *SQLiteStore) GetUser(ctx context.Context, dn string) (*models.User, err
 
 // GetUserByUID retrieves a user by UID
 func (s *SQLiteStore) GetUserByUID(ctx context.Context, uid string) (*models.User, error) {
+	// Use JSON aggregation to fetch user with attributes in a single query
 	query := `
-		SELECT e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
+		SELECT
+			e.id,
+			e.dn,
+			e.parent_dn,
+			e.object_class,
+			e.created_at,
+			e.updated_at,
+			json_group_array(
+				CASE WHEN a.name IS NOT NULL
+				THEN json_object('name', a.name, 'value', a.value)
+				ELSE NULL END
+			) as attributes_json
 		FROM entries e
 		INNER JOIN users u ON e.id = u.entry_id
+		LEFT JOIN attributes a ON e.id = a.entry_id
 		WHERE u.uid = ?
+		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
 	var entry models.Entry
+	var attrsJSON string
+
 	err := s.db.QueryRowContext(ctx, query, uid).Scan(
 		&entry.ID,
 		&entry.DN,
@@ -53,6 +69,7 @@ func (s *SQLiteStore) GetUserByUID(ctx context.Context, uid string) (*models.Use
 		&entry.ObjectClass,
 		&entry.CreatedAt,
 		&entry.UpdatedAt,
+		&attrsJSON,
 	)
 
 	if err == sql.ErrNoRows {
@@ -62,21 +79,10 @@ func (s *SQLiteStore) GetUserByUID(ctx context.Context, uid string) (*models.Use
 		return nil, fmt.Errorf("failed to get user by UID: %w", err)
 	}
 
-	// Load attributes
-	entry.Attributes = make(map[string][]string)
-	attrQuery := `SELECT name, value FROM attributes WHERE entry_id = ?`
-	rows, err := s.db.QueryContext(ctx, attrQuery, entry.ID)
+	// Decode attributes from JSON
+	entry.Attributes, err = decodeAttributesJSON(attrsJSON)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get attributes: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var name, value string
-		if err := rows.Scan(&name, &value); err != nil {
-			return nil, fmt.Errorf("failed to scan attribute: %w", err)
-		}
-		entry.Attributes[name] = append(entry.Attributes[name], value)
+		return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
 	}
 
 	user := &models.User{
