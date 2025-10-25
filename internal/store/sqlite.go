@@ -400,31 +400,39 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filterSt
 		useInMemoryFilter = true
 	}
 
-	// Build query with filter clause
-	// Use JSON aggregation to fetch entries with attributes in a single query
+	// Build query with recursive CTE for hierarchy traversal
+	// This avoids the leading % LIKE pattern that prevents index usage
+	// Maximum depth of 100 prevents infinite recursion from circular references
 	query := `
+		WITH RECURSIVE subtree AS (
+			-- Base case: exact DN match
+			SELECT id, dn, parent_dn, object_class, created_at, updated_at, 0 as depth
+			FROM entries
+			WHERE dn = ?
+
+			UNION ALL
+
+			-- Recursive case: children (uses index on parent_dn = ?)
+			SELECT e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at, s.depth + 1
+			FROM entries e
+			INNER JOIN subtree s ON e.parent_dn = s.dn
+			WHERE s.depth < 100
+		)
 		SELECT
-			e.id,
-			e.dn,
-			e.parent_dn,
-			e.object_class,
-			e.created_at,
-			e.updated_at,
+			e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at,
 			json_group_array(
 				CASE WHEN a.name IS NOT NULL
 				THEN json_object('name', a.name, 'value', a.value)
 				ELSE NULL END
 			) as attributes_json
-		FROM entries e
+		FROM subtree e
 		LEFT JOIN attributes a ON e.id = a.entry_id
-		WHERE (e.dn = ? OR e.parent_dn LIKE ?)
-		  AND (` + filterClause + `)
+		WHERE (` + filterClause + `)
 		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
-	// Combine args: baseDN args + filter args
-	likePattern := "%" + baseDN
-	args := []interface{}{baseDN, likePattern}
+	// Args: baseDN for CTE + filter args
+	args := []interface{}{baseDN}
 	args = append(args, filterArgs...)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)

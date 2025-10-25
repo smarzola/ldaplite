@@ -59,29 +59,37 @@ func (s *SQLiteStore) DeleteOU(ctx context.Context, dn string) error {
 
 // SearchOUs searches for OUs
 func (s *SQLiteStore) SearchOUs(ctx context.Context, baseDN string) ([]*models.OrganizationalUnit, error) {
-	// Use JSON aggregation to fetch OUs with attributes in a single query
+	// Use recursive CTE for hierarchy traversal with indexed lookups
+	// Maximum depth of 100 prevents infinite recursion from circular references
 	query := `
+		WITH RECURSIVE subtree AS (
+			-- Base case: exact DN match if it's an OU
+			SELECT id, dn, parent_dn, object_class, created_at, updated_at, 0 as depth
+			FROM entries
+			WHERE dn = ? AND object_class = ?
+
+			UNION ALL
+
+			-- Recursive case: find child OUs (uses index on parent_dn = ?)
+			SELECT e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at, s.depth + 1
+			FROM entries e
+			INNER JOIN subtree s ON e.parent_dn = s.dn
+			WHERE e.object_class = ? AND s.depth < 100
+		)
 		SELECT
-			e.id,
-			e.dn,
-			e.parent_dn,
-			e.object_class,
-			e.created_at,
-			e.updated_at,
+			e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at,
 			json_group_array(
 				CASE WHEN a.name IS NOT NULL
 				THEN json_object('name', a.name, 'value', a.value)
 				ELSE NULL END
 			) as attributes_json
-		FROM entries e
+		FROM subtree e
 		LEFT JOIN attributes a ON e.id = a.entry_id
-		WHERE (e.dn = ? OR e.parent_dn LIKE ?)
-		AND e.object_class = ?
 		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
-	likePattern := "%" + baseDN
-	rows, err := s.db.QueryContext(ctx, query, baseDN, likePattern, string(models.ObjectClassOrganizationalUnit))
+	objectClass := string(models.ObjectClassOrganizationalUnit)
+	rows, err := s.db.QueryContext(ctx, query, baseDN, objectClass, objectClass)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search OUs: %w", err)
 	}
