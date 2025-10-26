@@ -8,7 +8,7 @@ A lightweight, RFC-compliant LDAP server written in Go with SQLite backend. Buil
 
 - **Just a binary** - Download and run. No complex installation, no external dependencies.
 - **Opinionated** - Sensible defaults that work out of the box. Configure only what you need.
-- **SQLite storage** - Single-file database. Easy backups, no PostgreSQL/MySQL required.
+- **SQLite storage** - Single-file database. Easy backups, no complex datastores required.
 - **Modern tooling** - Docker-ready, structured logging (JSON), built with Go.
 
 Perfect for homelabs, development environments, and single-instance deployments where you need LDAP without the operational overhead.
@@ -49,7 +49,7 @@ Perfect for homelabs, development environments, and single-instance deployments 
 
 ### Storage & Deployment
 
-- **Single Go Binary**: ~15MB static binary, no runtime dependencies
+- **Single Go Binary**: ~10MB static binary, no runtime dependencies
 - **SQLite Backend**: Single-file database, ideal for backups and migrations
 - **Docker Support**: Distroless image, non-root user, health checks
 - **Simple Configuration**: Environment variables only, no config files required
@@ -60,7 +60,8 @@ Perfect for homelabs, development environments, and single-instance deployments 
 
 ```bash
 # Download latest release
-curl -LO https://github.com/smarzola/ldaplite/releases/download/v0.3.1/ldaplite-linux-amd64
+curl -LO https://github.com/smarzola/ldaplite/releases/latest/download/ldaplite-linux-amd64.tar.gz
+tar -xzf ldaplite-linux-amd64.tar.gz
 chmod +x ldaplite-linux-amd64
 
 # Set required environment variables
@@ -345,11 +346,9 @@ LDAPLite supports comprehensive LDAP filter syntax:
 
 ### Future Considerations
 
-- TLS/LDAPS support (currently recommend reverse proxy)
-- SASL authentication mechanisms
-- Replication for multi-instance deployments
 - Enhanced ACLs for granular permissions
 - Import/export tools (LDIF, CSV)
+- TLS/LDAPS support (currently recommend reverse proxy)
 
 ## Limitations
 
