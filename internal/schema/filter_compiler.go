@@ -33,6 +33,10 @@ func (fc *FilterCompiler) CompileToSQL(filter *Filter) (string, []interface{}, e
 		return fc.compilePresent(filter.Attribute)
 	case FilterTypeSubstrings:
 		return fc.compileSubstring(filter.Attribute, filter.Value)
+	case FilterTypeGreaterOrEqual:
+		return fc.compileGreaterOrEqual(filter.Attribute, filter.Value)
+	case FilterTypeLessOrEqual:
+		return fc.compileLessOrEqual(filter.Attribute, filter.Value)
 	default:
 		return "", nil, fmt.Errorf("unsupported filter type: %d", filter.Type)
 	}
@@ -50,6 +54,10 @@ func (fc *FilterCompiler) CanCompileToSQL(filter *Filter) bool {
 	case FilterTypeSubstrings:
 		// Substring support depends on value containing wildcards
 		return strings.Contains(filter.Value, "*")
+	case FilterTypeGreaterOrEqual, FilterTypeLessOrEqual:
+		// Comparison operators supported for operational timestamp attributes
+		attrLower := strings.ToLower(filter.Attribute)
+		return attrLower == "createtimestamp" || attrLower == "modifytimestamp"
 	case FilterTypeAnd, FilterTypeOr:
 		// All sub-filters must be compilable
 		for _, sf := range filter.Filters {
@@ -62,7 +70,7 @@ func (fc *FilterCompiler) CanCompileToSQL(filter *Filter) bool {
 		// NOT filter is compilable if its sub-filter is
 		return len(filter.Filters) == 1 && fc.CanCompileToSQL(filter.Filters[0])
 	default:
-		// GreaterOrEqual, LessOrEqual, ApproxMatch not supported yet
+		// ApproxMatch not supported yet
 		return false
 	}
 }
@@ -188,4 +196,83 @@ func (fc *FilterCompiler) compileNot(subFilters []*Filter) (string, []interface{
 	}
 
 	return "NOT (" + clause + ")", args, nil
+}
+
+// compileGreaterOrEqual compiles a >= filter for operational timestamp attributes
+// Converts LDAP Generalized Time format (YYYYMMDDHHMMSSz) to SQLite datetime comparison
+func (fc *FilterCompiler) compileGreaterOrEqual(attr, value string) (string, []interface{}, error) {
+	attrLower := strings.ToLower(attr)
+
+	// Map operational attributes to database columns
+	var column string
+	switch attrLower {
+	case "createtimestamp":
+		column = "e.created_at"
+	case "modifytimestamp":
+		column = "e.updated_at"
+	default:
+		return "", nil, fmt.Errorf("comparison operators only supported for createTimestamp and modifyTimestamp")
+	}
+
+	// Convert LDAP timestamp (YYYYMMDDHHMMSSz) to SQLite datetime format
+	sqliteTimestamp, err := convertLDAPTimestampToSQLite(value)
+	if err != nil {
+		return "", nil, fmt.Errorf("invalid timestamp format: %w", err)
+	}
+
+	// SQLite datetime comparison
+	clause := fmt.Sprintf("%s >= ?", column)
+	return clause, []interface{}{sqliteTimestamp}, nil
+}
+
+// compileLessOrEqual compiles a <= filter for operational timestamp attributes
+// Converts LDAP Generalized Time format (YYYYMMDDHHMMSSz) to SQLite datetime comparison
+func (fc *FilterCompiler) compileLessOrEqual(attr, value string) (string, []interface{}, error) {
+	attrLower := strings.ToLower(attr)
+
+	// Map operational attributes to database columns
+	var column string
+	switch attrLower {
+	case "createtimestamp":
+		column = "e.created_at"
+	case "modifytimestamp":
+		column = "e.updated_at"
+	default:
+		return "", nil, fmt.Errorf("comparison operators only supported for createTimestamp and modifyTimestamp")
+	}
+
+	// Convert LDAP timestamp (YYYYMMDDHHMMSSz) to SQLite datetime format
+	sqliteTimestamp, err := convertLDAPTimestampToSQLite(value)
+	if err != nil {
+		return "", nil, fmt.Errorf("invalid timestamp format: %w", err)
+	}
+
+	// SQLite datetime comparison
+	clause := fmt.Sprintf("%s <= ?", column)
+	return clause, []interface{}{sqliteTimestamp}, nil
+}
+
+// convertLDAPTimestampToSQLite converts LDAP Generalized Time to SQLite datetime
+// LDAP format: YYYYMMDDHHMMSSz (e.g., 20130905020304Z)
+// SQLite format: YYYY-MM-DD HH:MM:SS (e.g., 2013-09-05 02:03:04)
+func convertLDAPTimestampToSQLite(ldapTime string) (string, error) {
+	// Remove trailing 'Z' if present
+	ldapTime = strings.TrimSuffix(ldapTime, "Z")
+	ldapTime = strings.TrimSuffix(ldapTime, "z")
+
+	// Validate length (should be 14 characters: YYYYMMDDHHMMss)
+	if len(ldapTime) != 14 {
+		return "", fmt.Errorf("invalid LDAP timestamp length: expected 14, got %d", len(ldapTime))
+	}
+
+	// Parse components
+	year := ldapTime[0:4]
+	month := ldapTime[4:6]
+	day := ldapTime[6:8]
+	hour := ldapTime[8:10]
+	minute := ldapTime[10:12]
+	second := ldapTime[12:14]
+
+	// Format as SQLite datetime
+	return fmt.Sprintf("%s-%s-%s %s:%s:%s", year, month, day, hour, minute, second), nil
 }

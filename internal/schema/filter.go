@@ -136,7 +136,7 @@ func parseFilterRecursive(filterStr string, pos int) (*Filter, int, error) {
 		return filter, newPos + 1, nil
 	}
 
-	// Simple filter: attribute=value
+	// Simple filter: attribute=value, attribute>=value, attribute<=value, etc.
 	endPos := strings.IndexByte(filterStr[pos:], ')')
 	if endPos == -1 {
 		return nil, pos, fmt.Errorf("expected ')'")
@@ -144,25 +144,45 @@ func parseFilterRecursive(filterStr string, pos int) (*Filter, int, error) {
 
 	filterPart := filterStr[pos : pos+endPos]
 
-	// Parse attribute=value, attribute=*, etc.
-	parts := strings.SplitN(filterPart, "=", 2)
-	if len(parts) != 2 {
-		return nil, pos, fmt.Errorf("invalid filter format: %s", filterPart)
-	}
-
-	attribute := strings.TrimSpace(parts[0])
-	value := strings.TrimSpace(parts[1])
-
+	// Check for comparison operators: >=, <=, ~=
 	var filterType FilterType
-	if value == "*" {
-		// Presence filter: (attr=*)
-		filterType = FilterTypePresent
-	} else if strings.Contains(value, "*") {
-		// Substring filter: (attr=*value*), (attr=value*), (attr=*value)
-		filterType = FilterTypeSubstrings
+	var attribute, value string
+
+	if idx := strings.Index(filterPart, ">="); idx != -1 {
+		// Greater or equal filter: (attr>=value)
+		attribute = strings.TrimSpace(filterPart[:idx])
+		value = strings.TrimSpace(filterPart[idx+2:])
+		filterType = FilterTypeGreaterOrEqual
+	} else if idx := strings.Index(filterPart, "<="); idx != -1 {
+		// Less or equal filter: (attr<=value)
+		attribute = strings.TrimSpace(filterPart[:idx])
+		value = strings.TrimSpace(filterPart[idx+2:])
+		filterType = FilterTypeLessOrEqual
+	} else if idx := strings.Index(filterPart, "~="); idx != -1 {
+		// Approximate match filter: (attr~=value)
+		attribute = strings.TrimSpace(filterPart[:idx])
+		value = strings.TrimSpace(filterPart[idx+2:])
+		filterType = FilterTypeApproxMatch
 	} else {
-		// Equality filter: (attr=value)
-		filterType = FilterTypeEquality
+		// Parse attribute=value, attribute=*, etc.
+		parts := strings.SplitN(filterPart, "=", 2)
+		if len(parts) != 2 {
+			return nil, pos, fmt.Errorf("invalid filter format: %s", filterPart)
+		}
+
+		attribute = strings.TrimSpace(parts[0])
+		value = strings.TrimSpace(parts[1])
+
+		if value == "*" {
+			// Presence filter: (attr=*)
+			filterType = FilterTypePresent
+		} else if strings.Contains(value, "*") {
+			// Substring filter: (attr=*value*), (attr=value*), (attr=*value)
+			filterType = FilterTypeSubstrings
+		} else {
+			// Equality filter: (attr=value)
+			filterType = FilterTypeEquality
+		}
 	}
 
 	filter := &Filter{
@@ -271,7 +291,37 @@ func (f *Filter) Matches(entry *models.Entry) bool {
 		}
 		return false
 
-	case FilterTypeApproxMatch, FilterTypeGreaterOrEqual, FilterTypeLessOrEqual:
+	case FilterTypeGreaterOrEqual:
+		// Timestamp comparison for operational attributes
+		attrLower := strings.ToLower(f.Attribute)
+		if attrLower == "createtimestamp" || attrLower == "modifytimestamp" {
+			return compareTimestamp(entry, f.Attribute, f.Value, ">=")
+		}
+		// For non-timestamp attributes, fall back to string comparison
+		values := entry.GetAttributes(f.Attribute)
+		for _, v := range values {
+			if v >= f.Value {
+				return true
+			}
+		}
+		return false
+
+	case FilterTypeLessOrEqual:
+		// Timestamp comparison for operational attributes
+		attrLower := strings.ToLower(f.Attribute)
+		if attrLower == "createtimestamp" || attrLower == "modifytimestamp" {
+			return compareTimestamp(entry, f.Attribute, f.Value, "<=")
+		}
+		// For non-timestamp attributes, fall back to string comparison
+		values := entry.GetAttributes(f.Attribute)
+		for _, v := range values {
+			if v <= f.Value {
+				return true
+			}
+		}
+		return false
+
+	case FilterTypeApproxMatch:
 		// Not implemented yet, treat as equality
 		values := entry.GetAttributes(f.Attribute)
 		for _, v := range values {
@@ -317,7 +367,44 @@ func (f *Filter) String() string {
 	case FilterTypeEquality:
 		return fmt.Sprintf("(%s=%s)", f.Attribute, f.Value)
 
+	case FilterTypeGreaterOrEqual:
+		return fmt.Sprintf("(%s>=%s)", f.Attribute, f.Value)
+
+	case FilterTypeLessOrEqual:
+		return fmt.Sprintf("(%s<=%s)", f.Attribute, f.Value)
+
 	default:
 		return ""
+	}
+}
+
+// compareTimestamp compares an entry's operational timestamp with a filter value
+// Handles createTimestamp and modifyTimestamp operational attributes
+func compareTimestamp(entry *models.Entry, attribute, filterValue, operator string) bool {
+	attrLower := strings.ToLower(attribute)
+
+	// Get the timestamp from the entry
+	values := entry.GetAttributes(attrLower)
+	if len(values) == 0 {
+		return false
+	}
+
+	entryTimestamp := values[0]
+
+	// Normalize timestamps (remove 'Z' suffix for comparison)
+	entryTS := strings.TrimSuffix(entryTimestamp, "Z")
+	entryTS = strings.TrimSuffix(entryTS, "z")
+	filterTS := strings.TrimSuffix(filterValue, "Z")
+	filterTS = strings.TrimSuffix(filterTS, "z")
+
+	// LDAP Generalized Time format is lexicographically sortable (YYYYMMDDHHMMss)
+	// so we can do string comparison directly
+	switch operator {
+	case ">=":
+		return entryTS >= filterTS
+	case "<=":
+		return entryTS <= filterTS
+	default:
+		return false
 	}
 }

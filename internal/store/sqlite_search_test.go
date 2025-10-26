@@ -616,3 +616,177 @@ func TestSearchEntriesWithBaseDNScoping(t *testing.T) {
 		})
 	}
 }
+
+func TestSearchEntriesWithTimestampFilters(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		baseDN      string
+		filter      string
+		wantMinimum int // Minimum expected count (all entries have recent timestamps)
+		shouldError bool
+	}{
+		{
+			name:        "modifyTimestamp >= past date (should return all entries)",
+			baseDN:      "dc=test,dc=com",
+			filter:      "(modifyTimestamp>=20130905020304Z)",
+			wantMinimum: 5, // At least users and groups
+			shouldError: false,
+		},
+		{
+			name:        "modifyTimestamp >= future date (should return no entries)",
+			baseDN:      "dc=test,dc=com",
+			filter:      "(modifyTimestamp>=20991231235959Z)",
+			wantMinimum: 0,
+			shouldError: false,
+		},
+		{
+			name:        "createTimestamp >= past date (should return all entries)",
+			baseDN:      "dc=test,dc=com",
+			filter:      "(createTimestamp>=20130905020304Z)",
+			wantMinimum: 5,
+			shouldError: false,
+		},
+		{
+			name:        "modifyTimestamp <= future date (should return all entries)",
+			baseDN:      "dc=test,dc=com",
+			filter:      "(modifyTimestamp<=20991231235959Z)",
+			wantMinimum: 5,
+			shouldError: false,
+		},
+		{
+			name:        "createTimestamp <= past date (should return no entries)",
+			baseDN:      "dc=test,dc=com",
+			filter:      "(createTimestamp<=20130905020304Z)",
+			wantMinimum: 0,
+			shouldError: false,
+		},
+		{
+			name:        "combined filter with timestamp and objectClass",
+			baseDN:      "dc=test,dc=com",
+			filter:      "(&(objectClass=inetOrgPerson)(modifyTimestamp>=20130905020304Z))",
+			wantMinimum: 4, // At least the 4 test users (admin + 4 created users)
+			shouldError: false,
+		},
+		{
+			name:        "OR filter with timestamps",
+			baseDN:      "dc=test,dc=com",
+			filter:      "(|(modifyTimestamp>=20991231235959Z)(objectClass=organizationalUnit))",
+			wantMinimum: 2, // At least the 2 OUs
+			shouldError: false,
+		},
+		{
+			name:        "timestamp filter on users OU",
+			baseDN:      "ou=users,dc=test,dc=com",
+			filter:      "(createTimestamp>=20130905020304Z)",
+			wantMinimum: 5, // OU + 5 users
+			shouldError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entries, err := store.SearchEntries(ctx, tt.baseDN, tt.filter)
+
+			if tt.shouldError {
+				if err == nil {
+					t.Errorf("SearchEntries() expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("SearchEntries() error = %v", err)
+			}
+
+			// Check that results meet minimum expected count
+			if len(entries) < tt.wantMinimum {
+				t.Errorf("SearchEntries() got %d entries, want at least %d", len(entries), tt.wantMinimum)
+				t.Logf("Filter: %s", tt.filter)
+				t.Logf("Returned entries:")
+				for _, e := range entries {
+					t.Logf("  - %s (created: %v, updated: %v)", e.DN, e.CreatedAt, e.UpdatedAt)
+				}
+			}
+
+			// Verify that returned entries have operational attributes
+			if len(entries) > 0 {
+				firstEntry := entries[0]
+				// Make sure operational attributes were added
+				firstEntry.AddOperationalAttributes()
+
+				createTS := firstEntry.GetAttribute("createTimestamp")
+				modifyTS := firstEntry.GetAttribute("modifyTimestamp")
+
+				if createTS == "" {
+					t.Errorf("Entry missing createTimestamp attribute")
+				}
+				if modifyTS == "" {
+					t.Errorf("Entry missing modifyTimestamp attribute")
+				}
+
+				t.Logf("Sample entry %s: createTimestamp=%s, modifyTimestamp=%s",
+					firstEntry.DN, createTS, modifyTS)
+			}
+		})
+	}
+}
+
+func TestSearchEntriesTimestampComparisons(t *testing.T) {
+	// This test verifies that timestamp comparisons work correctly with boundary conditions
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	// Test >= with a past timestamp (should return all entries)
+	entriesGTE, err := store.SearchEntries(ctx, "dc=test,dc=com", "(modifyTimestamp>=20130905020304Z)")
+	if err != nil {
+		t.Fatalf("SearchEntries() with >= failed: %v", err)
+	}
+	if len(entriesGTE) == 0 {
+		t.Error("SearchEntries() with >= past timestamp should return entries")
+	}
+
+	// Test <= with a future timestamp (should return all entries)
+	entriesLTE, err := store.SearchEntries(ctx, "dc=test,dc=com", "(modifyTimestamp<=20991231235959Z)")
+	if err != nil {
+		t.Fatalf("SearchEntries() with <= failed: %v", err)
+	}
+	if len(entriesLTE) == 0 {
+		t.Error("SearchEntries() with <= future timestamp should return entries")
+	}
+
+	// Test range query (should return all entries)
+	entriesRange, err := store.SearchEntries(ctx, "dc=test,dc=com",
+		"(&(modifyTimestamp>=20130905020304Z)(modifyTimestamp<=20991231235959Z))")
+	if err != nil {
+		t.Fatalf("SearchEntries() with range failed: %v", err)
+	}
+	if len(entriesRange) == 0 {
+		t.Error("SearchEntries() with timestamp range should return entries")
+	}
+
+	// Test >= with future timestamp (should return no entries)
+	entriesFuture, err := store.SearchEntries(ctx, "dc=test,dc=com", "(modifyTimestamp>=20991231235959Z)")
+	if err != nil {
+		t.Fatalf("SearchEntries() with >= future failed: %v", err)
+	}
+	if len(entriesFuture) != 0 {
+		t.Errorf("SearchEntries() with >= future timestamp should return 0 entries, got %d", len(entriesFuture))
+	}
+
+	// Test <= with past timestamp (should return no entries)
+	entriesPast, err := store.SearchEntries(ctx, "dc=test,dc=com", "(modifyTimestamp<=20130905020304Z)")
+	if err != nil {
+		t.Fatalf("SearchEntries() with <= past failed: %v", err)
+	}
+	if len(entriesPast) != 0 {
+		t.Errorf("SearchEntries() with <= past timestamp should return 0 entries, got %d", len(entriesPast))
+	}
+
+	t.Logf(">=past: %d entries, <=future: %d entries, range: %d entries",
+		len(entriesGTE), len(entriesLTE), len(entriesRange))
+}

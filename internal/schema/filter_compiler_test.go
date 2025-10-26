@@ -578,3 +578,263 @@ func TestComplexFilters(t *testing.T) {
 		})
 	}
 }
+
+func TestCompileGreaterOrEqual(t *testing.T) {
+	compiler := NewFilterCompiler()
+
+	tests := []struct {
+		name         string
+		filter       *Filter
+		wantContains []string
+		wantArgsLen  int
+		wantErr      bool
+	}{
+		{
+			name: "modifyTimestamp >= with valid timestamp",
+			filter: &Filter{
+				Type:      FilterTypeGreaterOrEqual,
+				Attribute: "modifyTimestamp",
+				Value:     "20130905020304Z",
+			},
+			wantContains: []string{"e.updated_at", ">="},
+			wantArgsLen:  1,
+			wantErr:      false,
+		},
+		{
+			name: "createTimestamp >= with valid timestamp",
+			filter: &Filter{
+				Type:      FilterTypeGreaterOrEqual,
+				Attribute: "createTimestamp",
+				Value:     "20251026090445Z",
+			},
+			wantContains: []string{"e.created_at", ">="},
+			wantArgsLen:  1,
+			wantErr:      false,
+		},
+		{
+			name: "non-operational attribute should fail",
+			filter: &Filter{
+				Type:      FilterTypeGreaterOrEqual,
+				Attribute: "age",
+				Value:     "18",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid timestamp format should fail",
+			filter: &Filter{
+				Type:      FilterTypeGreaterOrEqual,
+				Attribute: "modifyTimestamp",
+				Value:     "invalid",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sql, args, err := compiler.CompileToSQL(tt.filter)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CompileToSQL() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			for _, want := range tt.wantContains {
+				if !strings.Contains(sql, want) {
+					t.Errorf("CompileToSQL() SQL = %v, want to contain %v", sql, want)
+				}
+			}
+
+			if len(args) != tt.wantArgsLen {
+				t.Errorf("CompileToSQL() args length = %v, want %v", len(args), tt.wantArgsLen)
+			}
+		})
+	}
+}
+
+func TestCompileLessOrEqual(t *testing.T) {
+	compiler := NewFilterCompiler()
+
+	tests := []struct {
+		name         string
+		filter       *Filter
+		wantContains []string
+		wantArgsLen  int
+		wantErr      bool
+	}{
+		{
+			name: "modifyTimestamp <= with valid timestamp",
+			filter: &Filter{
+				Type:      FilterTypeLessOrEqual,
+				Attribute: "modifyTimestamp",
+				Value:     "20301027000000Z",
+			},
+			wantContains: []string{"e.updated_at", "<="},
+			wantArgsLen:  1,
+			wantErr:      false,
+		},
+		{
+			name: "createTimestamp <= with valid timestamp",
+			filter: &Filter{
+				Type:      FilterTypeLessOrEqual,
+				Attribute: "createTimestamp",
+				Value:     "20251026090445Z",
+			},
+			wantContains: []string{"e.created_at", "<="},
+			wantArgsLen:  1,
+			wantErr:      false,
+		},
+		{
+			name: "non-operational attribute should fail",
+			filter: &Filter{
+				Type:      FilterTypeLessOrEqual,
+				Attribute: "salary",
+				Value:     "100000",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sql, args, err := compiler.CompileToSQL(tt.filter)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CompileToSQL() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			for _, want := range tt.wantContains {
+				if !strings.Contains(sql, want) {
+					t.Errorf("CompileToSQL() SQL = %v, want to contain %v", sql, want)
+				}
+			}
+
+			if len(args) != tt.wantArgsLen {
+				t.Errorf("CompileToSQL() args length = %v, want %v", len(args), tt.wantArgsLen)
+			}
+		})
+	}
+}
+
+func TestConvertLDAPTimestampToSQLite(t *testing.T) {
+	tests := []struct {
+		name     string
+		ldapTime string
+		want     string
+		wantErr  bool
+	}{
+		{
+			name:     "valid timestamp with Z suffix",
+			ldapTime: "20130905020304Z",
+			want:     "2013-09-05 02:03:04",
+			wantErr:  false,
+		},
+		{
+			name:     "valid timestamp without Z suffix",
+			ldapTime: "20251026090445",
+			want:     "2025-10-26 09:04:45",
+			wantErr:  false,
+		},
+		{
+			name:     "lowercase z suffix",
+			ldapTime: "20251026090445z",
+			want:     "2025-10-26 09:04:45",
+			wantErr:  false,
+		},
+		{
+			name:     "invalid length (too short)",
+			ldapTime: "2013090502",
+			want:     "",
+			wantErr:  true,
+		},
+		{
+			name:     "invalid length (too long)",
+			ldapTime: "201309050203041234Z",
+			want:     "",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := convertLDAPTimestampToSQLite(tt.ldapTime)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("convertLDAPTimestampToSQLite() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if got != tt.want {
+				t.Errorf("convertLDAPTimestampToSQLite() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCanCompileToSQLWithTimestamps(t *testing.T) {
+	compiler := NewFilterCompiler()
+
+	tests := []struct {
+		name   string
+		filter *Filter
+		want   bool
+	}{
+		{
+			name: "createTimestamp >= (should be compilable)",
+			filter: &Filter{
+				Type:      FilterTypeGreaterOrEqual,
+				Attribute: "createTimestamp",
+				Value:     "20130905020304Z",
+			},
+			want: true,
+		},
+		{
+			name: "modifyTimestamp <= (should be compilable)",
+			filter: &Filter{
+				Type:      FilterTypeLessOrEqual,
+				Attribute: "modifyTimestamp",
+				Value:     "20251027000000Z",
+			},
+			want: true,
+		},
+		{
+			name: "age >= (not operational attribute, should not be compilable)",
+			filter: &Filter{
+				Type:      FilterTypeGreaterOrEqual,
+				Attribute: "age",
+				Value:     "18",
+			},
+			want: false,
+		},
+		{
+			name: "AND with timestamp comparison",
+			filter: &Filter{
+				Type: FilterTypeAnd,
+				Filters: []*Filter{
+					{Type: FilterTypeEquality, Attribute: "objectClass", Value: "inetOrgPerson"},
+					{Type: FilterTypeGreaterOrEqual, Attribute: "modifyTimestamp", Value: "20130905020304Z"},
+				},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := compiler.CanCompileToSQL(tt.filter)
+			if got != tt.want {
+				t.Errorf("CanCompileToSQL() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
