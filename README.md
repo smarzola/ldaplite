@@ -1,73 +1,77 @@
 # LDAPLite
 
-A lightweight, LDAP-compliant server written in Go with SQLite backend. Built for modern environments with Docker support and no external dependencies beyond Go.
+A lightweight, RFC-compliant LDAP server written in Go with SQLite backend. Built for simplicity and modern workflows.
+
+## Why LDAPLite?
+
+**Simplicity over complexity.** Most directory systems are complex beasts requiring extensive setup, configuration files, and operational expertise. LDAPLite takes a different approach:
+
+- **Just a binary** - Download and run. No complex installation, no external dependencies.
+- **Opinionated** - Sensible defaults that work out of the box. Configure only what you need.
+- **SQLite storage** - Single-file database. Easy backups, no PostgreSQL/MySQL required.
+- **Modern tooling** - Docker-ready, structured logging (JSON), built with Go.
+
+Perfect for homelabs, development environments, and single-instance deployments where you need LDAP without the operational overhead.
+
+**Also:** This project serves as an experiment in building complex, performant software with AI assistance (Claude Code) for educational purposes. The entire codebase, from the recursive SQL CTEs to RFC-compliant timestamp handling, was developed collaboratively with an LLM.
 
 ## Features
 
-- **LDAP Protocol Compliant**: Works with standard LDAP tools like `ldapsearch`, `ldapadd`, etc.
-- **SQLite Backend**: Simple file-based database, no PostgreSQL/MySQL required
-- **Group Nesting**: Full support for nested groups with circular reference detection
-- **Argon2id Hashing**: Modern, secure password hashing (OWASP recommended)
-- **Docker Ready**: Distroless image, non-root user, health checks
-- **Simple Configuration**: Environment variable based, no config files required
-- **Idiomatic Go**: Clean, well-structured codebase following Go best practices
+### LDAP Protocol Support
+
+- **RFC-Compliant**: Implements core LDAP v3 operations
+  - Bind with simple authentication
+  - Search with SQL-optimized filters
+  - Add, Modify, Delete operations
+  - Compare operations (basic)
+  - RootDSE and Schema queries
+
+- **Object Classes** (RFC 2256, RFC 2798):
+  - `organizationalUnit` - Container entries
+  - `inetOrgPerson` - User entries with email, phone, display name
+  - `groupOfNames` - Groups with nested group support
+  - `top` - Root of object class hierarchy
+
+- **Operational Attributes** (RFC 4512, RFC 4517):
+  - `createTimestamp` - Entry creation time (LDAP Generalized Time format)
+  - `modifyTimestamp` - Last modification time
+  - `objectClass` - Structural object class
+  - Searchable with `>=` and `<=` operators
+
+### Advanced Features
+
+- **Nested Groups**: Groups can contain users and other groups with circular reference detection
+- **SQL Filter Compilation**: LDAP filters compiled to indexed SQL queries for performance
+- **Hybrid Filtering**: Falls back to in-memory filtering for complex queries
+- **Argon2id Password Hashing**: OWASP-recommended parameters (64MB memory, 3 iterations)
+- **Recursive Hierarchy Traversal**: Efficient SQL CTEs for searching deep directory trees
+- **Structured Logging**: JSON or text format with configurable levels
+
+### Storage & Deployment
+
+- **Single Go Binary**: ~15MB static binary, no runtime dependencies
+- **SQLite Backend**: Single-file database, ideal for backups and migrations
+- **Docker Support**: Distroless image, non-root user, health checks
+- **Simple Configuration**: Environment variables only, no config files required
 
 ## Quick Start
 
-### Prerequisites
-
-- Go 1.22 or higher
-- Port 3389 available (or configure via `LDAP_PORT`)
-
-### Building
+### Option 1: Download Binary
 
 ```bash
-go build -o bin/ldaplite ./cmd/ldaplite
-```
+# Download latest release
+curl -LO https://github.com/smarzola/ldaplite/releases/download/v0.3.1/ldaplite-linux-amd64
+chmod +x ldaplite-linux-amd64
 
-### Running
-
-```bash
 # Set required environment variables
-export LDAP_BASE_DN=dc=example,dc=com
-export LDAP_ADMIN_PASSWORD=your-secure-password
+export LDAP_BASE_DN="dc=example,dc=com"
+export LDAP_ADMIN_PASSWORD="YourSecurePassword123!"
 
-# Start the server
-./bin/ldaplite server
+# Run
+./ldaplite-linux-amd64 server
 ```
 
-The server will:
-1. Initialize the SQLite database in `/data/ldaplite.db` (or configure with `LDAP_DATABASE_PATH`)
-2. Create the base DN structure
-3. Create default OUs: `ou=users` and `ou=groups`
-4. Create admin user: `cn=admin,dc=example,dc=com` with provided password
-5. Listen on `0.0.0.0:3389`
-
-### Testing Connection
-
-```bash
-ldapsearch -H ldap://localhost:3389 \
-  -D "cn=admin,dc=example,dc=com" \
-  -w your-secure-password \
-  -b "dc=example,dc=com" \
-  "(objectClass=*)"
-```
-
-## Docker Deployment
-
-### Building the Image
-
-```bash
-docker build -t ldaplite:latest .
-```
-
-### Running with Docker Compose
-
-```bash
-docker-compose up -d
-```
-
-### Running with Docker
+### Option 2: Docker
 
 ```bash
 docker run -d \
@@ -76,30 +80,135 @@ docker run -d \
   -e LDAP_BASE_DN=dc=example,dc=com \
   -e LDAP_ADMIN_PASSWORD=YourSecurePassword \
   -v ldap_data:/data \
-  ldaplite:latest
+  ghcr.io/smarzola/ldaplite:latest
+```
+
+Or use Docker Compose:
+
+```yaml
+version: '3.8'
+services:
+  ldaplite:
+    image: ghcr.io/smarzola/ldaplite:latest
+    ports:
+      - "3389:3389"
+    environment:
+      LDAP_BASE_DN: dc=example,dc=com
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD}
+    volumes:
+      - ldap_data:/data
+    restart: unless-stopped
+
+volumes:
+  ldap_data:
+```
+
+### Option 3: Build from Source
+
+```bash
+# Prerequisites: Go 1.23+
+git clone https://github.com/smarzola/ldaplite.git
+cd ldaplite
+
+# Build
+make build
+
+# Run
+export LDAP_BASE_DN=dc=example,dc=com
+export LDAP_ADMIN_PASSWORD=SecurePassword123!
+./bin/ldaplite server
+```
+
+## What Gets Created on First Run
+
+LDAPLite automatically initializes your directory with:
+
+```
+dc=example,dc=com (base DN)
+├── ou=users
+│   └── uid=admin (with your LDAP_ADMIN_PASSWORD)
+└── ou=groups
+```
+
+## Testing Your Connection
+
+```bash
+# Test authentication
+ldapwhoami -H ldap://localhost:3389 \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
+  -w YourSecurePassword
+
+# Search all entries
+ldapsearch -H ldap://localhost:3389 \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
+  -w YourSecurePassword \
+  -b "dc=example,dc=com" \
+  "(objectClass=*)"
+
+# Search with timestamp filter
+ldapsearch -H ldap://localhost:3389 \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
+  -w YourSecurePassword \
+  -b "dc=example,dc=com" \
+  "(modifyTimestamp>=20240101000000Z)"
 ```
 
 ## Configuration
 
-Configuration via environment variables:
+All configuration via environment variables. No config files needed.
+
+### Required Variables
+
+| Variable | Description |
+|----------|-------------|
+| `LDAP_BASE_DN` | Base DN for your directory (e.g., `dc=example,dc=com`) |
+| `LDAP_ADMIN_PASSWORD` | Admin user password (required on first run only) |
+
+### Server Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LDAP_PORT` | `3389` | LDAP server port |
-| `LDAP_BIND_ADDRESS` | `0.0.0.0` | Bind address |
-| `LDAP_BASE_DN` | `dc=example,dc=com` | LDAP base DN (required) |
-| `LDAP_ADMIN_PASSWORD` | (required on first run) | Initial admin password |
-| `LDAP_DATABASE_PATH` | `/data/ldaplite.db` | SQLite database path |
-| `LDAP_LOG_LEVEL` | `info` | Log level: debug, info, warn, error |
-| `LDAP_LOG_FORMAT` | `json` | Log format: json or text |
+| `LDAP_BIND_ADDRESS` | `0.0.0.0` | Network interface to bind to |
 | `LDAP_READ_TIMEOUT` | `30` | Read timeout in seconds |
 | `LDAP_WRITE_TIMEOUT` | `30` | Write timeout in seconds |
 
-## LDAP Operations
+### Database Configuration
 
-### Adding Users
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LDAP_DATABASE_PATH` | `/data/ldaplite.db` | SQLite database file path |
+| `LDAP_DATABASE_MAX_OPEN_CONNS` | `25` | Maximum open database connections |
+| `LDAP_DATABASE_MAX_IDLE_CONNS` | `5` | Maximum idle database connections |
+| `LDAP_DATABASE_CONN_MAX_LIFETIME` | `300` | Connection max lifetime in seconds |
 
-```ldif
+### Logging Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LDAP_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `LDAP_LOG_FORMAT` | `json` | Log format: `json` or `text` |
+
+### Security Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LDAP_ALLOW_ANONYMOUS_BIND` | `false` | Allow anonymous bind (not recommended) |
+| `LDAP_ARGON2_MEMORY` | `65536` | Argon2 memory cost in KB (64MB) |
+| `LDAP_ARGON2_ITERATIONS` | `3` | Argon2 time cost (iterations) |
+| `LDAP_ARGON2_PARALLELISM` | `2` | Argon2 parallelism factor |
+| `LDAP_ARGON2_SALT_LENGTH` | `16` | Salt length in bytes |
+| `LDAP_ARGON2_KEY_LENGTH` | `32` | Derived key length in bytes |
+
+**Note**: Argon2id parameters follow [OWASP recommendations](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#argon2id) for secure password hashing.
+
+## Usage Examples
+
+### Adding a User
+
+```bash
+# Create user.ldif
+cat > user.ldif <<EOF
 dn: uid=john,ou=users,dc=example,dc=com
 objectClass: inetOrgPerson
 uid: john
@@ -107,292 +216,210 @@ cn: John Doe
 sn: Doe
 givenName: John
 mail: john@example.com
+displayName: John Doe
 userPassword: password123
-```
+EOF
 
-Save to file `add-user.ldif` and run:
-```bash
+# Add to directory
 ldapadd -H ldap://localhost:3389 \
-  -D "cn=admin,dc=example,dc=com" \
-  -w your-admin-password \
-  -f add-user.ldif
+  -D "uid=admin,ou=users,dc=example,dc=com" \
+  -w YourPassword \
+  -f user.ldif
 ```
 
-### Creating Groups
+### Creating a Group
 
-```ldif
+```bash
+cat > group.ldif <<EOF
 dn: cn=developers,ou=groups,dc=example,dc=com
 objectClass: groupOfNames
 cn: developers
 member: uid=john,ou=users,dc=example,dc=com
 member: uid=jane,ou=users,dc=example,dc=com
+EOF
+
+ldapadd -H ldap://localhost:3389 \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
+  -w YourPassword \
+  -f group.ldif
 ```
 
 ### Nested Groups
 
-```ldif
+```bash
+# Create parent group that includes another group
+cat > parent-group.ldif <<EOF
 dn: cn=engineering,ou=groups,dc=example,dc=com
 objectClass: groupOfNames
 cn: engineering
 member: cn=developers,ou=groups,dc=example,dc=com
 member: cn=devops,ou=groups,dc=example,dc=com
+EOF
+
+ldapadd -H ldap://localhost:3389 \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
+  -w YourPassword \
+  -f parent-group.ldif
 ```
 
-## Project Structure
+## LDAP Filters
+
+LDAPLite supports comprehensive LDAP filter syntax:
+
+### Basic Filters
 
 ```
-ldaplite/
-├── cmd/ldaplite/              # Entry point
-├── internal/
-│   ├── server/                # LDAP server implementation
-│   ├── store/                 # SQLite storage layer
-│   │   └── migrations/        # SQL migrations (embedded in binary)
-│   ├── models/                # LDAP entry models
-│   └── schema/                # Schema definitions (future)
-├── pkg/
-│   ├── config/                # Configuration management
-│   └── crypto/                # Password hashing
-├── Dockerfile                 # Container image
-└── docker-compose.yml        # Compose configuration
+(objectClass=inetOrgPerson)          # All users
+(uid=john)                            # Exact match
+(cn=John*)                            # Starts with
+(mail=*@example.com)                  # Ends with
+(displayName=*Doe*)                   # Contains
 ```
 
-## Object Classes Supported
+### Logical Operators
 
-- `organizationalUnit` (ou): Container for users/groups
-- `inetOrgPerson`: Users with personal information
-- `groupOfNames`: Groups with member references
-- `top`: Root object class
+```
+(&(objectClass=inetOrgPerson)(mail=*))              # AND
+(|(uid=john)(uid=jane))                              # OR
+(!(objectClass=organizationalUnit))                  # NOT
+```
 
-## Supported Attributes
+### Timestamp Queries
 
-### Users (inetOrgPerson)
-- `uid`: User identifier (required)
-- `cn`: Common name (required)
-- `sn`: Surname (required)
-- `givenName`: First name (required)
-- `mail`: Email address
-- `telephoneNumber`: Phone number
-- `displayName`: Display name
-- `userPassword`: Password hash (automatically hashed on creation)
+```
+(modifyTimestamp>=20240101000000Z)    # Modified after date
+(createTimestamp<=20241231235959Z)    # Created before date
+(&(objectClass=inetOrgPerson)(modifyTimestamp>=20240601000000Z))
+```
 
-### Groups (groupOfNames)
-- `cn`: Common name (required)
-- `member`: DN of member (can be user or group, multi-valued)
-- `description`: Group description
+### Complex Queries
 
-### OUs (organizationalUnit)
-- `ou`: OU name (required)
-- `description`: Description
+```
+(&
+  (objectClass=inetOrgPerson)
+  (|
+    (mail=*@example.com)
+    (mail=*@company.com)
+  )
+  (!(uid=guest*))
+)
+```
 
-## Limitations (Current Version)
-
-- No TLS/SSL support (use reverse proxy for encryption)
-- No SASL authentication
-- No complex ACLs
-- No referrals
-- No schema extension
-- Search filters: basic implementation only
-- No replication
-
-These can be added in future versions as needed.
-
-## Architecture
+## Architecture Highlights
 
 ### Database Schema
 
-The SQLite database uses a flexible schema:
+- **entries** - All LDAP entries with timestamps and hierarchy
+- **attributes** - Multi-valued attributes storage
+- **users** - User-specific data (uid, password hash)
+- **groups** - Group data with recursive membership
+- **organizational_units** - OU-specific data
 
-- **entries**: All LDAP entries (DN, object class, timestamps)
-- **attributes**: All entry attributes (multi-valued, key-value)
-- **users**: User-specific data (UID, password hash)
-- **groups**: Group-specific data (CN)
-- **group_members**: Group membership relationships (supports nesting)
-- **organizational_units**: OU-specific data
+### Performance Optimizations
 
-### Group Nesting
-
-Groups can contain both users and other groups. The system:
-- Detects circular references
-- Limits nesting depth (default: 10 levels)
-- Uses recursive SQL CTEs for efficient queries
-- Supports both direct and inherited membership queries
+- **Indexed Hierarchy**: Uses recursive CTEs with indexed `parent_dn` lookups
+- **SQL Filter Compilation**: Converts LDAP filters to indexed SQL WHERE clauses
+- **Hybrid Approach**: Falls back to in-memory filtering for unsupported filters
+- **Connection Pooling**: Configurable connection limits for concurrent operations
 
 ### Password Security
 
-Passwords are hashed using **Argon2id** with OWASP-recommended parameters:
-- Memory: 64MB
-- Iterations: 3
-- Parallelism: 2
-- Hash verified in constant time to prevent timing attacks
+- **Argon2id hashing** with OWASP-recommended parameters
+- **Constant-time verification** to prevent timing attacks
+- **Configurable cost parameters** for future-proofing
+
+## Roadmap
+
+### Planned Features
+
+- **SCIM 2.0 Support** - Modern API for user/group provisioning alongside LDAP
+  - RESTful HTTP interface (RFC 7643, RFC 7644)
+  - JSON payloads for easier integration
+  - Compatible with modern IdP systems
+
+- **Minimal Web UI** - Simple web interface for directory management
+  - Browse and search entries
+  - User and group management
+  - View operational statistics
+  - No external dependencies, embedded in binary
+
+### Future Considerations
+
+- TLS/LDAPS support (currently recommend reverse proxy)
+- SASL authentication mechanisms
+- Replication for multi-instance deployments
+- Enhanced ACLs for granular permissions
+- Import/export tools (LDIF, CSV)
+
+## Limitations
+
+Current limitations (by design or priority):
+
+- **No TLS/SSL** - Use reverse proxy (Nginx, Traefik) for encryption
+- **No SASL** - Simple bind only (username/password)
+- **No Replication** - Single-instance only
+- **No Complex ACLs** - Admin has full access, users can bind
+- **No Schema Extension** - Fixed object classes (sufficient for most use cases)
+- **SQLite Concurrency** - Suitable for small-to-medium deployments
+
+These are intentional trade-offs for simplicity. For large enterprise deployments, consider OpenLDAP or 389 Directory Server.
 
 ## Development
-
-### Building from Source
-
-```bash
-# Get dependencies
-go mod download
-
-# Run tests
-go test -v ./...
-
-# Build binary
-go build -o bin/ldaplite ./cmd/ldaplite
-
-# Run with local database
-mkdir -p /tmp/ldaplite-data
-export LDAP_DATABASE_PATH=/tmp/ldaplite-data/ldaplite.db
-export LDAP_BASE_DN=dc=example,dc=com
-export LDAP_ADMIN_PASSWORD=admin123
-./bin/ldaplite server
-```
 
 ### Running Tests
 
 ```bash
-go test -v -race -cover ./...
+# Run all tests with race detection
+make test
+
+# Run with coverage
+make test-coverage
+
+# View coverage in browser
+open coverage.html
 ```
 
-### Code Coverage
+### Code Structure
 
-```bash
-go test -cover ./... -coverprofile=coverage.out
-go tool cover -html=coverage.out
+```
+ldaplite/
+├── cmd/ldaplite/           # Main entry point
+├── internal/
+│   ├── server/             # LDAP protocol handler
+│   ├── store/              # SQLite storage layer
+│   │   └── migrations/     # Embedded SQL migrations
+│   ├── models/             # Domain models (User, Group, OU)
+│   └── schema/             # Filter parsing & compilation
+├── pkg/
+│   ├── config/             # Configuration management
+│   └── crypto/             # Password hashing
+└── Makefile                # Build & test automation
 ```
 
-## Kubernetes Deployment
+### Contributing
 
-Example StatefulSet:
-
-```yaml
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: ldaplite
-spec:
-  serviceName: ldaplite
-  replicas: 1
-  selector:
-    matchLabels:
-      app: ldaplite
-  template:
-    metadata:
-      labels:
-        app: ldaplite
-    spec:
-      containers:
-      - name: ldaplite
-        image: ldaplite:latest
-        ports:
-        - containerPort: 3389
-          name: ldap
-        env:
-        - name: LDAP_BASE_DN
-          value: dc=example,dc=com
-        - name: LDAP_ADMIN_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: ldaplite-secret
-              key: admin-password
-        volumeMounts:
-        - name: data
-          mountPath: /data
-        livenessProbe:
-          exec:
-            command:
-            - /usr/local/bin/ldaplite
-            - healthcheck
-          initialDelaySeconds: 10
-          periodSeconds: 30
-  volumeClaimTemplates:
-  - metadata:
-      name: data
-    spec:
-      accessModes: [ "ReadWriteOnce" ]
-      resources:
-        requests:
-          storage: 1Gi
-```
-
-## Troubleshooting
-
-### Database Errors
-
-Check database permissions:
-```bash
-ls -la /data/ldaplite.db
-chmod 700 /data
-```
-
-### Connection Issues
-
-Verify server is running:
-```bash
-# Check logs
-docker logs ldaplite
-
-# Test connection
-ldapwhoami -H ldap://localhost:3389 \
-  -D "cn=admin,dc=example,dc=com" \
-  -w password
-```
-
-### Authentication Failures
-
-Ensure admin user was created:
-```bash
-# Check admin user exists
-ldapsearch -H ldap://localhost:3389 \
-  -b "cn=admin,dc=example,dc=com" \
-  -x
-```
-
-## Performance Considerations
-
-- SQLite is suitable for small to medium deployments
-- Typical queries: < 100ms for 10k+ entries
-- Group membership queries use recursive SQL CTEs (optimized)
-- Indexes on DN, OU, CN for fast lookups
-- Connection pooling: 25 max open connections (configurable)
-
-## Security Best Practices
-
-1. **Passwords**: Use strong admin password
-2. **TLS**: Use reverse proxy (Nginx/Traefik) for TLS
-3. **Network**: Restrict LDAP port access to trusted networks
-4. **Data**: Regular SQLite database backups
-5. **Logs**: Monitor logs for failed authentication attempts
-6. **Container**: Run as non-root user (distroless image handles this)
+Contributions welcome! Please ensure:
+- Tests pass: `make test`
+- Code is formatted: `go fmt ./...`
+- Commits are clear and focused
 
 ## License
 
-MIT
-
-## Contributing
-
-Contributions welcome! Please ensure:
-- Code follows Go conventions
-- Tests pass and coverage maintained
-- Commits are clear and well-documented
-
-## Roadmap
-
-- [ ] Full search filter parsing and evaluation
-- [ ] Add/Modify/Delete operations implementation
-- [ ] TLS support (StartTLS)
-- [ ] SASL authentication
-- [ ] Schema validation
-- [ ] Connection pooling optimization
-- [ ] Performance benchmarks
-- [ ] Admin CLI tools
-- [ ] Web UI (optional)
-- [ ] Replication support
+MIT License - See [LICENSE](LICENSE) file for details.
 
 ## Support
 
-For issues, questions, or contributions, please open an issue on GitHub.
+- **Issues**: [GitHub Issues](https://github.com/smarzola/ldaplite/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/smarzola/ldaplite/discussions)
+
+## Acknowledgments
+
+Built with:
+- [vjeantet/ldapserver](https://github.com/vjeantet/ldapserver) - LDAP protocol implementation
+- [modernc.org/sqlite](https://modernc.org/sqlite) - Pure Go SQLite driver
+- [Claude Code](https://claude.com/claude-code) - AI pair programming assistant
 
 ---
 
-**Version**: 0.1.0
-**Status**: Beta - For testing and development
+**Current Version**: v0.3.1
+**Status**: Beta - Suitable for development, testing, and homelab use
