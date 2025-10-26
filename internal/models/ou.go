@@ -2,7 +2,6 @@ package models
 
 import (
 	"fmt"
-	"strings"
 )
 
 // OrganizationalUnit represents an LDAP organizational unit (ou)
@@ -39,30 +38,4 @@ func (o *OrganizationalUnit) ValidateOU() error {
 	}
 
 	return nil
-}
-
-// SetDescription sets the OU's description
-func (o *OrganizationalUnit) SetDescription(description string) {
-	o.Entry.SetAttribute("description", description)
-}
-
-// GetDescription returns the OU's description
-func (o *OrganizationalUnit) GetDescription() string {
-	return o.Entry.GetAttribute("description")
-}
-
-// ExtractOUFromDN extracts the OU from a DN
-// e.g., "ou=users,dc=example,dc=com" -> "users"
-func ExtractOUNameFromDN(dn string) (string, error) {
-	parts := strings.SplitN(dn, ",", 2)
-	if len(parts) == 0 {
-		return "", fmt.Errorf("invalid DN format: %s", dn)
-	}
-
-	rdnParts := strings.SplitN(parts[0], "=", 2)
-	if len(rdnParts) != 2 || strings.ToLower(rdnParts[0]) != "ou" {
-		return "", fmt.Errorf("DN does not contain ou: %s", dn)
-	}
-
-	return rdnParts[1], nil
 }

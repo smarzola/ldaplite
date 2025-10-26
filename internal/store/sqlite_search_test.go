@@ -57,7 +57,7 @@ func setupTestStore(t *testing.T) *SQLiteStore {
 	}
 
 	for _, u := range users {
-		user := models.NewUser("dc=test,dc=com", u.uid, u.cn, u.sn, u.givenName, u.mail)
+		user := models.NewUser("dc=test,dc=com", u.uid, u.cn, u.sn, u.mail)
 		// SetPassword expects a hashed password with LDAP scheme prefix
 		user.SetPassword("{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=2$dummyhash$dummyhash")
 		if err := store.CreateEntry(ctx, user.Entry); err != nil {

@@ -14,15 +14,7 @@ func TestNewOrganizationalUnit(t *testing.T) {
 	assert.Equal(t, "ou=users,dc=example,dc=com", ou.DN)
 	assert.Equal(t, "users", ou.OU)
 	assert.True(t, ou.IsOrganizationalUnit())
-	assert.Equal(t, "User Organization Unit", ou.GetDescription())
-}
-
-func TestOUSetDescription(t *testing.T) {
-	ou := NewOrganizationalUnit("dc=example,dc=com", "users", "Initial Description")
-
-	ou.SetDescription("Updated Description")
-
-	assert.Equal(t, "Updated Description", ou.GetDescription())
+	assert.Equal(t, "User Organization Unit", ou.Entry.GetAttribute("description"))
 }
 
 func TestValidateOU(t *testing.T) {
@@ -38,52 +30,7 @@ func TestValidateOUMissingAttribute(t *testing.T) {
 
 	err := ou.ValidateOU()
 	assert.Error(t, err)
-}
-
-func TestExtractOUNameFromDN(t *testing.T) {
-	tests := []struct {
-		name    string
-		dn      string
-		ouName  string
-		wantErr bool
-	}{
-		{
-			name:    "valid ou dn",
-			dn:      "ou=users,dc=example,dc=com",
-			ouName:  "users",
-			wantErr: false,
-		},
-		{
-			name:    "groups ou",
-			dn:      "ou=groups,dc=example,dc=com",
-			ouName:  "groups",
-			wantErr: false,
-		},
-		{
-			name:    "invalid dn",
-			dn:      "uid=john,dc=example,dc=com",
-			ouName:  "",
-			wantErr: true,
-		},
-		{
-			name:    "empty dn",
-			dn:      "",
-			ouName:  "",
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ouName, err := ExtractOUNameFromDN(tt.dn)
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.ouName, ouName)
-			}
-		})
-	}
+	assert.Contains(t, err.Error(), "ou")
 }
 
 func TestOUHierarchy(t *testing.T) {

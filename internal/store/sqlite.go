@@ -138,7 +138,7 @@ func (s *SQLiteStore) initializeDatabase(ctx context.Context) error {
 	}
 
 	// Create admin user
-	adminUser := models.NewUser(baseDN, "admin", "Administrator", "Administrator", "Administrator", "admin@example.com")
+	adminUser := models.NewUser(baseDN, "admin", "Administrator", "Administrator", "admin@example.com")
 	hashedPassword, err := s.hasher.Hash(adminPassword)
 	if err != nil {
 		return fmt.Errorf("failed to hash admin password: %w", err)
