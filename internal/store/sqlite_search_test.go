@@ -58,9 +58,9 @@ func setupTestStore(t *testing.T) *SQLiteStore {
 
 	for _, u := range users {
 		user := models.NewUser("dc=test,dc=com", u.uid, u.cn, u.sn, u.givenName, u.mail)
-		// SetPassword expects a hashed password, but for testing we'll use a dummy hash
-		user.SetPassword("$argon2id$v=19$m=65536,t=3,p=2$dummyhash")
-		if err := store.CreateUser(ctx, user); err != nil {
+		// SetPassword expects a hashed password with LDAP scheme prefix
+		user.SetPassword("{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=2$dummyhash$dummyhash")
+		if err := store.CreateEntry(ctx, user.Entry); err != nil {
 			t.Fatalf("failed to create user %s: %v", u.uid, err)
 		}
 	}
@@ -68,14 +68,14 @@ func setupTestStore(t *testing.T) *SQLiteStore {
 	// Create groups
 	admins := models.NewGroup("dc=test,dc=com", "admins", "Administrators group")
 	admins.AddMember("uid=jdoe,ou=users,dc=test,dc=com")
-	if err := store.CreateGroup(ctx, admins); err != nil {
+	if err := store.CreateEntry(ctx, admins.Entry); err != nil {
 		t.Fatalf("failed to create admins group: %v", err)
 	}
 
 	developers := models.NewGroup("dc=test,dc=com", "developers", "Developers group")
 	developers.AddMember("uid=jsmith,ou=users,dc=test,dc=com")
 	developers.AddMember("uid=bob,ou=users,dc=test,dc=com")
-	if err := store.CreateGroup(ctx, developers); err != nil {
+	if err := store.CreateEntry(ctx, developers.Entry); err != nil {
 		t.Fatalf("failed to create developers group: %v", err)
 	}
 

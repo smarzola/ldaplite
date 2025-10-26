@@ -123,21 +123,40 @@ func (s *Server) handleBind(w ldapserver.ResponseWriter, m *ldapserver.Message) 
 		return
 	}
 
-	// Check if user exists and password matches
-	user, err := s.store.GetUserByUID(ctx, extractUID(dn))
-	if err != nil || user == nil {
-		slog.Debug("User not found or error", "dn", dn, "error", err)
+	// Find user by UID using search
+	uid := extractUID(dn)
+	if uid == "" {
+		slog.Debug("Failed to extract UID from DN", "dn", dn)
+		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
+		return
+	}
+
+	// Search for user entry with matching uid
+	entries, err := s.store.SearchEntries(ctx, s.cfg.LDAP.BaseDN, fmt.Sprintf("(uid=%s)", uid))
+	if err != nil {
+		slog.Debug("Search error during bind", "dn", dn, "error", err)
+		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
+		return
+	}
+
+	// Should find exactly one user
+	if len(entries) != 1 {
+		slog.Debug("User not found or multiple users found", "dn", dn, "count", len(entries))
+		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
+		return
+	}
+
+	entry := entries[0]
+
+	// Get password from entry
+	userPassword := entry.GetAttribute("userPassword")
+	if userPassword == "" {
 		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
 		return
 	}
 
 	// Verify password
-	if user.Password == "" {
-		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
-		return
-	}
-
-	verified, err := s.hasher.Verify(password, user.Password)
+	verified, err := s.hasher.Verify(password, userPassword)
 	if err != nil || !verified {
 		slog.Debug("Password verification failed", "dn", dn)
 		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
@@ -292,6 +311,17 @@ func (s *Server) handleAdd(w ldapserver.ResponseWriter, m *ldapserver.Message) {
 		}
 	}
 
+	// Special handling for userPassword - must be hashed with scheme prefix
+	if userPassword := entry.GetAttribute("userPassword"); userPassword != "" {
+		processedPassword, err := s.hasher.ProcessPassword(userPassword)
+		if err != nil {
+			slog.Debug("Invalid password format", "dn", dn, "error", err)
+			w.Write(ldapserver.NewAddResponse(ldapserver.LDAPResultConstraintViolation))
+			return
+		}
+		entry.SetAttribute("userPassword", processedPassword)
+	}
+
 	// Determine object class and handle accordingly
 	objectClasses := entry.GetAttribute("objectClass")
 	if objectClasses == "" {
@@ -396,8 +426,21 @@ func (s *Server) handleModify(w ldapserver.ResponseWriter, m *ldapserver.Message
 		switch opType {
 		case 0: // Add
 			slog.Debug("Add attribute", "attr", attrType)
-			for _, val := range vals {
-				entry.AddAttribute(attrType, string(val))
+			if attrType == "userPassword" {
+				// Process password values
+				for _, val := range vals {
+					processedPassword, err := s.hasher.ProcessPassword(string(val))
+					if err != nil {
+						slog.Debug("Invalid password format", "dn", dn, "error", err)
+						w.Write(ldapserver.NewModifyResponse(ldapserver.LDAPResultConstraintViolation))
+						return
+					}
+					entry.AddAttribute(attrType, processedPassword)
+				}
+			} else {
+				for _, val := range vals {
+					entry.AddAttribute(attrType, string(val))
+				}
 			}
 
 		case 1: // Delete
@@ -407,23 +450,26 @@ func (s *Server) handleModify(w ldapserver.ResponseWriter, m *ldapserver.Message
 				entry.RemoveAttribute(attrType)
 			} else {
 				// Delete specific values
-				for _, val := range vals {
-					// Remove specific value (requires supporting method)
-					existing := entry.GetAttributes(attrType)
-					newVals := []string{}
-					valStr := string(val)
-					for _, v := range existing {
-						if v != valStr {
-							newVals = append(newVals, v)
+				existing := entry.GetAttributes(attrType)
+				newVals := []string{}
+				for _, v := range existing {
+					shouldKeep := true
+					for _, val := range vals {
+						if v == string(val) {
+							shouldKeep = false
+							break
 						}
 					}
-					if len(newVals) == 0 {
-						entry.RemoveAttribute(attrType)
-					} else {
-						entry.RemoveAttribute(attrType)
-						for _, v := range newVals {
-							entry.AddAttribute(attrType, v)
-						}
+					if shouldKeep {
+						newVals = append(newVals, v)
+					}
+				}
+				if len(newVals) == 0 {
+					entry.RemoveAttribute(attrType)
+				} else {
+					entry.RemoveAttribute(attrType)
+					for _, v := range newVals {
+						entry.AddAttribute(attrType, v)
 					}
 				}
 			}
@@ -431,8 +477,21 @@ func (s *Server) handleModify(w ldapserver.ResponseWriter, m *ldapserver.Message
 		case 2: // Replace
 			slog.Debug("Replace attribute", "attr", attrType)
 			entry.RemoveAttribute(attrType)
-			for _, val := range vals {
-				entry.AddAttribute(attrType, string(val))
+			if attrType == "userPassword" {
+				// Process password values
+				for _, val := range vals {
+					processedPassword, err := s.hasher.ProcessPassword(string(val))
+					if err != nil {
+						slog.Debug("Invalid password format", "dn", dn, "error", err)
+						w.Write(ldapserver.NewModifyResponse(ldapserver.LDAPResultConstraintViolation))
+						return
+					}
+					entry.AddAttribute(attrType, processedPassword)
+				}
+			} else {
+				for _, val := range vals {
+					entry.AddAttribute(attrType, string(val))
+				}
 			}
 		}
 	}

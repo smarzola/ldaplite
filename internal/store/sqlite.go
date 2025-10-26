@@ -131,7 +131,7 @@ func (s *SQLiteStore) initializeDatabase(ctx context.Context) error {
 
 	for _, ou := range ousToCreate {
 		ouEntry := models.NewOrganizationalUnit(baseDN, ou.name, ou.desc)
-		if err := s.CreateOU(ctx, ouEntry); err != nil {
+		if err := s.CreateEntry(ctx, ouEntry.Entry); err != nil {
 			return fmt.Errorf("failed to create OU %s: %w", ou.name, err)
 		}
 		slog.Info("Created OU", "dn", ouEntry.DN)
@@ -145,7 +145,7 @@ func (s *SQLiteStore) initializeDatabase(ctx context.Context) error {
 	}
 
 	adminUser.SetPassword(hashedPassword)
-	if err := s.CreateUser(ctx, adminUser); err != nil {
+	if err := s.CreateEntry(ctx, adminUser.Entry); err != nil {
 		return fmt.Errorf("failed to create admin user: %w", err)
 	}
 
@@ -266,8 +266,13 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 		}
 	}
 
-	// Handle type-specific entries
+	// Validate and handle type-specific entries
 	if entry.IsUser() {
+		// Validate user-specific requirements
+		user := &models.User{Entry: entry, UID: entry.GetAttribute("uid")}
+		if err := user.ValidateUser(); err != nil {
+			return err
+		}
 		uid := entry.GetAttribute("uid")
 		if uid == "" {
 			return fmt.Errorf("user entry missing uid attribute")
@@ -278,6 +283,11 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 			return fmt.Errorf("failed to create user entry: %w", err)
 		}
 	} else if entry.IsGroup() {
+		// Validate group-specific requirements
+		group := &models.Group{Entry: entry, CN: entry.GetAttribute("cn")}
+		if err := group.ValidateGroup(); err != nil {
+			return err
+		}
 		cn := entry.GetAttribute("cn")
 		if cn == "" {
 			return fmt.Errorf("group entry missing cn attribute")
@@ -287,6 +297,11 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 			return fmt.Errorf("failed to create group entry: %w", err)
 		}
 	} else if entry.IsOrganizationalUnit() {
+		// Validate OU-specific requirements
+		ouModel := &models.OrganizationalUnit{Entry: entry, OU: entry.GetAttribute("ou")}
+		if err := ouModel.ValidateOU(); err != nil {
+			return err
+		}
 		ou := entry.GetAttribute("ou")
 		if ou == "" {
 			return fmt.Errorf("OU entry missing ou attribute")

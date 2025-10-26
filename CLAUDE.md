@@ -84,14 +84,21 @@ ldapwhoami -H ldap://localhost:3389 -D "cn=admin,dc=example,dc=com" -w ChangeMe1
 **Server Layer** (`internal/server/ldap.go`)
 - LDAP protocol handler using vjeantet/ldapserver library
 - Handles: Bind, Search, Add, Delete, Modify, Compare operations
-- Routes LDAP operations to store layer
-- Password verification using Argon2id hasher
+- **Routes all operations to generic store.Entry methods** - no type-specific code
+- Bind operation: Uses `SearchEntries` with filter `(uid=xxx)` to find user and verify password
+- Automatic password processing in Add/Modify operations (hashes plain text, validates pre-hashed)
+- Password verification using Argon2id hasher for Bind operations
 
 **Store Layer** (`internal/store/`)
 - Interface-based design (`store.go` defines `Store` interface)
-- SQLite implementation in `sqlite.go`, `sqlite_users.go`, `sqlite_groups.go`, `sqlite_ous.go`
-- Handles all database operations with recursive group queries using SQL CTEs
-- Entry, User, Group, OU CRUD operations
+- SQLite implementation in `sqlite.go` - single file, simple and focused
+- **Pure entry-based API** - all operations work with generic `Entry` objects
+- Interface methods:
+  - `CreateEntry`, `GetEntry`, `UpdateEntry`, `DeleteEntry` - CRUD operations
+  - `SearchEntries` - filter-based search across all entry types
+  - `EntryExists` - validation helper
+  - `GetAllEntries`, `GetChildren` - utility methods
+- `CreateEntry` automatically detects objectClass and handles Users, Groups, OUs with proper validation
 
 **Models Layer** (`internal/models/`)
 - `Entry`: Base LDAP entry (DN, object classes, attributes)
@@ -110,6 +117,9 @@ ldapwhoami -H ldap://localhost:3389 -D "cn=admin,dc=example,dc=com" -w ChangeMe1
 
 **Crypto Layer** (`pkg/crypto/`)
 - Argon2id password hashing with OWASP-recommended parameters
+- LDAP RFC 3112 compliant password scheme format: `{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=2$salt$hash`
+- `ProcessPassword()` method handles both plain text (auto-hashed) and pre-hashed passwords
+- Rejects unsupported password schemes (currently only {ARGON2ID} supported)
 - Constant-time password verification
 - Configurable via environment variables
 
@@ -191,14 +201,20 @@ These attributes are automatically added to all entries by the server and cannot
 ### Adding New Features
 
 **New LDAP attributes:**
-1. Update model in `internal/models/`
-2. Update SQLite implementation in `internal/store/sqlite_*.go`
-3. Add attribute handling in `internal/server/ldap.go`
+1. Update model in `internal/models/` (e.g., add validation in User/Group/OU struct)
+2. Attributes are stored automatically via the generic `Entry.Attributes` map - no store changes needed
+3. Add any special handling in `internal/server/ldap.go` if required (like userPassword processing)
 
 **New LDAP operations:**
 1. Add handler in `internal/server/ldap.go`
 2. Register in route mux (`Start()` method)
-3. Implement store method in `internal/store/`
+3. Use existing `CreateEntry`, `GetEntry`, `UpdateEntry`, `DeleteEntry`, or `SearchEntries` store methods
+
+**New object classes:**
+1. Add model struct in `internal/models/` (embed `*Entry`)
+2. Add validation method (e.g., `ValidateXxx()`)
+3. Update `CreateEntry` in `sqlite.go` to detect and validate the new objectClass
+4. Add type-specific table/columns if needed (similar to users/groups/organizational_units tables)
 
 ### Testing Strategy
 
@@ -213,10 +229,21 @@ Integration tests can use in-memory SQLite (`:memory:`).
 ### Important Implementation Details
 
 1. **DN Normalization**: DNs are case-insensitive, normalize before comparisons
-2. **Password Hashing**: Always use `crypto.PasswordHasher`, never store plaintext
-3. **Group Nesting**: Always check for circular references, limit recursion depth
-4. **Filter Evaluation**: Basic implementation in `internal/schema/filter.go`, may need extension for complex filters
-5. **Error Handling**: Return LDAP result codes (Success, NoSuchObject, InvalidCredentials, etc.)
+2. **Password Handling**:
+   - All passwords stored with LDAP scheme prefix: `{ARGON2ID}$argon2id$...`
+   - LDAP Add/Modify operations automatically process `userPassword` attribute via `ProcessPassword()`
+   - Plain text passwords are automatically hashed with scheme prefix
+   - Pre-hashed passwords with `{ARGON2ID}` prefix are validated and accepted as-is
+   - Passwords with unsupported schemes (e.g., `{SSHA}`) are rejected with ConstraintViolation
+   - Never store plaintext passwords
+3. **Entry Creation**:
+   - Use `CreateEntry` for all entry types (users, groups, OUs)
+   - It automatically detects objectClass and validates/stores accordingly
+   - No type-specific Create/Update/Delete methods exist - everything goes through generic Entry methods
+   - Server uses `SearchEntries` for lookups instead of type-specific Get methods (e.g., Bind uses `(uid=xxx)` filter)
+4. **Group Nesting**: Always check for circular references, limit recursion depth
+5. **Filter Evaluation**: Basic implementation in `internal/schema/filter.go`, may need extension for complex filters
+6. **Error Handling**: Return LDAP result codes (Success, NoSuchObject, InvalidCredentials, ConstraintViolation, etc.)
 
 ## Current Limitations
 
