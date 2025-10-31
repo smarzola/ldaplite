@@ -3,48 +3,47 @@ package server
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
+	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lor00x/goldap/message"
-	"github.com/vjeantet/ldapserver"
 
 	"github.com/smarzola/ldaplite/internal/models"
+	"github.com/smarzola/ldaplite/internal/protocol"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/smarzola/ldaplite/pkg/crypto"
 )
 
-// NullWriter discards all writes
-type NullWriter struct{}
-
-func (n *NullWriter) Write(b []byte) (int, error) {
-	return len(b), nil
-}
-
 // Server represents an LDAP server
 type Server struct {
-	cfg     *config.Config
-	store   store.Store
-	hasher  *crypto.PasswordHasher
-	srv     *ldapserver.Server
-	version string
+	cfg      *config.Config
+	store    store.Store
+	hasher   *crypto.PasswordHasher
+	version  string
+	listener net.Listener
+	wg       sync.WaitGroup
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 // NewServer creates a new LDAP server
 func NewServer(cfg *config.Config, st store.Store, version string) *Server {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
 		cfg:     cfg,
 		store:   st,
 		hasher:  crypto.NewPasswordHasher(cfg.Security.Argon2Config),
 		version: version,
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 }
 
 // protectedAttributes lists LDAP operational attributes that cannot be modified by clients
-// Note: objectClass is NOT protected - it's a required user attribute that clients must provide
 var protectedAttributes = []string{
 	"createtimestamp",
 	"modifytimestamp",
@@ -65,47 +64,90 @@ func isProtectedAttribute(attrName string) bool {
 func (s *Server) Start() error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Server.BindAddress, s.cfg.Server.Port)
 
-	// Create route mux for handling LDAP operations
-	routeMux := ldapserver.NewRouteMux()
-	routeMux.Bind(s.handleBind)
-	routeMux.Search(s.handleSearch)
-	routeMux.Add(s.handleAdd)
-	routeMux.Delete(s.handleDelete)
-	routeMux.Modify(s.handleModify)
-	routeMux.Compare(s.handleCompare)
-	routeMux.Extended(s.handleExtended)
-	routeMux.NotFound(s.handleNotFound)
+	var err error
+	s.listener, err = net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to start TCP listener: %w", err)
+	}
 
-	// Create LDAP server
-	ldapserver.Logger = log.New(&NullWriter{}, "", 0) // Redirect ldapserver logs to slog
-	s.srv = ldapserver.NewServer()
-	s.srv.Handle(routeMux)
-
-	// Start server
 	slog.Info("LDAP server starting", "address", addr)
+
+	// Accept connections in a goroutine
+	s.wg.Add(1)
 	go func() {
-		if err := s.srv.ListenAndServe(addr); err != nil {
-			slog.Error("LDAP server error", "error", err)
-		}
+		defer s.wg.Done()
+		s.acceptLoop()
 	}()
 
 	return nil
 }
 
+// acceptLoop accepts incoming connections
+func (s *Server) acceptLoop() {
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			select {
+			case <-s.ctx.Done():
+				// Server is shutting down
+				return
+			default:
+				slog.Error("Failed to accept connection", "error", err)
+				continue
+			}
+		}
+
+		slog.Debug("New connection", "remote", conn.RemoteAddr())
+
+		// Handle connection in a separate goroutine
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.handleConnection(conn)
+		}()
+	}
+}
+
+// handleConnection handles a single client connection
+func (s *Server) handleConnection(conn net.Conn) {
+	// Create operation handlers
+	handlers := protocol.OperationHandlers{
+		OnBind:     s.handleBind,
+		OnSearch:   s.handleSearch,
+		OnAdd:      s.handleAdd,
+		OnModify:   s.handleModify,
+		OnDelete:   s.handleDelete,
+		OnCompare:  s.handleCompare,
+		OnExtended: s.handleExtended,
+		OnUnbind:   s.handleUnbind,
+	}
+
+	// Create connection wrapper
+	ldapConn := protocol.NewConnection(conn, handlers)
+
+	// Handle the connection
+	if err := ldapConn.Handle(s.ctx); err != nil {
+		if err != context.Canceled {
+			slog.Debug("Connection closed", "remote", conn.RemoteAddr(), "error", err)
+		}
+	}
+}
+
 // Stop stops the LDAP server
 func (s *Server) Stop() error {
-	if s.srv != nil {
-		s.srv.Stop()
+	if s.listener != nil {
+		s.cancel()         // Cancel context to stop accept loop
+		s.listener.Close() // Close listener to unblock Accept()
+		s.wg.Wait()        // Wait for all connections to close
 	}
 	return nil
 }
 
 // handleBind handles bind operations
-func (s *Server) handleBind(w ldapserver.ResponseWriter, m *ldapserver.Message) {
+func (s *Server) handleBind(conn *protocol.Connection, msg *message.LDAPMessage) error {
 	ctx := context.Background()
 
-	// Get bind request details from message
-	bindReq := m.GetBindRequest()
+	bindReq := msg.ProtocolOp().(message.BindRequest)
 	dn := string(bindReq.Name())
 	password := string(bindReq.AuthenticationSimple())
 
@@ -115,74 +157,65 @@ func (s *Server) handleBind(w ldapserver.ResponseWriter, m *ldapserver.Message) 
 	if dn == "" || password == "" {
 		if s.cfg.Security.AllowAnonymousBind {
 			slog.Debug("Anonymous bind allowed")
-			w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultSuccess))
-			return
+			return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeSuccess))
 		}
 		slog.Info("Anonymous bind rejected - not allowed by configuration")
-		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
 	// Extract UID from DN
 	uid := extractUID(dn)
 	if uid == "" {
 		slog.Debug("Failed to extract UID from DN", "dn", dn)
-		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
-	// Get password hash directly from users table (not exposed in attributes/search results)
+	// Get password hash directly from users table
 	userPassword, err := s.store.GetUserPasswordHash(ctx, uid)
 	if err != nil {
 		slog.Debug("Error retrieving password hash", "dn", dn, "error", err)
-		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
 	if userPassword == "" {
 		slog.Debug("User not found or no password set", "dn", dn)
-		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
 	// Verify password
 	verified, err := s.hasher.Verify(password, userPassword)
 	if err != nil || !verified {
 		slog.Debug("Password verification failed", "dn", dn)
-		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
 	slog.Debug("Bind successful", "dn", dn)
-	w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultSuccess))
+	return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeSuccess))
 }
 
 // handleSearch handles search operations
-func (s *Server) handleSearch(w ldapserver.ResponseWriter, m *ldapserver.Message) {
+func (s *Server) handleSearch(conn *protocol.Connection, msg *message.LDAPMessage) error {
 	ctx := context.Background()
 
-	searchReq := m.GetSearchRequest()
+	searchReq := msg.ProtocolOp().(message.SearchRequest)
 	baseDN := string(searchReq.BaseObject())
 	scope := int(searchReq.Scope())
 
 	// Handle RootDSE queries (empty base DN)
 	if baseDN == "" {
 		slog.Debug("RootDSE query")
-		s.handleRootDSE(w, m)
-		return
+		return s.handleRootDSE(conn, msg)
 	}
 
 	// Handle schema queries
 	if baseDN == "cn=Subschema" || baseDN == "cn=subschema" {
 		slog.Debug("Schema query")
-		s.handleSchema(w, m)
-		return
+		return s.handleSchema(conn, msg)
 	}
 
-	// Get filter from request and serialize it to string
+	// Get filter from request
 	filterStr := serializeFilter(searchReq.Filter())
 	if filterStr == "" {
-		// Default to matching everything if no filter provided
 		filterStr = "(objectClass=*)"
 	}
 
@@ -191,17 +224,14 @@ func (s *Server) handleSearch(w ldapserver.ResponseWriter, m *ldapserver.Message
 	entries, err := s.store.SearchEntries(ctx, baseDN, filterStr)
 	if err != nil {
 		slog.Error("Search error", "error", err)
-		w.Write(ldapserver.NewSearchResultDoneResponse(ldapserver.LDAPResultOperationsError))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewSearchResultDone(message.ResultCodeOperationsError))
 	}
 
-	// Return matching entries with attributes
-	// Note: entries are already filtered by SearchEntries (SQL or in-memory)
+	// Return matching entries
 	for _, entry := range entries {
 		// Apply scope filtering
-		// Scope: 0=base (only baseDN), 1=one level (immediate children), 2=subtree (all descendants)
 		switch scope {
-		case 0: // base - only return exact match
+		case 0: // base - only exact match
 			if !strings.EqualFold(entry.DN, baseDN) {
 				continue
 			}
@@ -209,46 +239,35 @@ func (s *Server) handleSearch(w ldapserver.ResponseWriter, m *ldapserver.Message
 			if !strings.EqualFold(entry.ParentDN, baseDN) {
 				continue
 			}
-			// case 2: subtree - return all (default behavior)
 		}
 
-		// Build and send the LDAP search result entry
-		result := ldapserver.NewSearchResultEntry(entry.DN)
+		// Build search result entry
+		result := protocol.NewSearchResultEntry(entry.DN)
 
 		// Add objectClass attribute
 		if entry.ObjectClass != "" {
-			result.AddAttribute(
-				message.AttributeDescription("objectClass"),
-				message.AttributeValue(entry.ObjectClass),
-			)
+			protocol.AddAttribute(&result, "objectClass", entry.ObjectClass)
 		}
 
-		// Add all other attributes from the entry
+		// Add all other attributes
 		for attrName, attrValues := range entry.Attributes {
-			// Convert string values to goldap AttributeValue types
-			goldapValues := make([]message.AttributeValue, len(attrValues))
-			for i, val := range attrValues {
-				goldapValues[i] = message.AttributeValue(val)
-			}
-
-			// Add the attribute with all its values
-			result.AddAttribute(
-				message.AttributeDescription(attrName),
-				goldapValues...,
-			)
+			protocol.AddAttribute(&result, attrName, attrValues...)
 		}
 
-		w.Write(result)
+		// Write entry
+		if err := conn.WriteResponse(msg.MessageID(), result); err != nil {
+			return err
+		}
 	}
 
 	slog.Debug("Search completed", "baseDN", baseDN, "results", len(entries))
-	w.Write(ldapserver.NewSearchResultDoneResponse(ldapserver.LDAPResultSuccess))
+	return conn.WriteResponse(msg.MessageID(), protocol.NewSearchResultDone(message.ResultCodeSuccess))
 }
 
 // handleAdd handles add operations
-func (s *Server) handleAdd(w ldapserver.ResponseWriter, m *ldapserver.Message) {
+func (s *Server) handleAdd(conn *protocol.Connection, msg *message.LDAPMessage) error {
 	ctx := context.Background()
-	addReq := m.GetAddRequest()
+	addReq := msg.ProtocolOp().(message.AddRequest)
 
 	dn := string(addReq.Entry())
 	slog.Debug("Add request", "dn", dn)
@@ -257,24 +276,21 @@ func (s *Server) handleAdd(w ldapserver.ResponseWriter, m *ldapserver.Message) {
 	exists, err := s.store.EntryExists(ctx, dn)
 	if err != nil {
 		slog.Error("Failed to check entry existence", "dn", dn, "error", err)
-		w.Write(ldapserver.NewAddResponse(ldapserver.LDAPResultOperationsError))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeOperationsError))
 	}
 
 	if exists {
 		slog.Debug("Entry already exists", "dn", dn)
-		w.Write(ldapserver.NewAddResponse(ldapserver.LDAPResultEntryAlreadyExists))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeEntryAlreadyExists))
 	}
 
-	// Extract parent DN from the full DN
-	// e.g., "uid=john,ou=users,dc=example,dc=com" -> "ou=users,dc=example,dc=com"
+	// Extract parent DN
 	parentDN := ""
 	if idx := findFirstComma(dn); idx >= 0 && idx+1 < len(dn) {
 		parentDN = dn[idx+1:]
 	}
 
-	// Create new entry with proper timestamps
+	// Create new entry
 	entry := &models.Entry{
 		DN:         dn,
 		ParentDN:   parentDN,
@@ -283,16 +299,15 @@ func (s *Server) handleAdd(w ldapserver.ResponseWriter, m *ldapserver.Message) {
 		UpdatedAt:  time.Now(),
 	}
 
-	// Parse and add attributes from request
+	// Parse attributes
 	attrs := addReq.Attributes()
 	for _, attr := range attrs {
 		name := string(attr.Type_())
 
-		// Check if trying to set protected operational attributes
+		// Check protected attributes
 		if isProtectedAttribute(name) {
 			slog.Debug("Attempt to set protected attribute", "dn", dn, "attribute", name)
-			w.Write(ldapserver.NewAddResponse(ldapserver.LDAPResultUnwillingToPerform))
-			return
+			return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeUnwillingToPerform))
 		}
 
 		values := attr.Vals()
@@ -301,26 +316,23 @@ func (s *Server) handleAdd(w ldapserver.ResponseWriter, m *ldapserver.Message) {
 		}
 	}
 
-	// Special handling for userPassword - must be hashed with scheme prefix
+	// Process userPassword
 	if userPassword := entry.GetAttribute("userPassword"); userPassword != "" {
 		processedPassword, err := s.hasher.ProcessPassword(userPassword)
 		if err != nil {
 			slog.Debug("Invalid password format", "dn", dn, "error", err)
-			w.Write(ldapserver.NewAddResponse(ldapserver.LDAPResultConstraintViolation))
-			return
+			return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeConstraintViolation))
 		}
 		entry.SetAttribute("userPassword", processedPassword)
 	}
 
-	// Determine object class and handle accordingly
+	// Determine object class
 	objectClasses := entry.GetAttribute("objectClass")
 	if objectClasses == "" {
 		slog.Debug("No objectClass provided", "dn", dn)
-		w.Write(ldapserver.NewAddResponse(ldapserver.LDAPResultObjectClassViolation))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeObjectClassViolation))
 	}
 
-	// Set the primary object class (use first objectClass value if multiple)
 	entry.ObjectClass = objectClasses
 	allClasses := entry.GetAttributes("objectClass")
 	if len(allClasses) > 0 {
@@ -329,21 +341,20 @@ func (s *Server) handleAdd(w ldapserver.ResponseWriter, m *ldapserver.Message) {
 
 	slog.Debug("Creating entry", "dn", dn, "objectClass", objectClasses)
 
-	// Store the entry
+	// Store entry
 	if err := s.store.CreateEntry(ctx, entry); err != nil {
 		slog.Error("Failed to create entry", "dn", dn, "error", err)
-		w.Write(ldapserver.NewAddResponse(ldapserver.LDAPResultOperationsError))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeOperationsError))
 	}
 
 	slog.Info("Entry created", "dn", dn)
-	w.Write(ldapserver.NewAddResponse(ldapserver.LDAPResultSuccess))
+	return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeSuccess))
 }
 
 // handleDelete handles delete operations
-func (s *Server) handleDelete(w ldapserver.ResponseWriter, m *ldapserver.Message) {
+func (s *Server) handleDelete(conn *protocol.Connection, msg *message.LDAPMessage) error {
 	ctx := context.Background()
-	delReq := m.GetDeleteRequest()
+	delReq := msg.ProtocolOp().(message.DelRequest)
 
 	dn := string(delReq)
 	slog.Debug("Delete request", "dn", dn)
@@ -352,46 +363,41 @@ func (s *Server) handleDelete(w ldapserver.ResponseWriter, m *ldapserver.Message
 	exists, err := s.store.EntryExists(ctx, dn)
 	if err != nil {
 		slog.Error("Failed to check entry existence", "dn", dn, "error", err)
-		w.Write(ldapserver.NewDeleteResponse(ldapserver.LDAPResultOperationsError))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewDelResponse(message.ResultCodeOperationsError))
 	}
 
 	if !exists {
 		slog.Debug("Entry not found", "dn", dn)
-		w.Write(ldapserver.NewDeleteResponse(ldapserver.LDAPResultNoSuchObject))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewDelResponse(message.ResultCodeNoSuchObject))
 	}
 
 	if err := s.store.DeleteEntry(ctx, dn); err != nil {
 		slog.Error("Failed to delete entry", "dn", dn, "error", err)
-		w.Write(ldapserver.NewDeleteResponse(ldapserver.LDAPResultOperationsError))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewDelResponse(message.ResultCodeOperationsError))
 	}
 
 	slog.Info("Entry deleted", "dn", dn)
-	w.Write(ldapserver.NewDeleteResponse(ldapserver.LDAPResultSuccess))
+	return conn.WriteResponse(msg.MessageID(), protocol.NewDelResponse(message.ResultCodeSuccess))
 }
 
 // handleModify handles modify operations
-func (s *Server) handleModify(w ldapserver.ResponseWriter, m *ldapserver.Message) {
+func (s *Server) handleModify(conn *protocol.Connection, msg *message.LDAPMessage) error {
 	ctx := context.Background()
-	modReq := m.GetModifyRequest()
+	modReq := msg.ProtocolOp().(message.ModifyRequest)
 
 	dn := string(modReq.Object())
 	slog.Debug("Modify request", "dn", dn)
 
-	// Get the entry
+	// Get entry
 	entry, err := s.store.GetEntry(ctx, dn)
 	if err != nil {
 		slog.Error("Failed to get entry", "dn", dn, "error", err)
-		w.Write(ldapserver.NewModifyResponse(ldapserver.LDAPResultOperationsError))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeOperationsError))
 	}
 
 	if entry == nil {
 		slog.Debug("Entry not found", "dn", dn)
-		w.Write(ldapserver.NewModifyResponse(ldapserver.LDAPResultNoSuchObject))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeNoSuchObject))
 	}
 
 	// Apply modifications
@@ -400,30 +406,24 @@ func (s *Server) handleModify(w ldapserver.ResponseWriter, m *ldapserver.Message
 		modification := change.Modification()
 		attrType := string(modification.Type_())
 
-		// Check if trying to modify protected operational attributes
+		// Check protected attributes
 		if isProtectedAttribute(attrType) {
 			slog.Debug("Attempt to modify protected attribute", "dn", dn, "attribute", attrType)
-			w.Write(ldapserver.NewModifyResponse(ldapserver.LDAPResultUnwillingToPerform))
-			return
+			return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeUnwillingToPerform))
 		}
 
 		vals := modification.Vals()
-
-		// Get operation type
-		// 0 = Add, 1 = Delete, 2 = Replace
 		opType := int(change.Operation())
 
 		switch opType {
 		case 0: // Add
 			slog.Debug("Add attribute", "attr", attrType)
 			if attrType == "userPassword" {
-				// Process password values
 				for _, val := range vals {
 					processedPassword, err := s.hasher.ProcessPassword(string(val))
 					if err != nil {
 						slog.Debug("Invalid password format", "dn", dn, "error", err)
-						w.Write(ldapserver.NewModifyResponse(ldapserver.LDAPResultConstraintViolation))
-						return
+						return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeConstraintViolation))
 					}
 					entry.AddAttribute(attrType, processedPassword)
 				}
@@ -436,10 +436,8 @@ func (s *Server) handleModify(w ldapserver.ResponseWriter, m *ldapserver.Message
 		case 1: // Delete
 			slog.Debug("Delete attribute", "attr", attrType)
 			if len(vals) == 0 {
-				// Delete all values of this attribute
 				entry.RemoveAttribute(attrType)
 			} else {
-				// Delete specific values
 				existing := entry.GetAttributes(attrType)
 				newVals := []string{}
 				for _, v := range existing {
@@ -468,13 +466,11 @@ func (s *Server) handleModify(w ldapserver.ResponseWriter, m *ldapserver.Message
 			slog.Debug("Replace attribute", "attr", attrType)
 			entry.RemoveAttribute(attrType)
 			if attrType == "userPassword" {
-				// Process password values
 				for _, val := range vals {
 					processedPassword, err := s.hasher.ProcessPassword(string(val))
 					if err != nil {
 						slog.Debug("Invalid password format", "dn", dn, "error", err)
-						w.Write(ldapserver.NewModifyResponse(ldapserver.LDAPResultConstraintViolation))
-						return
+						return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeConstraintViolation))
 					}
 					entry.AddAttribute(attrType, processedPassword)
 				}
@@ -486,120 +482,82 @@ func (s *Server) handleModify(w ldapserver.ResponseWriter, m *ldapserver.Message
 		}
 	}
 
-	// Update the entry in database
+	// Update entry
 	if err := s.store.UpdateEntry(ctx, entry); err != nil {
 		slog.Error("Failed to update entry", "dn", dn, "error", err)
-		w.Write(ldapserver.NewModifyResponse(ldapserver.LDAPResultOperationsError))
-		return
+		return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeOperationsError))
 	}
 
 	slog.Info("Entry modified", "dn", dn)
-	w.Write(ldapserver.NewModifyResponse(ldapserver.LDAPResultSuccess))
+	return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeSuccess))
 }
 
-// handleRootDSE handles RootDSE queries (empty base DN)
-func (s *Server) handleRootDSE(w ldapserver.ResponseWriter, m *ldapserver.Message) {
-	// Create RootDSE entry response
-	entry := ldapserver.NewSearchResultEntry("")
+// handleRootDSE handles RootDSE queries
+func (s *Server) handleRootDSE(conn *protocol.Connection, msg *message.LDAPMessage) error {
+	entry := protocol.NewSearchResultEntry("")
+	protocol.AddAttribute(&entry, "objectClass", "top")
+	protocol.AddAttribute(&entry, "namingContexts", s.cfg.LDAP.BaseDN)
+	protocol.AddAttribute(&entry, "subschemaSubentry", "cn=Subschema")
+	protocol.AddAttribute(&entry, "supportedLDAPVersion", "3")
+	protocol.AddAttribute(&entry, "vendorName", "LDAPLite")
+	protocol.AddAttribute(&entry, "vendorVersion", s.version)
 
-	// Add standard RootDSE attributes using proper goldap types
-	entry.AddAttribute(
-		message.AttributeDescription("objectClass"),
-		message.AttributeValue("top"),
-	)
-	entry.AddAttribute(
-		message.AttributeDescription("namingContexts"),
-		message.AttributeValue(s.cfg.LDAP.BaseDN),
-	)
-	entry.AddAttribute(
-		message.AttributeDescription("subschemaSubentry"),
-		message.AttributeValue("cn=Subschema"),
-	)
-	entry.AddAttribute(
-		message.AttributeDescription("supportedLDAPVersion"),
-		message.AttributeValue("3"),
-	)
-	entry.AddAttribute(
-		message.AttributeDescription("vendorName"),
-		message.AttributeValue("LDAPLite"),
-	)
-	entry.AddAttribute(
-		message.AttributeDescription("vendorVersion"),
-		message.AttributeValue(s.version),
-	)
-
-	// Write the entry
-	w.Write(entry)
-
-	// Write done response
-	w.Write(ldapserver.NewSearchResultDoneResponse(ldapserver.LDAPResultSuccess))
+	if err := conn.WriteResponse(msg.MessageID(), entry); err != nil {
+		return err
+	}
+	return conn.WriteResponse(msg.MessageID(), protocol.NewSearchResultDone(message.ResultCodeSuccess))
 }
 
-// handleSchema handles schema queries (cn=Subschema)
-func (s *Server) handleSchema(w ldapserver.ResponseWriter, m *ldapserver.Message) {
-	// Create schema entry
-	entry := ldapserver.NewSearchResultEntry("cn=Subschema")
-
-	// Add objectClass
-	entry.AddAttribute(
-		message.AttributeDescription("objectClass"),
-		message.AttributeValue("top"),
-		message.AttributeValue("subschema"),
+// handleSchema handles schema queries
+func (s *Server) handleSchema(conn *protocol.Connection, msg *message.LDAPMessage) error {
+	entry := protocol.NewSearchResultEntry("cn=Subschema")
+	protocol.AddAttribute(&entry, "objectClass", "top", "subschema")
+	protocol.AddAttribute(&entry, "objectClasses",
+		"( 2.5.6.0 NAME 'top' DESC 'top of the superclass chain' ABSTRACT MUST objectClass )",
+		"( 2.5.6.6 NAME 'person' DESC 'RFC2256: a person' SUP top STRUCTURAL MUST ( sn $ cn ) MAY ( userPassword $ telephoneNumber $ seeAlso $ description ) )",
+		"( 2.5.6.7 NAME 'organizationalPerson' DESC 'RFC2256: an organizational person' SUP person STRUCTURAL MAY ( title $ x121Address $ registeredAddress $ destinationIndicator $ preferredDeliveryMethod $ telexNumber $ teletexTerminalIdentifier $ telephoneNumber $ internationaliSDNNumber $ facsimileTelephoneNumber $ street $ postOfficeBox $ postalCode $ postalAddress $ physicalDeliveryOfficeName $ ou $ st $ l ) )",
+		"( 2.16.840.1.113730.3.2.2 NAME 'inetOrgPerson' DESC 'RFC2798: Internet Organizational Person' SUP organizationalPerson STRUCTURAL MAY ( audio $ businessCategory $ carLicense $ departmentNumber $ displayName $ employeeNumber $ employeeType $ givenName $ homePhone $ homePostalAddress $ initials $ jpegPhoto $ labeledURI $ mail $ manager $ mobile $ o $ pager $ photo $ roomNumber $ secretary $ uid $ userCertificate $ x500uniqueIdentifier $ preferredLanguage $ userSMIMECertificate $ userPKCS12 ) )",
+		"( 2.5.6.9 NAME 'groupOfNames' DESC 'RFC2256: a group of names (DNs)' SUP top STRUCTURAL MUST ( member $ cn ) MAY ( businessCategory $ seeAlso $ owner $ ou $ o $ description ) )",
+		"( 2.5.6.5 NAME 'organizationalUnit' DESC 'RFC2256: an organizational unit' SUP top STRUCTURAL MUST ou MAY ( userPassword $ searchGuide $ seeAlso $ businessCategory $ x121Address $ registeredAddress $ destinationIndicator $ preferredDeliveryMethod $ telexNumber $ teletexTerminalIdentifier $ telephoneNumber $ internationaliSDNNumber $ facsimileTelephoneNumber $ street $ postOfficeBox $ postalCode $ postalAddress $ physicalDeliveryOfficeName $ st $ l $ description ) )",
+	)
+	protocol.AddAttribute(&entry, "attributeTypes",
+		"( 2.5.4.0 NAME 'objectClass' DESC 'RFC2256: object classes of the entity' EQUALITY objectIdentifierMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.38 )",
+		"( 2.5.4.41 NAME 'name' DESC 'RFC2256: common supertype of name attributes' EQUALITY caseIgnoreMatch SUBSTR caseIgnoreSubstringsMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{32768} )",
+		"( 2.5.4.3 NAME 'cn' SUP name DESC 'RFC2256: common name(s) for which the entity is known by' )",
+		"( 2.5.4.4 NAME 'sn' SUP name DESC 'RFC2256: last (family) name(s) for which the entity is known by' )",
+		"( 0.9.2342.19200300.100.1.1 NAME 'uid' DESC 'RFC1274: user identifier' EQUALITY caseIgnoreMatch SUBSTR caseIgnoreSubstringsMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{256} )",
+		"( 0.9.2342.19200300.100.1.3 NAME 'mail' DESC 'RFC1274: RFC822 Mailbox' EQUALITY caseIgnoreIA5Match SUBSTR caseIgnoreIA5SubstringsMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{256} )",
+		"( 2.5.4.35 NAME 'userPassword' DESC 'RFC2256/2307: password of user' EQUALITY octetStringMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.40{128} )",
+		"( 2.5.4.31 NAME 'member' DESC 'RFC2256: member of a group' SUP distinguishedName )",
+		"( 2.5.4.11 NAME 'ou' SUP name DESC 'RFC2256: organizational unit this object belongs to' )",
 	)
 
-	// Add basic object classes that we support
-	entry.AddAttribute(
-		message.AttributeDescription("objectClasses"),
-		message.AttributeValue("( 2.5.6.0 NAME 'top' DESC 'top of the superclass chain' ABSTRACT MUST objectClass )"),
-		message.AttributeValue("( 2.5.6.6 NAME 'person' DESC 'RFC2256: a person' SUP top STRUCTURAL MUST ( sn $ cn ) MAY ( userPassword $ telephoneNumber $ seeAlso $ description ) )"),
-		message.AttributeValue("( 2.5.6.7 NAME 'organizationalPerson' DESC 'RFC2256: an organizational person' SUP person STRUCTURAL MAY ( title $ x121Address $ registeredAddress $ destinationIndicator $ preferredDeliveryMethod $ telexNumber $ teletexTerminalIdentifier $ telephoneNumber $ internationaliSDNNumber $ facsimileTelephoneNumber $ street $ postOfficeBox $ postalCode $ postalAddress $ physicalDeliveryOfficeName $ ou $ st $ l ) )"),
-		message.AttributeValue("( 2.16.840.1.113730.3.2.2 NAME 'inetOrgPerson' DESC 'RFC2798: Internet Organizational Person' SUP organizationalPerson STRUCTURAL MAY ( audio $ businessCategory $ carLicense $ departmentNumber $ displayName $ employeeNumber $ employeeType $ givenName $ homePhone $ homePostalAddress $ initials $ jpegPhoto $ labeledURI $ mail $ manager $ mobile $ o $ pager $ photo $ roomNumber $ secretary $ uid $ userCertificate $ x500uniqueIdentifier $ preferredLanguage $ userSMIMECertificate $ userPKCS12 ) )"),
-		message.AttributeValue("( 2.5.6.9 NAME 'groupOfNames' DESC 'RFC2256: a group of names (DNs)' SUP top STRUCTURAL MUST ( member $ cn ) MAY ( businessCategory $ seeAlso $ owner $ ou $ o $ description ) )"),
-		message.AttributeValue("( 2.5.6.5 NAME 'organizationalUnit' DESC 'RFC2256: an organizational unit' SUP top STRUCTURAL MUST ou MAY ( userPassword $ searchGuide $ seeAlso $ businessCategory $ x121Address $ registeredAddress $ destinationIndicator $ preferredDeliveryMethod $ telexNumber $ teletexTerminalIdentifier $ telephoneNumber $ internationaliSDNNumber $ facsimileTelephoneNumber $ street $ postOfficeBox $ postalCode $ postalAddress $ physicalDeliveryOfficeName $ st $ l $ description ) )"),
-	)
-
-	// Add basic attribute types
-	entry.AddAttribute(
-		message.AttributeDescription("attributeTypes"),
-		message.AttributeValue("( 2.5.4.0 NAME 'objectClass' DESC 'RFC2256: object classes of the entity' EQUALITY objectIdentifierMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.38 )"),
-		message.AttributeValue("( 2.5.4.41 NAME 'name' DESC 'RFC2256: common supertype of name attributes' EQUALITY caseIgnoreMatch SUBSTR caseIgnoreSubstringsMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{32768} )"),
-		message.AttributeValue("( 2.5.4.3 NAME 'cn' SUP name DESC 'RFC2256: common name(s) for which the entity is known by' )"),
-		message.AttributeValue("( 2.5.4.4 NAME 'sn' SUP name DESC 'RFC2256: last (family) name(s) for which the entity is known by' )"),
-		message.AttributeValue("( 0.9.2342.19200300.100.1.1 NAME 'uid' DESC 'RFC1274: user identifier' EQUALITY caseIgnoreMatch SUBSTR caseIgnoreSubstringsMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{256} )"),
-		message.AttributeValue("( 0.9.2342.19200300.100.1.3 NAME 'mail' DESC 'RFC1274: RFC822 Mailbox' EQUALITY caseIgnoreIA5Match SUBSTR caseIgnoreIA5SubstringsMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{256} )"),
-		message.AttributeValue("( 2.5.4.35 NAME 'userPassword' DESC 'RFC2256/2307: password of user' EQUALITY octetStringMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.40{128} )"),
-		message.AttributeValue("( 2.5.4.31 NAME 'member' DESC 'RFC2256: member of a group' SUP distinguishedName )"),
-		message.AttributeValue("( 2.5.4.11 NAME 'ou' SUP name DESC 'RFC2256: organizational unit this object belongs to' )"),
-	)
-
-	// Write the entry
-	w.Write(entry)
-
-	// Write done response
-	w.Write(ldapserver.NewSearchResultDoneResponse(ldapserver.LDAPResultSuccess))
+	if err := conn.WriteResponse(msg.MessageID(), entry); err != nil {
+		return err
+	}
+	return conn.WriteResponse(msg.MessageID(), protocol.NewSearchResultDone(message.ResultCodeSuccess))
 }
 
 // handleCompare handles compare operations
-func (s *Server) handleCompare(w ldapserver.ResponseWriter, m *ldapserver.Message) {
+func (s *Server) handleCompare(conn *protocol.Connection, msg *message.LDAPMessage) error {
 	slog.Debug("Compare request")
-	w.Write(ldapserver.NewCompareResponse(ldapserver.LDAPResultCompareFalse))
+	return conn.WriteResponse(msg.MessageID(), protocol.NewCompareResponse(message.ResultCodeCompareFalse))
 }
 
 // handleExtended handles extended operations
-func (s *Server) handleExtended(w ldapserver.ResponseWriter, m *ldapserver.Message) {
+func (s *Server) handleExtended(conn *protocol.Connection, msg *message.LDAPMessage) error {
 	slog.Debug("Extended request")
-	w.Write(ldapserver.NewExtendedResponse(ldapserver.LDAPResultUnavailable))
+	return conn.WriteResponse(msg.MessageID(), protocol.NewExtendedResponse(message.ResultCodeUnavailable))
 }
 
-// handleNotFound handles unknown operations
-func (s *Server) handleNotFound(w ldapserver.ResponseWriter, m *ldapserver.Message) {
-	slog.Debug("Unknown operation", "operation", m.ProtocolOpName())
-	w.Write(ldapserver.NewResponse(ldapserver.LDAPResultUnavailable))
+// handleUnbind handles unbind operations
+func (s *Server) handleUnbind(conn *protocol.Connection, msg *message.LDAPMessage) error {
+	slog.Debug("Unbind request")
+	return nil // Connection will be closed by handler
 }
 
 // extractUID extracts UID from a DN
 func extractUID(dn string) string {
-	// Simple extraction: dn format is "uid=username,ou=users,dc=example,dc=com"
 	if len(dn) > 4 && dn[:4] == "uid=" {
 		for i, c := range dn[4:] {
 			if c == ',' {
@@ -611,8 +569,7 @@ func extractUID(dn string) string {
 	return ""
 }
 
-// serializeFilter converts a goldap Filter object to an LDAP filter string
-// This is a best-effort function that handles common filter types
+// serializeFilter converts a goldap Filter to LDAP filter string
 func serializeFilter(f interface{}) string {
 	if f == nil {
 		return ""
@@ -658,7 +615,6 @@ func serializeFilter(f interface{}) string {
 		return fmt.Sprintf("(%s~=%s)", filter.AttributeDesc(), filter.AssertionValue())
 
 	case message.FilterSubstrings:
-		// Substrings filter: (attr=initial*any*final)
 		attr := string(filter.Type_())
 		var sb strings.Builder
 		sb.WriteString("(")
@@ -681,7 +637,6 @@ func serializeFilter(f interface{}) string {
 		return sb.String()
 
 	default:
-		// Fallback: try string conversion
 		str := fmt.Sprintf("%v", f)
 		if str != "" && str[0] == '(' {
 			return str
@@ -694,7 +649,6 @@ func serializeFilter(f interface{}) string {
 func findFirstComma(dn string) int {
 	for i := 0; i < len(dn); i++ {
 		if dn[i] == ',' {
-			// Check if it's escaped
 			if i > 0 && dn[i-1] == '\\' {
 				continue
 			}

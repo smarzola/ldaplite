@@ -7,7 +7,6 @@ require (
 	github.com/lor00x/goldap v0.0.0-20180618054307-a546dffdd1a3
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.10.0
-	github.com/vjeantet/ldapserver v1.0.1
 	golang.org/x/crypto v0.43.0
 	modernc.org/sqlite v1.18.1
 )

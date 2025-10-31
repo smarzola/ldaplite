@@ -9,7 +9,8 @@ LDAPLite is a lightweight, LDAP-compliant server written in Go with SQLite backe
 **Key Technologies:**
 - Go 1.25.3
 - SQLite database (modernc.org/sqlite)
-- LDAP protocol via vjeantet/ldapserver
+- LDAP protocol via lor00x/goldap (low-level ASN.1 BER encoding/decoding)
+- Custom TCP server implementation (no high-level LDAP server framework)
 - Argon2id password hashing
 - Cobra for CLI commands
 
@@ -82,12 +83,20 @@ ldapwhoami -H ldap://localhost:3389 -D "cn=admin,dc=example,dc=com" -w ChangeMe1
 ### Core Components
 
 **Server Layer** (`internal/server/ldap.go`)
-- LDAP protocol handler using vjeantet/ldapserver library
+- Custom LDAP protocol implementation using raw TCP and goldap for ASN.1 BER encoding
 - Handles: Bind, Search, Add, Delete, Modify, Compare operations
 - **Routes all operations to generic store.Entry methods** - no type-specific code
-- Bind operation: Uses `SearchEntries` with filter `(uid=xxx)` to find user and verify password
+- Bind operation: Uses `GetUserPasswordHash(uid)` to retrieve password hash securely
 - Automatic password processing in Add/Modify operations (hashes plain text, validates pre-hashed)
 - Password verification using Argon2id hasher for Bind operations
+- Connection management: Per-connection goroutines with graceful shutdown
+
+**Protocol Layer** (`internal/protocol/`)
+- `transport.go`: BER message reading/writing using goldap
+- `connection.go`: TCP connection lifecycle and request dispatching
+- `response.go`: Helper functions for constructing LDAP responses
+- Direct use of goldap message types (BindRequest, SearchRequest, etc.)
+- No dependency on high-level LDAP server frameworks
 
 **Store Layer** (`internal/store/`)
 - Interface-based design (`store.go` defines `Store` interface)
