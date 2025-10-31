@@ -412,15 +412,3 @@ MIT License - See [LICENSE](LICENSE) file for details.
 
 - **Issues**: [GitHub Issues](https://github.com/smarzola/ldaplite/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/smarzola/ldaplite/discussions)
-
-## Acknowledgments
-
-Built with:
-- [vjeantet/ldapserver](https://github.com/vjeantet/ldapserver) - LDAP protocol implementation
-- [modernc.org/sqlite](https://modernc.org/sqlite) - Pure Go SQLite driver
-- [Claude Code](https://claude.com/claude-code) - AI pair programming assistant
-
----
-
-**Current Version**: v0.3.1
-**Status**: Beta - Suitable for development, testing, and homelab use
