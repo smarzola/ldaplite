@@ -15,6 +15,7 @@ type Connection struct {
 	conn     net.Conn
 	mu       sync.Mutex
 	closed   bool
+	boundDN  string
 	handlers OperationHandlers
 }
 
@@ -147,6 +148,20 @@ func (c *Connection) WriteError(messageID message.MessageID, resultCode int, dia
 // RemoteAddr returns the remote address of the connection
 func (c *Connection) RemoteAddr() net.Addr {
 	return c.conn.RemoteAddr()
+}
+
+// SetBoundDN sets the bound DN for this connection after successful authentication
+func (c *Connection) SetBoundDN(dn string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.boundDN = dn
+}
+
+// GetBoundDN returns the currently bound DN for this connection
+func (c *Connection) GetBoundDN() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.boundDN
 }
 
 // Close closes the connection

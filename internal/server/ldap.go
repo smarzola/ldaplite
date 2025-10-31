@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/lor00x/goldap/message"
 
@@ -156,6 +158,7 @@ func (s *Server) handleBind(conn *protocol.Connection, msg *message.LDAPMessage)
 	// Handle anonymous bind
 	if dn == "" || password == "" {
 		if s.cfg.Security.AllowAnonymousBind {
+			conn.SetBoundDN("") // Anonymous bind
 			slog.Debug("Anonymous bind allowed")
 			return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeSuccess))
 		}
@@ -188,6 +191,9 @@ func (s *Server) handleBind(conn *protocol.Connection, msg *message.LDAPMessage)
 		slog.Debug("Password verification failed", "dn", dn)
 		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
+
+	// Set bound DN on connection after successful authentication
+	conn.SetBoundDN(dn)
 
 	slog.Debug("Bind successful", "dn", dn)
 	return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeSuccess))
@@ -546,7 +552,46 @@ func (s *Server) handleCompare(conn *protocol.Connection, msg *message.LDAPMessa
 
 // handleExtended handles extended operations
 func (s *Server) handleExtended(conn *protocol.Connection, msg *message.LDAPMessage) error {
-	slog.Debug("Extended request")
+	extReq := msg.ProtocolOp().(message.ExtendedRequest)
+	reqOID := string(extReq.RequestName())
+
+	slog.Debug("Extended request", "oid", reqOID)
+
+	// Handle "Who am I?" extended operation (RFC 4532)
+	// OID: 1.3.6.1.4.1.4203.1.11.3
+	if reqOID == "1.3.6.1.4.1.4203.1.11.3" {
+		boundDN := conn.GetBoundDN()
+
+		// Create response with the authorization identity
+		resp := protocol.NewExtendedResponse(message.ResultCodeSuccess)
+		resp.SetResponseName(message.LDAPOID(reqOID))
+
+		// Set the response value to the bound DN
+		// RFC 4532 specifies the format as "dn:<distinguished-name>" or empty for anonymous
+		var authzID string
+		if boundDN == "" {
+			authzID = "" // Anonymous
+		} else {
+			authzID = "dn:" + boundDN
+		}
+
+		// WORKAROUND: goldap library doesn't provide a public method to set responseValue
+		// Use reflection to set the unexported field until the library is updated
+		octetString := message.OCTETSTRING(authzID)
+		respValue := reflect.ValueOf(&resp).Elem()
+		responseValueField := respValue.FieldByName("responseValue")
+		if responseValueField.IsValid() {
+			// Use unsafe to modify the unexported field
+			ptr := unsafe.Pointer(responseValueField.UnsafeAddr())
+			*(**message.OCTETSTRING)(ptr) = &octetString
+		}
+
+		slog.Debug("Who am I response", "authzID", authzID)
+		return conn.WriteResponse(msg.MessageID(), resp)
+	}
+
+	// Unsupported extended operation
+	slog.Debug("Unsupported extended operation", "oid", reqOID)
 	return conn.WriteResponse(msg.MessageID(), protocol.NewExtendedResponse(message.ResultCodeUnavailable))
 }
 
