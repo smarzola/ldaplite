@@ -123,7 +123,7 @@ func (s *Server) handleBind(w ldapserver.ResponseWriter, m *ldapserver.Message) 
 		return
 	}
 
-	// Find user by UID using search
+	// Extract UID from DN
 	uid := extractUID(dn)
 	if uid == "" {
 		slog.Debug("Failed to extract UID from DN", "dn", dn)
@@ -131,26 +131,16 @@ func (s *Server) handleBind(w ldapserver.ResponseWriter, m *ldapserver.Message) 
 		return
 	}
 
-	// Search for user entry with matching uid
-	entries, err := s.store.SearchEntries(ctx, s.cfg.LDAP.BaseDN, fmt.Sprintf("(uid=%s)", uid))
+	// Get password hash directly from users table (not exposed in attributes/search results)
+	userPassword, err := s.store.GetUserPasswordHash(ctx, uid)
 	if err != nil {
-		slog.Debug("Search error during bind", "dn", dn, "error", err)
+		slog.Debug("Error retrieving password hash", "dn", dn, "error", err)
 		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
 		return
 	}
 
-	// Should find exactly one user
-	if len(entries) != 1 {
-		slog.Debug("User not found or multiple users found", "dn", dn, "count", len(entries))
-		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
-		return
-	}
-
-	entry := entries[0]
-
-	// Get password from entry
-	userPassword := entry.GetAttribute("userPassword")
 	if userPassword == "" {
+		slog.Debug("User not found or no password set", "dn", dn)
 		w.Write(ldapserver.NewBindResponse(ldapserver.LDAPResultInvalidCredentials))
 		return
 	}

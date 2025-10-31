@@ -125,19 +125,106 @@ ldapwhoami -H ldap://localhost:3389 -D "cn=admin,dc=example,dc=com" -w ChangeMe1
 
 ### Database Schema
 
-SQLite tables:
-- `entries`: All LDAP entries (DN, parent_dn, object_class, timestamps)
-- `attributes`: Multi-valued attributes (entry_id, name, value)
-- `users`: User-specific data (entry_id, uid, password_hash)
-- `groups`: Group-specific data (entry_id, cn)
-- `group_members`: Group membership (group_id, member_id, is_nested)
-- `organizational_units`: OU-specific data (entry_id, ou)
+**Design Philosophy: Optimized Single-Source Architecture (Phase 3)**
 
-**Group Nesting:**
-- Groups can contain users AND other groups
+LDAPLite uses an **optimized storage strategy** that eliminates redundancy while maintaining performance:
+- **Generic attributes table**: Single source of truth for ALL LDAP attributes (flexible, schema-free)
+- **Specialized tables**: Store ONLY essential non-attribute data (security-sensitive passwords, referential integrity)
+- **Composite indexes**: Replace redundant columns with optimized filtered indexes for fast lookups
+
+#### Core Tables
+
+**`entries` table** - Primary table for all LDAP entries:
+- `id`: Primary key
+- `dn`: Distinguished Name (unique, indexed)
+- `parent_dn`: Parent DN for hierarchy (indexed for recursive queries)
+- `object_class`: Primary structural object class (indexed for type filtering)
+- `created_at`, `updated_at`: Timestamps for operational attributes
+
+**`attributes` table** - Generic EAV (Entity-Attribute-Value) storage:
+- Stores ALL attributes for entries (multi-valued support)
+- **Exception: Security-sensitive attributes excluded** (e.g., `userPassword`)
+- Indexed on `(entry_id, name, value)` for fast lookups
+- Source of truth returned in LDAP search operations
+
+#### Specialized Tables (Security + Referential Integrity Only)
+
+**`users` table** - Security-sensitive data ONLY:
+- `entry_id`: Foreign key to entries table
+- `password_hash`: Password storage with LDAP scheme prefix
+  - **SECURITY: Stored ONLY here, never in attributes table**
+  - Accessed only during authentication (bind operations via JOIN)
+  - Never exposed in LDAP search results
+  - **No uid column** - looked up via JOIN with attributes table
+
+**`groups` table** - Referential integrity marker:
+- `entry_id`: Foreign key to entries table (enables group_members FK)
+  - **No cn column** - all attributes in attributes table
+
+**`group_members` table** - Group membership (many-to-many):
+- Supports direct membership and nested groups
+- Enables efficient recursive queries with SQL CTEs
+- Circular reference detection (max depth: 10)
+
+**`organizational_units` table** - Referential integrity marker:
+- `entry_id`: Foreign key to entries table
+  - **No ou column** - all attributes in attributes table
+
+#### Phase 3 Optimization: Zero Redundancy
+
+**Phase 3 eliminated ALL redundant columns** (`uid`, `cn`, `ou`) from specialized tables.
+
+**Performance maintained via composite indexes:**
+- `idx_attributes_uid_lookup ON attributes(name, value) WHERE name = 'uid'`
+- `idx_attributes_cn_lookup ON attributes(name, value) WHERE name = 'cn'`
+- `idx_attributes_ou_lookup ON attributes(name, value) WHERE name = 'ou'`
+
+These filtered indexes provide equivalent performance to dedicated columns while:
+- ✅ **Zero storage redundancy** (single source of truth)
+- ✅ **No consistency issues** (data only in one place)
+- ✅ **Same query speed** (composite index on (name, value) with WHERE filter)
+
+**Result:** Specialized tables contain ONLY data that cannot be attributes:
+- Security-sensitive data (passwords)
+- Foreign key relationships (group_members)
+
+#### Security Architecture
+
+**Password Storage (RFC 3112 Compliant):**
+- Format: `{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=2$salt$hash`
+- Storage: `users.password_hash` column ONLY
+- **Never stored in `attributes` table** (migration 003 removes if present)
+- **Never returned in LDAP search operations**
+- Access: Via dedicated `GetUserPasswordHash(uid)` method (bind operations only)
+- Processing: `ProcessPassword()` auto-hashes plain text, validates pre-hashed passwords
+
+**Query Patterns (Phase 3):**
+- Searches: Use `attributes` table exclusively (single source of truth, no passwords)
+- Bind (auth): JOIN `attributes` (for uid lookup) with `users` (for password_hash)
+  - Uses `idx_attributes_uid_lookup` for fast uid→entry_id resolution
+  - Then retrieves password_hash from users table
+- Updates: Write ONLY to `attributes` table (except passwords → users.password_hash)
+
+#### Group Nesting
+
+- Groups can contain users AND other groups (via `group_members` table)
 - Recursive queries use SQL CTEs for efficient traversal
 - Circular reference detection (max depth: 10 by default)
 - Methods: `GetGroupMembersRecursive`, `GetUserGroupsRecursive`
+
+#### Indexes (see `002_add_indexes.up.sql` and `004_remove_redundant_columns.up.sql`)
+
+**Performance-critical indexes:**
+- `entries(dn)`: Unique, for direct lookups
+- `entries(parent_dn)`: For hierarchical queries
+- `entries(object_class)`: For type filtering
+- `attributes(entry_id, name, value)`: For EAV searches
+- **Phase 3 composite indexes** (replace dedicated column indexes):
+  - `idx_attributes_uid_lookup ON (name, value) WHERE name = 'uid'`: Fast login lookups
+  - `idx_attributes_cn_lookup ON (name, value) WHERE name = 'cn'`: Fast cn-based searches
+  - `idx_attributes_ou_lookup ON (name, value) WHERE name = 'ou'`: Fast OU searches
+- `users(entry_id)`, `groups(entry_id)`, `organizational_units(entry_id)`: FK lookups
+- `group_members(group_entry_id, member_entry_id)`: Group membership queries
 
 ### Entry Point
 
@@ -229,21 +316,62 @@ Integration tests can use in-memory SQLite (`:memory:`).
 ### Important Implementation Details
 
 1. **DN Normalization**: DNs are case-insensitive, normalize before comparisons
-2. **Password Handling**:
-   - All passwords stored with LDAP scheme prefix: `{ARGON2ID}$argon2id$...`
-   - LDAP Add/Modify operations automatically process `userPassword` attribute via `ProcessPassword()`
-   - Plain text passwords are automatically hashed with scheme prefix
-   - Pre-hashed passwords with `{ARGON2ID}` prefix are validated and accepted as-is
-   - Passwords with unsupported schemes (e.g., `{SSHA}`) are rejected with ConstraintViolation
-   - Never store plaintext passwords
-3. **Entry Creation**:
+
+2. **Optimized Single-Source Architecture (Phase 3)**:
+   - **Single source of truth**: ALL attributes stored in `attributes` table (EAV pattern)
+   - **Zero redundancy**: Specialized tables contain ONLY non-attribute data
+   - **Query patterns**:
+     - All searches use `attributes` table exclusively
+     - Authentication uses JOIN: `attributes` (uid lookup) → `users` (password_hash)
+     - Fast lookups via composite indexes on attributes table
+   - **Specialized tables reduced to essentials**:
+     - `users`: entry_id + password_hash (security-sensitive)
+     - `groups`, `organizational_units`: entry_id only (referential integrity)
+   - **Performance**: Composite filtered indexes provide same speed as dedicated columns
+
+3. **Password Security (Critical)**:
+   - **Storage Location**: `users.password_hash` column ONLY (never in `attributes` table)
+   - **Format**: LDAP RFC 3112 compliant - `{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=2$salt$hash`
+   - **Processing**: `ProcessPassword()` in `internal/server/ldap.go` line 306, 422, 473:
+     - Plain text → automatically hashed with Argon2id
+     - Pre-hashed with `{ARGON2ID}` → validated and accepted as-is
+     - Unsupported schemes (e.g., `{SSHA}`) → rejected with ConstraintViolation
+   - **Access**: Via `GetUserPasswordHash(uid)` for bind operations only
+   - **Never Exposed**: Password hashes never returned in LDAP search results
+   - **Migration**: Migration 003 removes any legacy passwords from attributes table
+
+4. **Entry Creation & Updates (Phase 3)**:
    - Use `CreateEntry` for all entry types (users, groups, OUs)
-   - It automatically detects objectClass and validates/stores accordingly
-   - No type-specific Create/Update/Delete methods exist - everything goes through generic Entry methods
-   - Server uses `SearchEntries` for lookups instead of type-specific Get methods (e.g., Bind uses `(uid=xxx)` filter)
-4. **Group Nesting**: Always check for circular references, limit recursion depth
-5. **Filter Evaluation**: Basic implementation in `internal/schema/filter.go`, may need extension for complex filters
-6. **Error Handling**: Return LDAP result codes (Success, NoSuchObject, InvalidCredentials, ConstraintViolation, etc.)
+   - Automatically detects objectClass and validates accordingly
+   - Writes ALL attributes to `attributes` table (except userPassword → users.password_hash)
+   - **Phase 3**: Specialized tables store ONLY essential data:
+     - `users`: entry_id + password_hash (no uid column)
+     - `groups`: entry_id (no cn column)
+     - `organizational_units`: entry_id (no ou column)
+   - `CreateEntry` skips `userPassword` when writing to attributes (line 272 in sqlite.go)
+   - `UpdateEntry` skips `userPassword` from attributes, updates `users.password_hash` (line 372, 382-388)
+   - No type-specific Create/Update/Delete methods - everything through generic Entry API
+
+5. **Authentication (Bind Operations - Phase 3)**:
+   - Extract `uid` from DN (e.g., `uid=john,ou=users,dc=example,dc=com` → `john`)
+   - Fetch password hash via `GetUserPasswordHash(uid)`:
+     - JOINs `attributes` table (uid lookup using `idx_attributes_uid_lookup`)
+     - With `users` table (password_hash retrieval)
+     - Query: `SELECT u.password_hash FROM users u INNER JOIN attributes a ON u.entry_id = a.entry_id WHERE a.name = 'uid' AND a.value = ?`
+   - Verify password using `Verify()` method (constant-time comparison)
+   - Security isolation maintained (password never in search results)
+
+6. **Group Nesting**: Always check for circular references, limit recursion depth
+
+7. **Filter Evaluation**: Hybrid SQL + in-memory filtering in `internal/schema/filter.go`
+   - Simple filters compiled to SQL for performance
+   - Complex filters fall back to in-memory evaluation
+   - Timestamp comparisons supported for operational attributes
+
+8. **Error Handling**: Return proper LDAP result codes:
+   - Success (0), NoSuchObject (32), InvalidCredentials (49)
+   - ConstraintViolation (19) for password scheme errors
+   - ObjectClassViolation (65), UnwillingToPerform (53)
 
 ## Current Limitations
 

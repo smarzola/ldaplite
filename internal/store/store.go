@@ -24,4 +24,7 @@ type Store interface {
 	// Miscellaneous
 	GetAllEntries(ctx context.Context) ([]*models.Entry, error)
 	GetChildren(ctx context.Context, dn string) ([]*models.Entry, error)
+
+	// Authentication
+	GetUserPasswordHash(ctx context.Context, uid string) (string, error)
 }

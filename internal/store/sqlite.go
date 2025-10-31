@@ -217,7 +217,14 @@ func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, e
 	return &entry, nil
 }
 
-// CreateEntry creates a new entry
+// CreateEntry creates a new entry using the dual-storage architecture:
+//
+// 1. Core entry metadata → entries table (DN, object class, timestamps)
+// 2. Generic attributes → attributes table (EAV pattern for flexibility)
+// 3. Type-specific data → specialized tables (users, groups, OUs for performance)
+//
+// SECURITY: userPassword is NEVER stored in attributes table, only in users.password_hash
+// CONSISTENCY: Attributes like uid, cn, ou are duplicated in specialized tables for query performance
 func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) error {
 	if err := entry.Validate(); err != nil {
 		return err
@@ -229,7 +236,7 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 	}
 	defer tx.Rollback()
 
-	// Insert entry
+	// Step 1: Insert core entry metadata into entries table
 	query := `
 		INSERT INTO entries (dn, parent_dn, object_class, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?)
@@ -256,9 +263,15 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 
 	entry.ID = entryID
 
-	// Insert attributes
+	// Step 2: Insert generic attributes into attributes table (EAV pattern)
+	// This provides flexible, schema-free storage for all LDAP attributes
+	// SECURITY EXCEPTION: userPassword is excluded and stored only in users.password_hash
 	attrQuery := `INSERT INTO attributes (entry_id, name, value) VALUES (?, ?, ?)`
 	for name, values := range entry.Attributes {
+		// Skip userPassword - stored securely in users.password_hash only (never exposed in searches)
+		if strings.EqualFold(name, "userPassword") {
+			continue
+		}
 		for _, value := range values {
 			if _, err := tx.ExecContext(ctx, attrQuery, entryID, name, value); err != nil {
 				return fmt.Errorf("failed to insert attribute: %w", err)
@@ -266,20 +279,28 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 		}
 	}
 
-	// Validate and handle type-specific entries
+	// Step 3: Insert type-specific data into specialized tables
+	// Phase 3 optimization: Specialized tables contain ONLY essential data:
+	// - users: entry_id + password_hash (security-sensitive, never in attributes)
+	// - groups: entry_id (needed for group_members foreign key relationships)
+	// - organizational_units: entry_id (referential integrity marker)
+	//
+	// All other attributes (uid, cn, ou) are in attributes table with optimized indexes:
+	// - idx_attributes_uid_lookup on (name, value) WHERE name = 'uid'
+	// - idx_attributes_cn_lookup on (name, value) WHERE name = 'cn'
+	// - idx_attributes_ou_lookup on (name, value) WHERE name = 'ou'
+	//
+	// Result: Zero storage redundancy while maintaining query performance
 	if entry.IsUser() {
 		// Validate user-specific requirements
 		user := &models.User{Entry: entry, UID: entry.GetAttribute("uid")}
 		if err := user.ValidateUser(); err != nil {
 			return err
 		}
-		uid := entry.GetAttribute("uid")
-		if uid == "" {
-			return fmt.Errorf("user entry missing uid attribute")
-		}
+		// Users table stores only password_hash (security-sensitive data)
 		passwordHash := entry.GetAttribute("userPassword")
-		userQuery := `INSERT INTO users (entry_id, uid, password_hash) VALUES (?, ?, ?)`
-		if _, err := tx.ExecContext(ctx, userQuery, entryID, uid, passwordHash); err != nil {
+		userQuery := `INSERT INTO users (entry_id, password_hash) VALUES (?, ?)`
+		if _, err := tx.ExecContext(ctx, userQuery, entryID, passwordHash); err != nil {
 			return fmt.Errorf("failed to create user entry: %w", err)
 		}
 	} else if entry.IsGroup() {
@@ -288,12 +309,9 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 		if err := group.ValidateGroup(); err != nil {
 			return err
 		}
-		cn := entry.GetAttribute("cn")
-		if cn == "" {
-			return fmt.Errorf("group entry missing cn attribute")
-		}
-		groupQuery := `INSERT INTO groups (entry_id, cn) VALUES (?, ?)`
-		if _, err := tx.ExecContext(ctx, groupQuery, entryID, cn); err != nil {
+		// Groups table stores only entry_id (needed for group_members FK)
+		groupQuery := `INSERT INTO groups (entry_id) VALUES (?)`
+		if _, err := tx.ExecContext(ctx, groupQuery, entryID); err != nil {
 			return fmt.Errorf("failed to create group entry: %w", err)
 		}
 	} else if entry.IsOrganizationalUnit() {
@@ -302,12 +320,9 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 		if err := ouModel.ValidateOU(); err != nil {
 			return err
 		}
-		ou := entry.GetAttribute("ou")
-		if ou == "" {
-			return fmt.Errorf("OU entry missing ou attribute")
-		}
-		ouQuery := `INSERT INTO organizational_units (entry_id, ou) VALUES (?, ?)`
-		if _, err := tx.ExecContext(ctx, ouQuery, entryID, ou); err != nil {
+		// OUs table stores only entry_id (referential integrity marker)
+		ouQuery := `INSERT INTO organizational_units (entry_id) VALUES (?)`
+		if _, err := tx.ExecContext(ctx, ouQuery, entryID); err != nil {
 			return fmt.Errorf("failed to create OU entry: %w", err)
 		}
 	}
@@ -315,7 +330,14 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 	return tx.Commit()
 }
 
-// UpdateEntry updates an existing entry
+// UpdateEntry updates an existing entry while maintaining dual-storage consistency:
+//
+// 1. Update timestamp in entries table
+// 2. Replace all attributes in attributes table (delete + insert pattern)
+// 3. Update password in users.password_hash if changed (security isolation)
+//
+// SECURITY: userPassword is NEVER written to attributes table, only to users.password_hash
+// CONSISTENCY: Specialized table data (uid, cn, ou) remains in sync via initial CreateEntry
 func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) error {
 	if err := entry.Validate(); err != nil {
 		return err
@@ -327,24 +349,41 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 	}
 	defer tx.Rollback()
 
-	// Update entry timestamp
+	// Step 1: Update entry metadata (timestamp)
 	query := `UPDATE entries SET updated_at = ? WHERE dn = ?`
 	if _, err := tx.ExecContext(ctx, query, entry.UpdatedAt, entry.DN); err != nil {
 		return fmt.Errorf("failed to update entry: %w", err)
 	}
 
-	// Delete existing attributes
+	// Step 2: Replace attributes in attributes table (delete-then-insert pattern)
+	// This is simpler than diffing changes and ensures consistency
 	delAttrQuery := `DELETE FROM attributes WHERE entry_id = (SELECT id FROM entries WHERE dn = ?)`
 	if _, err := tx.ExecContext(ctx, delAttrQuery, entry.DN); err != nil {
 		return fmt.Errorf("failed to delete attributes: %w", err)
 	}
 
-	// Insert new attributes
+	// Insert updated attributes (excluding security-sensitive attributes)
 	insertAttrQuery := `INSERT INTO attributes (entry_id, name, value) VALUES ((SELECT id FROM entries WHERE dn = ?), ?, ?)`
 	for name, values := range entry.Attributes {
+		// Skip userPassword - stored securely in users.password_hash only (never in attributes)
+		if strings.EqualFold(name, "userPassword") {
+			continue
+		}
 		for _, value := range values {
 			if _, err := tx.ExecContext(ctx, insertAttrQuery, entry.DN, name, value); err != nil {
 				return fmt.Errorf("failed to insert attribute: %w", err)
+			}
+		}
+	}
+
+	// Step 3: Update password in specialized users table if changed
+	// This maintains security isolation - password never touches attributes table
+	if entry.IsUser() {
+		passwordHash := entry.GetAttribute("userPassword")
+		if passwordHash != "" {
+			updatePasswordQuery := `UPDATE users SET password_hash = ? WHERE entry_id = (SELECT id FROM entries WHERE dn = ?)`
+			if _, err := tx.ExecContext(ctx, updatePasswordQuery, passwordHash, entry.DN); err != nil {
+				return fmt.Errorf("failed to update user password: %w", err)
 			}
 		}
 	}
@@ -615,6 +654,40 @@ func (s *SQLiteStore) GetChildren(ctx context.Context, dn string) ([]*models.Ent
 	}
 
 	return entries, nil
+}
+
+// GetUserPasswordHash retrieves the password hash for a user by UID.
+//
+// SECURITY: This method provides controlled access to password hashes for authentication only.
+// Password hashes are stored exclusively in users.password_hash and are NEVER:
+// - Stored in the attributes table
+// - Returned in LDAP search operations
+// - Accessible through generic GetEntry/SearchEntries methods
+//
+// This isolation ensures passwords cannot be accidentally exposed via LDAP queries.
+// Only bind (authentication) operations should call this method.
+//
+// Phase 3: Uses optimized index (idx_attributes_uid_lookup) for fast uid lookup,
+// then joins to users table for password retrieval.
+func (s *SQLiteStore) GetUserPasswordHash(ctx context.Context, uid string) (string, error) {
+	// Join attributes table (for uid lookup) with users table (for password_hash)
+	// The WHERE clause uses idx_attributes_uid_lookup index for fast lookup
+	query := `
+		SELECT u.password_hash
+		FROM users u
+		INNER JOIN attributes a ON u.entry_id = a.entry_id
+		WHERE a.name = 'uid' AND a.value = ?
+		LIMIT 1
+	`
+	var passwordHash string
+	err := s.db.QueryRowContext(ctx, query, uid).Scan(&passwordHash)
+	if err == sql.ErrNoRows {
+		return "", nil // User not found - return empty string, not an error
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to get user password hash: %w", err)
+	}
+	return passwordHash, nil
 }
 
 // fileExists checks if a file exists

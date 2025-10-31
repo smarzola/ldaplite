@@ -1,0 +1,2 @@
+-- No down migration - we cannot restore passwords that were properly removed
+-- This is a security fix and should not be rolled back
