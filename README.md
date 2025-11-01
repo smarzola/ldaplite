@@ -56,6 +56,16 @@ Perfect for homelabs, development environments, and single-instance deployments 
 - **Direct Protocol Implementation**: Uses goldap for ASN.1 BER encoding, no high-level framework overhead
 - **Reverse Proxy Friendly**: No TLS support by design - meant to run behind nginx/traefik
 
+### Web UI
+
+- **Embedded Web Interface**: Simple, modern web UI for directory management
+  - HTTP Basic authentication with admin group authorization
+  - Browse and manage users, groups, and organizational units
+  - Full CRUD operations (create, read, update, delete)
+  - Dark/light theme toggle (wireframe/black themes)
+  - Responsive design with Tailwind CSS and DaisyUI
+  - No external dependencies, embedded in binary
+
 ## Quick Start
 
 ### Option 1: Download Binary
@@ -70,8 +80,14 @@ chmod +x ldaplite-linux-amd64
 export LDAP_BASE_DN="dc=example,dc=com"
 export LDAP_ADMIN_PASSWORD="YourSecurePassword123!"
 
+# Optional: Enable Web UI
+export LDAP_WEBUI_ENABLED=true
+export LDAP_WEBUI_PORT=8080
+
 # Run
 ./ldaplite-linux-amd64 server
+
+# Access Web UI at http://localhost:8080 (login with admin:YourSecurePassword123!)
 ```
 
 ### Option 2: Docker
@@ -80,10 +96,14 @@ export LDAP_ADMIN_PASSWORD="YourSecurePassword123!"
 docker run -d \
   --name ldaplite \
   -p 3389:3389 \
+  -p 8080:8080 \
   -e LDAP_BASE_DN=dc=example,dc=com \
   -e LDAP_ADMIN_PASSWORD=YourSecurePassword \
+  -e LDAP_WEBUI_ENABLED=true \
   -v ldap_data:/data \
   ghcr.io/smarzola/ldaplite:latest
+
+# Access Web UI at http://localhost:8080 (login with admin:YourSecurePassword)
 ```
 
 Or use Docker Compose:
@@ -95,9 +115,11 @@ services:
     image: ghcr.io/smarzola/ldaplite:latest
     ports:
       - "3389:3389"
+      - "8080:8080"
     environment:
       LDAP_BASE_DN: dc=example,dc=com
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD}
+      LDAP_WEBUI_ENABLED: "true"
     volumes:
       - ldap_data:/data
     restart: unless-stopped
@@ -116,10 +138,13 @@ cd ldaplite
 # Build
 make build
 
-# Run
+# Run with Web UI enabled
 export LDAP_BASE_DN=dc=example,dc=com
 export LDAP_ADMIN_PASSWORD=SecurePassword123!
+export LDAP_WEBUI_ENABLED=true
 ./bin/ldaplite server
+
+# Access Web UI at http://localhost:8080
 ```
 
 ## What Gets Created on First Run
@@ -131,7 +156,10 @@ dc=example,dc=com (base DN)
 ├── ou=users
 │   └── uid=admin (with your LDAP_ADMIN_PASSWORD)
 └── ou=groups
+    └── cn=ldaplite.admin (admin group, contains uid=admin)
 ```
+
+The admin user is automatically added to the `ldaplite.admin` group, which grants access to the Web UI.
 
 ## Testing Your Connection
 
@@ -191,6 +219,16 @@ All configuration via environment variables. No config files needed.
 |----------|---------|-------------|
 | `LDAP_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `LDAP_LOG_FORMAT` | `json` | Log format: `json` or `text` |
+
+### Web UI Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LDAP_WEBUI_ENABLED` | `false` | Enable the embedded web UI |
+| `LDAP_WEBUI_PORT` | `8080` | Web UI HTTP port |
+| `LDAP_WEBUI_BIND_ADDRESS` | `0.0.0.0` | Web UI bind address |
+
+**Note**: Web UI requires authentication using admin user credentials (HTTP Basic Auth). Only members of the `cn=ldaplite.admin,ou=groups` group can access the web interface.
 
 ### Security Configuration
 
@@ -340,12 +378,6 @@ LDAPLite supports comprehensive LDAP filter syntax:
   - JSON payloads for easier integration
   - Compatible with modern IdP systems
 
-- **Minimal Web UI** - Simple web interface for directory management
-  - Browse and search entries
-  - User and group management
-  - View operational statistics
-  - No external dependencies, embedded in binary
-
 ### Future Considerations
 
 - Enhanced ACLs for granular permissions
@@ -390,7 +422,12 @@ ldaplite/
 │   ├── store/              # SQLite storage layer
 │   │   └── migrations/     # Embedded SQL migrations
 │   ├── models/             # Domain models (User, Group, OU)
-│   └── schema/             # Filter parsing & compilation
+│   ├── schema/             # Filter parsing & compilation
+│   └── web/                # Web UI server & handlers
+│       ├── handlers/       # HTTP request handlers
+│       ├── middleware/     # Authentication middleware
+│       ├── templates/      # HTML templates (embedded)
+│       └── static/         # CSS assets (embedded)
 ├── pkg/
 │   ├── config/             # Configuration management
 │   └── crypto/             # Password hashing
