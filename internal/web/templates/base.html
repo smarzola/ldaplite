@@ -1,0 +1,96 @@
+{{define "base"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="wireframe">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{block "title" .}}LDAPLite Admin{{end}}</title>
+    <link rel="stylesheet" href="/static/output.css">
+</head>
+<body>
+    <div class="min-h-screen flex flex-col">
+        <!-- Navbar -->
+        <div class="navbar bg-base-200 shadow-lg">
+            <div class="flex-1">
+                <a href="/" class="btn btn-ghost text-xl">LDAPLite Admin</a>
+            </div>
+            <div class="flex-none">
+                <ul class="menu menu-horizontal px-1">
+                    <li><a href="/users" class="{{if eq .CurrentPage "users"}}active{{end}}">Users</a></li>
+                    <li><a href="/groups" class="{{if eq .CurrentPage "groups"}}active{{end}}">Groups</a></li>
+                    <li><a href="/ous" class="{{if eq .CurrentPage "ous"}}active{{end}}">OUs</a></li>
+                </ul>
+                {{if .UserDN}}
+                <div class="dropdown dropdown-end">
+                    <div tabindex="0" role="button" class="btn btn-outline btn-circle">
+                        <span class="text-xl">{{if .UserID}}{{slice .UserID 0 1 | printf "%s" | upper}}{{else}}?{{end}}</span>
+                    </div>
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow-xl">
+                        <li class="menu-title"><span>{{.UserID}}</span></li>
+                        <li><a href="/logout">Logout</a></li>
+                    </ul>
+                </div>
+                <button id="theme-toggle" class="btn btn-ghost btn-circle" aria-label="Toggle theme">
+                    <svg id="theme-icon-sun" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                    <svg id="theme-icon-moon" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                </button>
+                {{end}}
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="flex-1 container mx-auto px-4 py-8">
+            {{block "content" .}}{{end}}
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer footer-center bg-base-200 text-base-content p-4">
+            <aside>
+                <p class="text-sm">LDAPLite Admin UI - Base DN: <code class="badge badge-ghost">{{.BaseDN}}</code></p>
+            </aside>
+        </footer>
+    </div>
+
+    {{block "dialogs" .}}{{end}}
+
+    <script>
+        // Theme toggle functionality
+        (function() {
+            const html = document.documentElement;
+            const themeToggle = document.getElementById('theme-toggle');
+            const iconSun = document.getElementById('theme-icon-sun');
+            const iconMoon = document.getElementById('theme-icon-moon');
+            const savedTheme = localStorage.getItem('theme') || 'wireframe';
+
+            function updateTheme(theme) {
+                html.setAttribute('data-theme', theme);
+                if (theme === 'black') {
+                    iconSun.classList.remove('hidden');
+                    iconMoon.classList.add('hidden');
+                } else {
+                    iconSun.classList.add('hidden');
+                    iconMoon.classList.remove('hidden');
+                }
+            }
+
+            updateTheme(savedTheme);
+
+            if (themeToggle) {
+                themeToggle.addEventListener('click', function() {
+                    const currentTheme = html.getAttribute('data-theme');
+                    const newTheme = currentTheme === 'wireframe' ? 'black' : 'wireframe';
+                    updateTheme(newTheme);
+                    localStorage.setItem('theme', newTheme);
+                });
+            }
+        })();
+    </script>
+
+    {{block "scripts" .}}{{end}}
+</body>
+</html>
+{{end}}

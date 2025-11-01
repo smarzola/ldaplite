@@ -11,8 +11,8 @@ type OrganizationalUnit struct {
 }
 
 // NewOrganizationalUnit creates a new OU entry
-func NewOrganizationalUnit(baseDN, ou, description string) *OrganizationalUnit {
-	ouDN := fmt.Sprintf("ou=%s,%s", ou, baseDN)
+func NewOrganizationalUnit(parentDN, ou, description string) *OrganizationalUnit {
+	ouDN := fmt.Sprintf("ou=%s,%s", ou, parentDN)
 	entry := NewEntry(ouDN, string(ObjectClassOrganizationalUnit))
 
 	// Set required attributes

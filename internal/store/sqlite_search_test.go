@@ -57,7 +57,7 @@ func setupTestStore(t *testing.T) *SQLiteStore {
 	}
 
 	for _, u := range users {
-		user := models.NewUser("dc=test,dc=com", u.uid, u.cn, u.sn, u.mail)
+		user := models.NewUser("ou=users,dc=test,dc=com", u.uid, u.cn, u.sn, u.mail)
 		// SetPassword expects a hashed password with LDAP scheme prefix
 		user.SetPassword("{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=2$dummyhash$dummyhash")
 		if err := store.CreateEntry(ctx, user.Entry); err != nil {
@@ -66,13 +66,13 @@ func setupTestStore(t *testing.T) *SQLiteStore {
 	}
 
 	// Create groups
-	admins := models.NewGroup("dc=test,dc=com", "admins", "Administrators group")
+	admins := models.NewGroup("ou=groups,dc=test,dc=com", "admins", "Administrators group")
 	admins.AddMember("uid=jdoe,ou=users,dc=test,dc=com")
 	if err := store.CreateEntry(ctx, admins.Entry); err != nil {
 		t.Fatalf("failed to create admins group: %v", err)
 	}
 
-	developers := models.NewGroup("dc=test,dc=com", "developers", "Developers group")
+	developers := models.NewGroup("ou=groups,dc=test,dc=com", "developers", "Developers group")
 	developers.AddMember("uid=jsmith,ou=users,dc=test,dc=com")
 	developers.AddMember("uid=bob,ou=users,dc=test,dc=com")
 	if err := store.CreateEntry(ctx, developers.Entry); err != nil {
@@ -112,8 +112,8 @@ func TestSearchEntriesWithEqualityFilter(t *testing.T) {
 			name:        "search by objectClass=groupOfNames",
 			baseDN:      "dc=test,dc=com",
 			filter:      "(objectClass=groupOfNames)",
-			wantCount:   2,
-			wantContain: []string{"cn=admins,ou=groups,dc=test,dc=com", "cn=developers,ou=groups,dc=test,dc=com"},
+			wantCount:   3, // ldaplite.admin + 2 test groups
+			wantContain: []string{"cn=ldaplite.admin,ou=groups,dc=test,dc=com", "cn=admins,ou=groups,dc=test,dc=com", "cn=developers,ou=groups,dc=test,dc=com"},
 		},
 		{
 			name:        "search by uid attribute",
@@ -192,7 +192,7 @@ func TestSearchEntriesWithPresentFilter(t *testing.T) {
 			name:      "search for entries with objectClass present",
 			baseDN:    "dc=test,dc=com",
 			filter:    "(objectClass=*)",
-			wantCount: 10, // 1 base + 2 OUs + 5 users + 2 groups
+			wantCount: 11, // 1 base + 2 OUs + 5 users + 3 groups
 		},
 		{
 			name:      "search for entries with uid present",
@@ -210,7 +210,7 @@ func TestSearchEntriesWithPresentFilter(t *testing.T) {
 			name:      "search for entries with cn present",
 			baseDN:    "dc=test,dc=com",
 			filter:    "(cn=*)",
-			wantCount: 7, // 5 users + 2 groups
+			wantCount: 8, // 5 users + 3 groups
 		},
 	}
 
@@ -401,8 +401,8 @@ func TestSearchEntriesWithOrFilter(t *testing.T) {
 			name:        "OR: objectClass=organizationalUnit OR objectClass=groupOfNames",
 			baseDN:      "dc=test,dc=com",
 			filter:      "(|(objectClass=organizationalUnit)(objectClass=groupOfNames))",
-			wantCount:   4,
-			wantContain: []string{"ou=users,dc=test,dc=com", "cn=admins,ou=groups,dc=test,dc=com"},
+			wantCount:   5, // 2 OUs + 3 groups
+			wantContain: []string{"ou=users,dc=test,dc=com", "cn=ldaplite.admin,ou=groups,dc=test,dc=com", "cn=admins,ou=groups,dc=test,dc=com"},
 		},
 		{
 			name:        "OR with three conditions",
@@ -523,8 +523,8 @@ func TestSearchEntriesWithComplexFilters(t *testing.T) {
 			name:        "Complex: (|(&(objectClass=inetOrgPerson)(cn=John*))(objectClass=groupOfNames))",
 			baseDN:      "dc=test,dc=com",
 			filter:      "(|(&(objectClass=inetOrgPerson)(cn=John*))(objectClass=groupOfNames))",
-			wantCount:   3, // John Doe + 2 groups
-			wantContain: []string{"uid=jdoe,ou=users,dc=test,dc=com", "cn=admins,ou=groups,dc=test,dc=com", "cn=developers,ou=groups,dc=test,dc=com"},
+			wantCount:   4, // John Doe + 3 groups
+			wantContain: []string{"uid=jdoe,ou=users,dc=test,dc=com", "cn=ldaplite.admin,ou=groups,dc=test,dc=com", "cn=admins,ou=groups,dc=test,dc=com", "cn=developers,ou=groups,dc=test,dc=com"},
 		},
 		{
 			name:        "Complex: (&(objectClass=inetOrgPerson)(cn=*)(mail=*))",
@@ -587,7 +587,7 @@ func TestSearchEntriesWithBaseDNScoping(t *testing.T) {
 			name:      "search only under ou=groups",
 			baseDN:    "ou=groups,dc=test,dc=com",
 			filter:    "(objectClass=*)",
-			wantCount: 3, // 1 OU + 2 groups
+			wantCount: 4, // 1 OU + 3 groups
 		},
 		{
 			name:      "search users only under ou=users",
@@ -599,7 +599,7 @@ func TestSearchEntriesWithBaseDNScoping(t *testing.T) {
 			name:      "search groups only under ou=groups",
 			baseDN:    "ou=groups,dc=test,dc=com",
 			filter:    "(objectClass=groupOfNames)",
-			wantCount: 2,
+			wantCount: 3, // ldaplite.admin + 2 test groups
 		},
 	}
 

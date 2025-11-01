@@ -13,6 +13,7 @@ type Config struct {
 	Database DatabaseConfig
 	Logging  LoggingConfig
 	Security SecurityConfig
+	WebUI    WebUIConfig
 }
 
 type ServerConfig struct {
@@ -52,6 +53,12 @@ type Argon2Config struct {
 	KeyLength   uint32
 }
 
+type WebUIConfig struct {
+	Enabled     bool
+	Port        int
+	BindAddress string
+}
+
 func Load() *Config {
 	cfg := &Config{
 		Server: ServerConfig{
@@ -83,6 +90,11 @@ func Load() *Config {
 				SaltLength:  uint32(getEnvInt("LDAP_ARGON2_SALT_LENGTH", 16)),
 				KeyLength:   uint32(getEnvInt("LDAP_ARGON2_KEY_LENGTH", 32)),
 			},
+		},
+		WebUI: WebUIConfig{
+			Enabled:     getEnvBool("LDAP_WEB_UI_ENABLED", true),
+			Port:        getEnvInt("LDAP_WEB_UI_PORT", 8080),
+			BindAddress: getEnvString("LDAP_WEB_UI_BIND_ADDRESS", "0.0.0.0"),
 		},
 	}
 

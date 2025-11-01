@@ -150,13 +150,13 @@ func (s *Server) handleBind(conn *protocol.Connection, msg *message.LDAPMessage)
 	ctx := context.Background()
 
 	bindReq := msg.ProtocolOp().(message.BindRequest)
-	dn := string(bindReq.Name())
+	bindDN := string(bindReq.Name())
 	password := string(bindReq.AuthenticationSimple())
 
-	slog.Debug("Bind request", "dn", dn)
+	slog.Debug("Bind request", "dn", bindDN)
 
 	// Handle anonymous bind
-	if dn == "" || password == "" {
+	if bindDN == "" || password == "" {
 		if s.cfg.Security.AllowAnonymousBind {
 			conn.SetBoundDN("") // Anonymous bind
 			slog.Debug("Anonymous bind allowed")
@@ -166,33 +166,39 @@ func (s *Server) handleBind(conn *protocol.Connection, msg *message.LDAPMessage)
 		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
-	// Extract UID from DN
-	uid := extractUID(dn)
+	// Extract UID from the bind DN
+	uid := extractUID(bindDN)
 	if uid == "" {
-		slog.Debug("Failed to extract UID from DN", "dn", dn)
+		slog.Debug("Failed to extract UID from DN", "dn", bindDN)
 		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
-	// Get password hash directly from users table
-	userPassword, err := s.store.GetUserPasswordHash(ctx, uid)
+	// Look up user by UID to get password hash and DN from database
+	passwordHash, dn, err := s.store.GetUserPasswordHash(ctx, uid)
 	if err != nil {
-		slog.Debug("Error retrieving password hash", "dn", dn, "error", err)
+		slog.Debug("Error retrieving user", "uid", uid, "error", err)
 		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
-	if userPassword == "" {
-		slog.Debug("User not found or no password set", "dn", dn)
+	if passwordHash == "" || dn == "" {
+		slog.Debug("User not found", "uid", uid)
+		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
+	}
+
+	// Validate that client's bind DN matches the DN in database
+	if !dnEqual(bindDN, dn) {
+		slog.Debug("Bind DN does not match database DN", "bind_dn", bindDN, "db_dn", dn)
 		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
 	// Verify password
-	verified, err := s.hasher.Verify(password, userPassword)
-	if err != nil || !verified {
+	valid, err := s.hasher.Verify(password, passwordHash)
+	if err != nil || !valid {
 		slog.Debug("Password verification failed", "dn", dn)
 		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
-	// Set bound DN on connection after successful authentication
+	// Bind successful - set the DN on the connection
 	conn.SetBoundDN(dn)
 
 	slog.Debug("Bind successful", "dn", dn)
@@ -612,6 +618,11 @@ func extractUID(dn string) string {
 		return dn[4:]
 	}
 	return ""
+}
+
+// dnEqual compares two DNs for equality (case-insensitive)
+func dnEqual(dn1, dn2 string) bool {
+	return strings.EqualFold(strings.TrimSpace(dn1), strings.TrimSpace(dn2))
 }
 
 // serializeFilter converts a goldap Filter to LDAP filter string

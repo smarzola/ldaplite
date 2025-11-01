@@ -12,8 +12,8 @@ type User struct {
 }
 
 // NewUser creates a new user entry
-func NewUser(baseDN, uid, cn, sn, mail string) *User {
-	userDN := fmt.Sprintf("uid=%s,ou=users,%s", uid, baseDN)
+func NewUser(parentDN, uid, cn, sn, mail string) *User {
+	userDN := fmt.Sprintf("uid=%s,%s", uid, parentDN)
 	entry := NewEntry(userDN, string(ObjectClassInetOrgPerson))
 
 	// Set required attributes

@@ -7,17 +7,25 @@ ARG VERSION=dev
 
 WORKDIR /build
 
-# Install build dependencies
-RUN apk add --no-cache git
+# Install build dependencies (including Node.js for Tailwind CSS)
+RUN apk add --no-cache git nodejs npm
 
 # Copy go mod files
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy package files and install Node dependencies
+COPY package*.json ./
+RUN npm ci
+
 # Copy source
 COPY . .
 
+# Build Tailwind CSS (generates internal/web/static/output.css)
+RUN npm run build:css
+
 # Build static binary (pure Go, no CGO needed for modernc.org/sqlite)
+# The binary embeds the generated CSS via //go:embed
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -ldflags="-w -s -extldflags '-static' -X main.version=${VERSION}" \
     -o ldaplite \

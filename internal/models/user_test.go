@@ -7,8 +7,8 @@ import (
 )
 
 func TestNewUser(t *testing.T) {
-	baseDN := "dc=example,dc=com"
-	user := NewUser(baseDN, "john", "John Doe", "Doe", "john@example.com")
+	parentDN := "ou=users,dc=example,dc=com"
+	user := NewUser(parentDN, "john", "John Doe", "Doe", "john@example.com")
 
 	assert.NotNil(t, user)
 	assert.Equal(t, "uid=john,ou=users,dc=example,dc=com", user.DN)
@@ -17,7 +17,7 @@ func TestNewUser(t *testing.T) {
 }
 
 func TestUserSetPassword(t *testing.T) {
-	user := NewUser("dc=example,dc=com", "john", "John Doe", "Doe", "john@example.com")
+	user := NewUser("ou=users,dc=example,dc=com", "john", "John Doe", "Doe", "john@example.com")
 	hashedPassword := "{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=2$test$hash"
 
 	user.SetPassword(hashedPassword)
@@ -27,14 +27,14 @@ func TestUserSetPassword(t *testing.T) {
 }
 
 func TestValidateUser(t *testing.T) {
-	user := NewUser("dc=example,dc=com", "john", "John Doe", "Doe", "john@example.com")
+	user := NewUser("ou=users,dc=example,dc=com", "john", "John Doe", "Doe", "john@example.com")
 
 	err := user.ValidateUser()
 	assert.NoError(t, err)
 }
 
 func TestValidateUserMissingUID(t *testing.T) {
-	user := NewUser("dc=example,dc=com", "john", "John Doe", "Doe", "john@example.com")
+	user := NewUser("ou=users,dc=example,dc=com", "john", "John Doe", "Doe", "john@example.com")
 	user.Entry.RemoveAttribute("uid")
 
 	err := user.ValidateUser()
@@ -43,7 +43,7 @@ func TestValidateUserMissingUID(t *testing.T) {
 }
 
 func TestValidateUserMissingCN(t *testing.T) {
-	user := NewUser("dc=example,dc=com", "john", "John Doe", "Doe", "john@example.com")
+	user := NewUser("ou=users,dc=example,dc=com", "john", "John Doe", "Doe", "john@example.com")
 	user.Entry.RemoveAttribute("cn")
 
 	err := user.ValidateUser()
@@ -52,7 +52,7 @@ func TestValidateUserMissingCN(t *testing.T) {
 }
 
 func TestValidateUserMissingSN(t *testing.T) {
-	user := NewUser("dc=example,dc=com", "john", "John Doe", "Doe", "john@example.com")
+	user := NewUser("ou=users,dc=example,dc=com", "john", "John Doe", "Doe", "john@example.com")
 	user.Entry.RemoveAttribute("sn")
 
 	err := user.ValidateUser()

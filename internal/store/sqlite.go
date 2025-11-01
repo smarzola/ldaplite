@@ -137,8 +137,9 @@ func (s *SQLiteStore) initializeDatabase(ctx context.Context) error {
 		slog.Info("Created OU", "dn", ouEntry.DN)
 	}
 
-	// Create admin user
-	adminUser := models.NewUser(baseDN, "admin", "Administrator", "Administrator", "admin@example.com")
+	// Create admin user (under ou=users)
+	usersOU := fmt.Sprintf("ou=users,%s", baseDN)
+	adminUser := models.NewUser(usersOU, "admin", "Administrator", "Administrator", "admin@example.com")
 	hashedPassword, err := s.hasher.Hash(adminPassword)
 	if err != nil {
 		return fmt.Errorf("failed to hash admin password: %w", err)
@@ -151,6 +152,16 @@ func (s *SQLiteStore) initializeDatabase(ctx context.Context) error {
 
 	slog.Info("Created admin user", "dn", adminUser.DN)
 	slog.Warn("Admin user initialized - password was set from LDAP_ADMIN_PASSWORD environment variable")
+
+	// Create ldaplite.admin group (under ou=groups)
+	groupsOU := fmt.Sprintf("ou=groups,%s", baseDN)
+	adminGroup := models.NewGroup(groupsOU, "ldaplite.admin", "LDAPLite administrators group - members have access to web UI")
+	adminGroup.AddMember(adminUser.DN)
+	if err := s.CreateEntry(ctx, adminGroup.Entry); err != nil {
+		return fmt.Errorf("failed to create ldaplite.admin group: %w", err)
+	}
+
+	slog.Info("Created ldaplite.admin group and added admin user", "group_dn", adminGroup.DN)
 
 	return nil
 }
@@ -314,6 +325,25 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 		if _, err := tx.ExecContext(ctx, groupQuery, entryID); err != nil {
 			return fmt.Errorf("failed to create group entry: %w", err)
 		}
+
+		// Sync group_members table with member attributes for referential integrity
+		// This allows efficient group membership queries and supports future nested group features
+		members := entry.GetAttributes("member")
+		if len(members) > 0 {
+			memberQuery := `
+				INSERT INTO group_members (group_entry_id, member_entry_id)
+				SELECT ?, id FROM entries WHERE dn = ?
+			`
+			for _, memberDN := range members {
+				if _, err := tx.ExecContext(ctx, memberQuery, entryID, memberDN); err != nil {
+					// Log warning but don't fail - member DN might not exist yet
+					slog.Warn("Failed to add member to group_members table",
+						"group_dn", entry.DN,
+						"member_dn", memberDN,
+						"error", err)
+				}
+			}
+		}
 	} else if entry.IsOrganizationalUnit() {
 		// Validate OU-specific requirements
 		ouModel := &models.OrganizationalUnit{Entry: entry, OU: entry.GetAttribute("ou")}
@@ -384,6 +414,41 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 			updatePasswordQuery := `UPDATE users SET password_hash = ? WHERE entry_id = (SELECT id FROM entries WHERE dn = ?)`
 			if _, err := tx.ExecContext(ctx, updatePasswordQuery, passwordHash, entry.DN); err != nil {
 				return fmt.Errorf("failed to update user password: %w", err)
+			}
+		}
+	}
+
+	// Step 4: Sync group_members table if this is a group
+	// This keeps the junction table in sync with member attributes for efficient queries
+	if entry.IsGroup() {
+		// Get the entry ID
+		var entryID int64
+		getIDQuery := `SELECT id FROM entries WHERE dn = ?`
+		if err := tx.QueryRowContext(ctx, getIDQuery, entry.DN).Scan(&entryID); err != nil {
+			return fmt.Errorf("failed to get entry ID: %w", err)
+		}
+
+		// Delete existing memberships for this group
+		delMembersQuery := `DELETE FROM group_members WHERE group_entry_id = ?`
+		if _, err := tx.ExecContext(ctx, delMembersQuery, entryID); err != nil {
+			return fmt.Errorf("failed to delete group members: %w", err)
+		}
+
+		// Re-insert all members from attributes
+		members := entry.GetAttributes("member")
+		if len(members) > 0 {
+			memberQuery := `
+				INSERT INTO group_members (group_entry_id, member_entry_id)
+				SELECT ?, id FROM entries WHERE dn = ?
+			`
+			for _, memberDN := range members {
+				if _, err := tx.ExecContext(ctx, memberQuery, entryID, memberDN); err != nil {
+					// Log warning but don't fail - member DN might not exist
+					slog.Warn("Failed to add member to group_members table during update",
+						"group_dn", entry.DN,
+						"member_dn", memberDN,
+						"error", err)
+				}
 			}
 		}
 	}
@@ -669,25 +734,48 @@ func (s *SQLiteStore) GetChildren(ctx context.Context, dn string) ([]*models.Ent
 //
 // Phase 3: Uses optimized index (idx_attributes_uid_lookup) for fast uid lookup,
 // then joins to users table for password retrieval.
-func (s *SQLiteStore) GetUserPasswordHash(ctx context.Context, uid string) (string, error) {
-	// Join attributes table (for uid lookup) with users table (for password_hash)
-	// The WHERE clause uses idx_attributes_uid_lookup index for fast lookup
+func (s *SQLiteStore) GetUserPasswordHash(ctx context.Context, uid string) (string, string, error) {
+	// Join entries, attributes, and users tables to get both password_hash and DN
+	// The WHERE clause uses idx_attributes_uid_lookup index for fast uid lookup
 	query := `
-		SELECT u.password_hash
+		SELECT u.password_hash, e.dn
 		FROM users u
+		INNER JOIN entries e ON u.entry_id = e.id
 		INNER JOIN attributes a ON u.entry_id = a.entry_id
 		WHERE a.name = 'uid' AND a.value = ?
 		LIMIT 1
 	`
-	var passwordHash string
-	err := s.db.QueryRowContext(ctx, query, uid).Scan(&passwordHash)
+	var passwordHash, dn string
+	err := s.db.QueryRowContext(ctx, query, uid).Scan(&passwordHash, &dn)
 	if err == sql.ErrNoRows {
-		return "", nil // User not found - return empty string, not an error
+		return "", "", nil // User not found - return empty strings, not an error
 	}
 	if err != nil {
-		return "", fmt.Errorf("failed to get user password hash: %w", err)
+		return "", "", fmt.Errorf("failed to get user password hash: %w", err)
 	}
-	return passwordHash, nil
+	return passwordHash, dn, nil
+}
+
+// IsUserInGroup checks if a user is a member of a group (direct membership only)
+// This uses the group_members junction table for efficient lookups.
+// Returns true if the user is a direct member, false otherwise.
+// For nested group support, this could be extended with a recursive CTE query.
+func (s *SQLiteStore) IsUserInGroup(ctx context.Context, userDN, groupDN string) (bool, error) {
+	query := `
+		SELECT EXISTS(
+			SELECT 1
+			FROM group_members gm
+			INNER JOIN entries user_entry ON gm.member_entry_id = user_entry.id
+			INNER JOIN entries group_entry ON gm.group_entry_id = group_entry.id
+			WHERE user_entry.dn = ? AND group_entry.dn = ?
+		)
+	`
+	var isMember bool
+	err := s.db.QueryRowContext(ctx, query, userDN, groupDN).Scan(&isMember)
+	if err != nil {
+		return false, fmt.Errorf("failed to check group membership: %w", err)
+	}
+	return isMember, nil
 }
 
 // fileExists checks if a file exists

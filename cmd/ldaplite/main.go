@@ -12,6 +12,7 @@ import (
 
 	"github.com/smarzola/ldaplite/internal/server"
 	"github.com/smarzola/ldaplite/internal/store"
+	"github.com/smarzola/ldaplite/internal/web"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/spf13/cobra"
 )
@@ -77,13 +78,41 @@ func startServer() error {
 
 	slog.Info("LDAPLite server is running", "address", fmt.Sprintf("%s:%d", cfg.Server.BindAddress, cfg.Server.Port))
 
+	// Start web UI if enabled
+	var webSrv *web.Server
+	if cfg.WebUI.Enabled {
+		var err error
+		webSrv, err = web.NewServer(cfg, st)
+		if err != nil {
+			return fmt.Errorf("failed to create web server: %w", err)
+		}
+
+		// Start web server in goroutine
+		go func() {
+			if err := webSrv.Start(); err != nil {
+				slog.Error("Web server failed", "error", err)
+			}
+		}()
+
+		slog.Info("Web UI server is running", "address", fmt.Sprintf("%s:%d", cfg.WebUI.BindAddress, cfg.WebUI.Port))
+	}
+
 	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
 
-	slog.Info("Shutting down server")
+	slog.Info("Shutting down servers")
+
+	// Stop LDAP server
 	srv.Stop()
+
+	// Stop web server if it was started
+	if webSrv != nil {
+		if err := webSrv.Stop(); err != nil {
+			slog.Error("Failed to stop web server", "error", err)
+		}
+	}
 
 	return nil
 }

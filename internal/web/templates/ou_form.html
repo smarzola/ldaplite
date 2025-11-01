@@ -1,0 +1,171 @@
+{{define "ou_form.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "title"}}{{if .OU}}Edit{{else}}New{{end}} Organizational Unit{{end}}
+
+{{define "content"}}
+<div class="space-y-6">
+    <h1 class="text-3xl font-bold">{{if .OU}}Edit{{else}}New{{end}} Organizational Unit</h1>
+
+    {{if .Error}}
+    <div role="alert" class="alert alert-error">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>{{.Error}}</span>
+    </div>
+    {{end}}
+
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <form method="POST" class="space-y-4">
+                {{if not .OU}}
+                <div>
+                    <label class="label font-semibold">Parent <span class="text-error">*</span></label>
+                    <select name="parentDN" required class="select select-bordered w-full">
+                        <option value="">Select parent...</option>
+                        <option value="{{.BaseDN}}">{{.BaseDN}} (Base DN)</option>
+                        {{range .OUs}}
+                        <option value="{{.DN}}">{{.DN}}</option>
+                        {{end}}
+                    </select>
+                    <p class="label text-sm opacity-70">The parent DN where this OU will be created (can be base DN or another OU)</p>
+                </div>
+
+                <div>
+                    <label class="label font-semibold">OU Name <span class="text-error">*</span></label>
+                    <input type="text" name="ou" required placeholder="departments" class="input input-bordered w-full">
+                    <p class="label text-sm opacity-70">Unique identifier for this organizational unit</p>
+                </div>
+                {{else}}
+                <div>
+                    <label class="label font-semibold">OU Name</label>
+                    <input type="text" value="{{.OU.GetAttribute "ou"}}" disabled class="input input-bordered w-full input-disabled">
+                    <p class="label text-sm opacity-70">Cannot be changed after creation</p>
+                </div>
+                {{end}}
+
+                <div>
+                    <label class="label font-semibold">Description</label>
+                    <input type="text" name="description" value="{{if .OU}}{{.OU.GetAttribute "description"}}{{end}}" placeholder="Departments organizational unit" class="input input-bordered w-full">
+                    <p class="label text-sm opacity-70">Brief description of this organizational unit</p>
+                </div>
+
+                <div class="collapse collapse-arrow bg-base-200">
+                    <input type="checkbox" />
+                    <div class="collapse-title font-medium">
+                        Additional Attributes (Advanced)
+                    </div>
+                    <div class="collapse-content">
+                        <div>
+                            <p class="label text-sm">Custom attributes (one per line: <code class="bg-base-300 px-1 rounded">name: value</code>)</p>
+                            <textarea name="attributes" class="textarea textarea-bordered font-mono h-48 w-full" placeholder="businessCategory: Infrastructure">{{.ExtraAttributes}}</textarea>
+                            <p class="label text-sm opacity-70">Format: <code class="bg-base-300 px-1 rounded">attributeName: attributeValue</code> (one per line)</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-3">
+                    <button type="submit" class="btn btn-primary">
+                        {{if .OU}}Update{{else}}Create{{end}} OU
+                    </button>
+                    <a href="/ous" class="btn btn-ghost">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+    // Form validation with aria-invalid
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.querySelector('form');
+        const inputs = form.querySelectorAll('input[required]');
+
+        // Validation rules
+        const validators = {
+            ou: (value) => {
+                if (!value || value.trim() === '') return 'OU name is required';
+                if (!/^[a-zA-Z0-9._-]+$/.test(value)) return 'OU name can only contain letters, numbers, dots, hyphens, and underscores';
+                if (value.length < 2) return 'OU name must be at least 2 characters';
+                return null;
+            }
+        };
+
+        // Validate single field
+        function validateField(input) {
+            const name = input.name;
+            const value = input.value;
+            const validator = validators[name];
+
+            if (!validator) return true;
+
+            const error = validator(value);
+
+            if (error) {
+                input.setAttribute('aria-invalid', 'true');
+                input.classList.add('input-error');
+                showError(input, error);
+                return false;
+            } else {
+                input.setAttribute('aria-invalid', 'false');
+                input.classList.remove('input-error');
+                clearError(input);
+                return true;
+            }
+        }
+
+        // Show error message
+        function showError(input, message) {
+            clearError(input);
+            const container = input.parentElement;
+            if (container) {
+                const errorEl = document.createElement('p');
+                errorEl.className = 'label text-sm text-error validation-error';
+                errorEl.textContent = message;
+                container.appendChild(errorEl);
+            }
+        }
+
+        // Clear error message
+        function clearError(input) {
+            const container = input.parentElement;
+            const existing = container?.querySelector('.validation-error');
+            if (existing) existing.remove();
+        }
+
+        // Attach event listeners
+        inputs.forEach(input => {
+            input.addEventListener('blur', () => validateField(input));
+            input.addEventListener('input', () => {
+                if (input.getAttribute('aria-invalid') === 'true') {
+                    validateField(input);
+                }
+            });
+        });
+
+        // Form submission validation
+        form.addEventListener('submit', function(e) {
+            let isValid = true;
+            inputs.forEach(input => {
+                if (!validateField(input)) {
+                    isValid = false;
+                }
+            });
+
+            if (!isValid) {
+                e.preventDefault();
+                // Scroll to first error
+                const firstError = form.querySelector('[aria-invalid="true"]');
+                if (firstError) {
+                    firstError.focus();
+                    firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        });
+    });
+</script>
+{{end}}

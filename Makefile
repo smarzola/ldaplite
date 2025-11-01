@@ -1,4 +1,4 @@
-.PHONY: help build test docker-build docker-run docker-stop clean lint install-tools
+.PHONY: help build build-css test docker-build docker-run docker-stop clean lint install-tools
 
 # Variables
 BINARY_NAME=ldaplite
@@ -11,7 +11,8 @@ help:
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@echo "  build              Build the binary"
+	@echo "  build              Build the binary (with CSS)"
+	@echo "  build-css          Build Tailwind CSS"
 	@echo "  test               Run tests"
 	@echo "  test-race          Run tests with race detector"
 	@echo "  test-coverage      Run tests with coverage report"
@@ -24,7 +25,16 @@ help:
 	@echo "  docker-logs        Show Docker logs"
 	@echo "  clean              Clean build artifacts"
 
-build:
+build-css:
+	@echo "Building Tailwind CSS..."
+	@if [ ! -d "node_modules" ]; then \
+		echo "Installing Node dependencies..."; \
+		npm install; \
+	fi
+	npm run build:css
+	@echo "CSS built: internal/web/static/output.css"
+
+build: build-css
 	@echo "Building ${BINARY_NAME}..."
 	CGO_ENABLED=0 ${GO} build ${LDFLAGS} -o bin/${BINARY_NAME} ./cmd/ldaplite
 	@echo "Binary created: bin/${BINARY_NAME}"
@@ -96,6 +106,7 @@ clean:
 	@echo "Cleaning..."
 	rm -rf bin/
 	rm -f coverage.out coverage.html
+	rm -f internal/web/static/output.css
 	${DOCKER} compose down -v
 	@echo "Clean complete"
 

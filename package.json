@@ -1,0 +1,15 @@
+{
+  "name": "ldaplite",
+  "version": "0.1.0",
+  "description": "Lightweight LDAP server with web UI",
+  "private": true,
+  "scripts": {
+    "build:css": "npx @tailwindcss/cli -i ./internal/web/static/input.css -o ./internal/web/static/output.css --minify",
+    "watch:css": "npx @tailwindcss/cli -i ./internal/web/static/input.css -o ./internal/web/static/output.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.16",
+    "daisyui": "^5.3.10",
+    "tailwindcss": "^4.1.16"
+  }
+}

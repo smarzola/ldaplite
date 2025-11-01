@@ -12,8 +12,8 @@ type Group struct {
 }
 
 // NewGroup creates a new group entry
-func NewGroup(baseDN, cn, description string) *Group {
-	groupDN := fmt.Sprintf("cn=%s,ou=groups,%s", cn, baseDN)
+func NewGroup(parentDN, cn, description string) *Group {
+	groupDN := fmt.Sprintf("cn=%s,%s", cn, parentDN)
 	entry := NewEntry(groupDN, string(ObjectClassGroupOfNames))
 
 	// Set required attributes
