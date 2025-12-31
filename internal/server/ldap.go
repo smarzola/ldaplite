@@ -542,6 +542,7 @@ func (s *Server) handleSchema(conn *protocol.Connection, msg *message.LDAPMessag
 		"( 2.5.4.35 NAME 'userPassword' DESC 'RFC2256/2307: password of user' EQUALITY octetStringMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.40{128} )",
 		"( 2.5.4.31 NAME 'member' DESC 'RFC2256: member of a group' SUP distinguishedName )",
 		"( 2.5.4.11 NAME 'ou' SUP name DESC 'RFC2256: organizational unit this object belongs to' )",
+		"( 1.2.840.113556.1.2.102 NAME 'memberOf' DESC 'RFC2307bis: Groups to which the entry belongs' EQUALITY distinguishedNameMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 NO-USER-MODIFICATION USAGE directoryOperation )",
 	)
 
 	if err := conn.WriteResponse(msg.MessageID(), entry); err != nil {

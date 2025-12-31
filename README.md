@@ -28,19 +28,21 @@ Perfect for homelabs, development environments, and single-instance deployments 
 
 - **Object Classes** (RFC 2256, RFC 2798):
   - `organizationalUnit` - Container entries
-  - `inetOrgPerson` - User entries with email, phone, display name
+  - `inetOrgPerson` - User entries with email, phone, display name, and `memberOf` attribute
   - `groupOfNames` - Groups with nested group support
   - `top` - Root of object class hierarchy
 
-- **Operational Attributes** (RFC 4512, RFC 4517):
+- **Operational Attributes** (RFC 4512, RFC 4517, RFC2307bis):
   - `createTimestamp` - Entry creation time (LDAP Generalized Time format)
   - `modifyTimestamp` - Last modification time
   - `objectClass` - Structural object class
-  - Searchable with `>=` and `<=` operators
+  - `memberOf` - Groups the user belongs to (computed, read-only)
+  - Searchable with `>=` and `<=` operators for timestamps
 
 ### Advanced Features
 
 - **Nested Groups**: Groups can contain users and other groups with circular reference detection
+- **memberOf Attribute** (RFC2307bis): Users automatically include `memberOf` attribute with DNs of all groups they belong to
 - **SQL Filter Compilation**: LDAP filters compiled to indexed SQL queries for performance
 - **Hybrid Filtering**: Falls back to in-memory filtering for complex queries
 - **Argon2id Password Hashing**: OWASP-recommended parameters (64MB memory, 3 iterations)
@@ -303,6 +305,36 @@ ldapadd -H ldap://localhost:3389 \
   -f parent-group.ldif
 ```
 
+### Querying User Group Memberships (memberOf)
+
+LDAPLite automatically populates the `memberOf` attribute for user entries per [RFC2307bis](https://datatracker.ietf.org/doc/html/draft-howard-rfc2307bis-02):
+
+```bash
+# Search for a user - memberOf is automatically included
+ldapsearch -H ldap://localhost:3389 \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
+  -w YourPassword \
+  -b "dc=example,dc=com" \
+  "(uid=john)"
+
+# Example output:
+# dn: uid=john,ou=users,dc=example,dc=com
+# objectClass: inetOrgPerson
+# uid: john
+# cn: John Doe
+# sn: Doe
+# mail: john@example.com
+# memberOf: cn=developers,ou=groups,dc=example,dc=com
+# memberOf: cn=ldaplite.admin,ou=groups,dc=example,dc=com
+
+# Find all users in a specific group using memberOf
+ldapsearch -H ldap://localhost:3389 \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
+  -w YourPassword \
+  -b "ou=users,dc=example,dc=com" \
+  "(memberOf=cn=developers,ou=groups,dc=example,dc=com)"
+```
+
 ## LDAP Filters
 
 LDAPLite supports comprehensive LDAP filter syntax:
@@ -315,6 +347,7 @@ LDAPLite supports comprehensive LDAP filter syntax:
 (cn=John*)                            # Starts with
 (mail=*@example.com)                  # Ends with
 (displayName=*Doe*)                   # Contains
+(memberOf=cn=developers,ou=groups,dc=example,dc=com)  # Users in group
 ```
 
 ### Logical Operators
@@ -351,10 +384,11 @@ LDAPLite supports comprehensive LDAP filter syntax:
 ### Database Schema
 
 - **entries** - All LDAP entries with timestamps and hierarchy
-- **attributes** - Multi-valued attributes storage
-- **users** - User-specific data (uid, password hash)
-- **groups** - Group data with recursive membership
-- **organizational_units** - OU-specific data
+- **attributes** - Multi-valued attributes storage (EAV pattern)
+- **users** - User-specific data (password hash only, security isolation)
+- **groups** - Group entry markers for referential integrity
+- **group_members** - Group membership junction table (powers `memberOf` attribute)
+- **organizational_units** - OU entry markers
 
 ### Performance Optimizations
 

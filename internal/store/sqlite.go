@@ -225,6 +225,11 @@ func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, e
 	// Add operational attributes (objectClass, timestamps)
 	entry.AddOperationalAttributes()
 
+	// Add memberOf attribute for user entries
+	if err := s.populateMemberOf(ctx, []*models.Entry{&entry}); err != nil {
+		return nil, fmt.Errorf("failed to populate memberOf: %w", err)
+	}
+
 	return &entry, nil
 }
 
@@ -563,7 +568,8 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filterSt
 	}
 	defer rows.Close()
 
-	var entries []*models.Entry
+	// First pass: collect all entries from SQL query
+	var allEntries []*models.Entry
 	for rows.Next() {
 		entry := &models.Entry{}
 		var attrsJSON string
@@ -589,14 +595,47 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filterSt
 		// Add operational attributes (objectClass, timestamps)
 		entry.AddOperationalAttributes()
 
-		// Apply in-memory filter if needed (fallback for unsupported filters)
-		if useInMemoryFilter {
-			if !parsedFilter.Matches(entry) {
-				continue
+		allEntries = append(allEntries, entry)
+	}
+
+	// Optimization: Order of operations depends on filter requirements
+	// - If filter uses computed attributes (memberOf): populate first, then filter
+	// - If filter doesn't use computed attributes: filter first, then populate
+	// This reduces work when non-memberOf filters significantly reduce the result set
+	var entries []*models.Entry
+
+	if useInMemoryFilter {
+		filterUsesComputed := schema.FilterUsesComputedAttributes(parsedFilter)
+
+		if filterUsesComputed {
+			// Filter needs memberOf → populate first, then filter
+			if err := s.populateMemberOf(ctx, allEntries); err != nil {
+				return nil, fmt.Errorf("failed to populate memberOf: %w", err)
+			}
+			for _, entry := range allEntries {
+				if parsedFilter.Matches(entry) {
+					entries = append(entries, entry)
+				}
+			}
+		} else {
+			// Filter doesn't need memberOf → filter first (optimization!)
+			// This reduces the number of entries we need to populate memberOf for
+			for _, entry := range allEntries {
+				if parsedFilter.Matches(entry) {
+					entries = append(entries, entry)
+				}
+			}
+			// Now populate memberOf only for filtered entries
+			if err := s.populateMemberOf(ctx, entries); err != nil {
+				return nil, fmt.Errorf("failed to populate memberOf: %w", err)
 			}
 		}
-
-		entries = append(entries, entry)
+	} else {
+		// No in-memory filter needed - all entries pass, populate memberOf for all
+		if err := s.populateMemberOf(ctx, allEntries); err != nil {
+			return nil, fmt.Errorf("failed to populate memberOf: %w", err)
+		}
+		entries = allEntries
 	}
 
 	return entries, nil
@@ -658,6 +697,11 @@ func (s *SQLiteStore) GetAllEntries(ctx context.Context) ([]*models.Entry, error
 		entries = append(entries, entry)
 	}
 
+	// Add memberOf attribute for user entries
+	if err := s.populateMemberOf(ctx, entries); err != nil {
+		return nil, fmt.Errorf("failed to populate memberOf: %w", err)
+	}
+
 	return entries, nil
 }
 
@@ -716,6 +760,11 @@ func (s *SQLiteStore) GetChildren(ctx context.Context, dn string) ([]*models.Ent
 		entry.AddOperationalAttributes()
 
 		entries = append(entries, entry)
+	}
+
+	// Add memberOf attribute for user entries
+	if err := s.populateMemberOf(ctx, entries); err != nil {
+		return nil, fmt.Errorf("failed to populate memberOf: %w", err)
 	}
 
 	return entries, nil
@@ -782,4 +831,71 @@ func (s *SQLiteStore) IsUserInGroup(ctx context.Context, userDN, groupDN string)
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// populateMemberOf adds the memberOf attribute to user entries (inetOrgPerson).
+// This is a virtual attribute computed from the group_members table.
+// For each user entry, it adds a memberOf attribute containing the DN of each
+// group the user belongs to (as per LDAP memberOf overlay semantics).
+//
+// This function efficiently batches the lookup to minimize database queries:
+// 1. Collect all user entry IDs
+// 2. Single query to get all group memberships for those users
+// 3. Populate memberOf attribute for each user entry
+func (s *SQLiteStore) populateMemberOf(ctx context.Context, entries []*models.Entry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// Collect user entry IDs
+	userEntryIDs := make([]int64, 0)
+	userEntriesByID := make(map[int64]*models.Entry)
+	for _, entry := range entries {
+		if entry.IsUser() && entry.ID > 0 {
+			userEntryIDs = append(userEntryIDs, entry.ID)
+			userEntriesByID[entry.ID] = entry
+		}
+	}
+
+	if len(userEntryIDs) == 0 {
+		return nil
+	}
+
+	// Build query with placeholders for user entry IDs
+	placeholders := make([]string, len(userEntryIDs))
+	args := make([]interface{}, len(userEntryIDs))
+	for i, id := range userEntryIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	// Query all group memberships for these users
+	// Returns: member_entry_id (user), group_dn
+	query := `
+		SELECT gm.member_entry_id, g_entry.dn
+		FROM group_members gm
+		INNER JOIN entries g_entry ON gm.group_entry_id = g_entry.id
+		WHERE gm.member_entry_id IN (` + strings.Join(placeholders, ",") + `)
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("failed to query group memberships: %w", err)
+	}
+	defer rows.Close()
+
+	// Populate memberOf attribute for each user
+	for rows.Next() {
+		var memberEntryID int64
+		var groupDN string
+		if err := rows.Scan(&memberEntryID, &groupDN); err != nil {
+			return fmt.Errorf("failed to scan group membership: %w", err)
+		}
+
+		if entry, ok := userEntriesByID[memberEntryID]; ok {
+			entry.AddAttribute("memberOf", groupDN)
+		}
+	}
+
+	return rows.Err()
 }
