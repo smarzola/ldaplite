@@ -174,6 +174,7 @@ LDAPLite uses an **optimized storage strategy** that eliminates redundancy while
 - Supports direct membership and nested groups
 - Enables efficient recursive queries with SQL CTEs
 - Circular reference detection (max depth: 10)
+- Powers the `memberOf` operational attribute for user entries (RFC2307bis)
 
 **`organizational_units` table** - Referential integrity marker:
 - `entry_id`: Foreign key to entries table
@@ -289,8 +290,17 @@ All configuration via environment variables (see `pkg/config/config.go`):
 - `createTimestamp`: Entry creation time in LDAP Generalized Time format (RFC 4517)
 - `modifyTimestamp`: Last modification time in LDAP Generalized Time format
 - `objectClass`: Structural object class
+- `memberOf`: Groups the user belongs to (RFC2307bis, inetOrgPerson only)
 
 These attributes are automatically added to all entries by the server and cannot be modified by clients. They conform to RFC 4512 (LDAP Directory Information Models). Format: `YYYYMMDDHHMMSSz` (e.g., `20251025143045Z`)
+
+**memberOf Attribute (RFC2307bis):**
+- Automatically computed for `inetOrgPerson` entries from the `group_members` table
+- Contains DN of each `groupOfNames` the user is a member of
+- Multi-valued: one value per group membership
+- Populated by `populateMemberOf()` in `internal/store/sqlite.go`
+- Defined in schema with OID `1.2.840.113556.1.2.102` (Microsoft standard, widely adopted)
+- Marked as `NO-USER-MODIFICATION` and `directoryOperation` (read-only operational attribute)
 
 ## Development Notes
 

@@ -42,6 +42,46 @@ func (fc *FilterCompiler) CompileToSQL(filter *Filter) (string, []interface{}, e
 	}
 }
 
+// computedAttributes are attributes that are not stored in the attributes table
+// but computed dynamically (e.g., memberOf from group_members table).
+// These require in-memory filtering and cannot be compiled to SQL.
+var computedAttributes = map[string]bool{
+	"memberof": true, // RFC2307bis: computed from group_members table
+}
+
+// isComputedAttribute checks if an attribute is computed (not stored in SQL)
+func isComputedAttribute(attr string) bool {
+	return computedAttributes[strings.ToLower(attr)]
+}
+
+// FilterUsesComputedAttributes checks if a filter references any computed attributes
+// (like memberOf). This is used to optimize query execution order.
+func FilterUsesComputedAttributes(filter *Filter) bool {
+	if filter == nil {
+		return false
+	}
+
+	switch filter.Type {
+	case FilterTypeEquality, FilterTypePresent, FilterTypeSubstrings,
+		FilterTypeGreaterOrEqual, FilterTypeLessOrEqual, FilterTypeApproxMatch:
+		return isComputedAttribute(filter.Attribute)
+	case FilterTypeAnd, FilterTypeOr:
+		for _, sf := range filter.Filters {
+			if FilterUsesComputedAttributes(sf) {
+				return true
+			}
+		}
+		return false
+	case FilterTypeNot:
+		if len(filter.Filters) > 0 {
+			return FilterUsesComputedAttributes(filter.Filters[0])
+		}
+		return false
+	default:
+		return false
+	}
+}
+
 // CanCompileToSQL checks if a filter can be compiled to SQL
 func (fc *FilterCompiler) CanCompileToSQL(filter *Filter) bool {
 	if filter == nil {
@@ -50,10 +90,12 @@ func (fc *FilterCompiler) CanCompileToSQL(filter *Filter) bool {
 
 	switch filter.Type {
 	case FilterTypeEquality, FilterTypePresent:
-		return true
+		// Computed attributes (like memberOf) require in-memory filtering
+		return !isComputedAttribute(filter.Attribute)
 	case FilterTypeSubstrings:
 		// Substring support depends on value containing wildcards
-		return strings.Contains(filter.Value, "*")
+		// Computed attributes require in-memory filtering
+		return !isComputedAttribute(filter.Attribute) && strings.Contains(filter.Value, "*")
 	case FilterTypeGreaterOrEqual, FilterTypeLessOrEqual:
 		// Comparison operators supported for operational timestamp attributes
 		attrLower := strings.ToLower(filter.Attribute)
