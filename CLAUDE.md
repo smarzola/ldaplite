@@ -45,9 +45,9 @@ go build -o bin/ldaplite ./cmd/ldaplite
 
 ### Testing
 ```bash
-make test                   # Run tests with race detector
-make test-coverage          # Generate coverage report (coverage.html)
-go test -v -race ./...      # Run tests directly
+make test                   # Build CSS, then run tests with race detector
+make test-coverage          # Build CSS, then generate coverage report (coverage.html)
+go test -v -race ./...      # Run tests directly (requires internal/web/static/output.css to exist)
 ```
 
 ### Running Locally

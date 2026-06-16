@@ -436,15 +436,17 @@ These are intentional trade-offs for simplicity. For large enterprise deployment
 ### Running Tests
 
 ```bash
-# Run all tests with race detection
+# Run all tests with race detection (also builds embedded Web UI CSS)
 make test
 
-# Run with coverage
+# Run with coverage (also builds embedded Web UI CSS)
 make test-coverage
 
 # View coverage in browser
 open coverage.html
 ```
+
+Note: direct `go test ./...` requires `internal/web/static/output.css` to exist because the Web UI embeds it at compile time. Prefer `make test` on a fresh checkout so CSS is generated first.
 
 ### Code Structure
 
