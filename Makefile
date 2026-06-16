@@ -47,15 +47,15 @@ build-static:
 		./cmd/ldaplite
 	@echo "Static binary created: bin/${BINARY_NAME}-linux-amd64"
 
-test:
+test: build-css
 	@echo "Running tests..."
 	${GO} test -v -race ./...
 
-test-race:
+test-race: build-css
 	@echo "Running tests with race detector..."
 	${GO} test -race ./...
 
-test-coverage:
+test-coverage: build-css
 	@echo "Running tests with coverage..."
 	${GO} test -v -race -coverprofile=coverage.out ./...
 	${GO} tool cover -html=coverage.out -o coverage.html
