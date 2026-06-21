@@ -1,9 +1,12 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/smarzola/ldaplite/internal/models"
 )
 
 // attrPair represents a single attribute name-value pair for JSON encoding
@@ -42,4 +45,39 @@ func decodeAttributesJSON(jsonStr string) (map[string][]string, error) {
 	}
 
 	return attrs, nil
+}
+
+func scanEntriesWithAttributes(rows *sql.Rows) ([]*models.Entry, error) {
+	var entries []*models.Entry
+	for rows.Next() {
+		entry := &models.Entry{}
+		var attrsJSON string
+
+		if err := rows.Scan(
+			&entry.ID,
+			&entry.DN,
+			&entry.ParentDN,
+			&entry.ObjectClass,
+			&entry.CreatedAt,
+			&entry.UpdatedAt,
+			&attrsJSON,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan entry: %w", err)
+		}
+
+		attrs, err := decodeAttributesJSON(attrsJSON)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
+		}
+		entry.Attributes = attrs
+
+		// Add operational attributes (objectClass, timestamps)
+		entry.AddOperationalAttributes()
+
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to scan entries: %w", err)
+	}
+	return entries, nil
 }

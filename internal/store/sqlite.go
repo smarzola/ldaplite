@@ -208,41 +208,27 @@ func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, e
 		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
-	var entry models.Entry
-	var attrsJSON string
-
-	err := s.db.QueryRowContext(ctx, query, dn).Scan(
-		&entry.ID,
-		&entry.DN,
-		&entry.ParentDN,
-		&entry.ObjectClass,
-		&entry.CreatedAt,
-		&entry.UpdatedAt,
-		&attrsJSON,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
+	rows, err := s.db.QueryContext(ctx, query, dn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get entry: %w", err)
 	}
+	defer rows.Close()
 
-	// Decode attributes from JSON
-	entry.Attributes, err = decodeAttributesJSON(attrsJSON)
+	entries, err := scanEntriesWithAttributes(rows)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
+		return nil, err
 	}
-
-	// Add operational attributes (objectClass, timestamps)
-	entry.AddOperationalAttributes()
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	entry := entries[0]
 
 	// Add memberOf attribute for user entries
-	if err := s.populateMemberOf(ctx, []*models.Entry{&entry}); err != nil {
+	if err := s.populateMemberOf(ctx, []*models.Entry{entry}); err != nil {
 		return nil, fmt.Errorf("failed to populate memberOf: %w", err)
 	}
 
-	return &entry, nil
+	return entry, nil
 }
 
 // CreateEntry creates a new entry using the dual-storage architecture:
@@ -651,33 +637,9 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filterSt
 	defer rows.Close()
 
 	// First pass: collect all entries from SQL query
-	var allEntries []*models.Entry
-	for rows.Next() {
-		entry := &models.Entry{}
-		var attrsJSON string
-
-		if err := rows.Scan(
-			&entry.ID,
-			&entry.DN,
-			&entry.ParentDN,
-			&entry.ObjectClass,
-			&entry.CreatedAt,
-			&entry.UpdatedAt,
-			&attrsJSON,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan entry: %w", err)
-		}
-
-		// Decode attributes from JSON
-		entry.Attributes, err = decodeAttributesJSON(attrsJSON)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
-		}
-
-		// Add operational attributes (objectClass, timestamps)
-		entry.AddOperationalAttributes()
-
-		allEntries = append(allEntries, entry)
+	allEntries, err := scanEntriesWithAttributes(rows)
+	if err != nil {
+		return nil, err
 	}
 
 	// Optimization: Order of operations depends on filter requirements
@@ -750,33 +712,9 @@ func (s *SQLiteStore) GetAllEntries(ctx context.Context) ([]*models.Entry, error
 	}
 	defer rows.Close()
 
-	var entries []*models.Entry
-	for rows.Next() {
-		entry := &models.Entry{}
-		var attrsJSON string
-
-		if err := rows.Scan(
-			&entry.ID,
-			&entry.DN,
-			&entry.ParentDN,
-			&entry.ObjectClass,
-			&entry.CreatedAt,
-			&entry.UpdatedAt,
-			&attrsJSON,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan entry: %w", err)
-		}
-
-		// Decode attributes from JSON
-		entry.Attributes, err = decodeAttributesJSON(attrsJSON)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
-		}
-
-		// Add operational attributes (objectClass, timestamps)
-		entry.AddOperationalAttributes()
-
-		entries = append(entries, entry)
+	entries, err := scanEntriesWithAttributes(rows)
+	if err != nil {
+		return nil, err
 	}
 
 	// Add memberOf attribute for user entries
@@ -815,33 +753,9 @@ func (s *SQLiteStore) GetChildren(ctx context.Context, dn string) ([]*models.Ent
 	}
 	defer rows.Close()
 
-	var entries []*models.Entry
-	for rows.Next() {
-		entry := &models.Entry{}
-		var attrsJSON string
-
-		if err := rows.Scan(
-			&entry.ID,
-			&entry.DN,
-			&entry.ParentDN,
-			&entry.ObjectClass,
-			&entry.CreatedAt,
-			&entry.UpdatedAt,
-			&attrsJSON,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan entry: %w", err)
-		}
-
-		// Decode attributes from JSON
-		entry.Attributes, err = decodeAttributesJSON(attrsJSON)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode attributes for %s: %w", entry.DN, err)
-		}
-
-		// Add operational attributes (objectClass, timestamps)
-		entry.AddOperationalAttributes()
-
-		entries = append(entries, entry)
+	entries, err := scanEntriesWithAttributes(rows)
+	if err != nil {
+		return nil, err
 	}
 
 	// Add memberOf attribute for user entries
