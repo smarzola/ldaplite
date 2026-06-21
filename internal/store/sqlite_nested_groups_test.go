@@ -52,6 +52,20 @@ func TestIsUserInGroupIsTransitive(t *testing.T) {
 	}
 }
 
+func TestIsUserInGroupUsesCaseInsensitiveDNs(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	isMember, err := store.IsUserInGroup(ctx, "UID=JDOE,OU=USERS,DC=TEST,DC=COM", "CN=ADMINS,OU=GROUPS,DC=TEST,DC=COM")
+	if err != nil {
+		t.Fatalf("IsUserInGroup() failed: %v", err)
+	}
+	if !isMember {
+		t.Fatal("jdoe should be found in admins with case-variant DNs")
+	}
+}
+
 func TestNestedGroupCycleDoesNotLoop(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()

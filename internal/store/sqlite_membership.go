@@ -108,7 +108,7 @@ func (s *SQLiteStore) IsUserInGroup(ctx context.Context, userDN, groupDN string)
 			SELECT gm.group_entry_id, 0, printf(',%d,', gm.group_entry_id)
 			FROM group_members gm
 			INNER JOIN entries user_entry ON gm.member_entry_id = user_entry.id
-			WHERE user_entry.dn = ?
+			WHERE LOWER(user_entry.dn) = LOWER(?)
 
 			UNION ALL
 
@@ -123,7 +123,7 @@ func (s *SQLiteStore) IsUserInGroup(ctx context.Context, userDN, groupDN string)
 			SELECT 1
 			FROM user_groups ug
 			INNER JOIN entries group_entry ON ug.group_id = group_entry.id
-			WHERE group_entry.dn = ?
+			WHERE LOWER(group_entry.dn) = LOWER(?)
 		)
 	`
 	var isMember bool
