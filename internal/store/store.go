@@ -21,6 +21,10 @@ type SearchOptions struct {
 	IncludeMemberOf bool
 }
 
+type EntryOptions struct {
+	IncludeMemberOf bool
+}
+
 // Store defines the interface for LDAP data storage
 type Store interface {
 	// Initialize sets up the database and runs migrations
@@ -31,6 +35,7 @@ type Store interface {
 
 	// Entry operations
 	GetEntry(ctx context.Context, dn string) (*models.Entry, error)
+	GetEntryWithOptions(ctx context.Context, dn string, options EntryOptions) (*models.Entry, error)
 	CreateEntry(ctx context.Context, entry *models.Entry) error
 	UpdateEntry(ctx context.Context, entry *models.Entry) error
 	DeleteEntry(ctx context.Context, dn string) error

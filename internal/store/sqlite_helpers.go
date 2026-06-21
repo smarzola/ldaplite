@@ -81,6 +81,10 @@ func scanEntriesWithAttributes(rows *sql.Rows) ([]*models.Entry, error) {
 }
 
 func (s *SQLiteStore) queryEntriesWithAttributes(ctx context.Context, operation string, query string, args ...interface{}) ([]*models.Entry, error) {
+	return s.queryEntriesWithAttributesOptions(ctx, operation, true, query, args...)
+}
+
+func (s *SQLiteStore) queryEntriesWithAttributesOptions(ctx context.Context, operation string, includeMemberOf bool, query string, args ...interface{}) ([]*models.Entry, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to %s: %w", operation, err)
@@ -92,8 +96,10 @@ func (s *SQLiteStore) queryEntriesWithAttributes(ctx context.Context, operation 
 		return nil, err
 	}
 
-	if err := s.populateMemberOf(ctx, entries); err != nil {
-		return nil, fmt.Errorf("failed to populate memberOf: %w", err)
+	if includeMemberOf {
+		if err := s.populateMemberOf(ctx, entries); err != nil {
+			return nil, fmt.Errorf("failed to populate memberOf: %w", err)
+		}
 	}
 
 	return entries, nil

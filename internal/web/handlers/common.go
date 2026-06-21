@@ -154,6 +154,10 @@ func searchEntriesWithoutMemberOf(ctx context.Context, st store.Store, baseDN, f
 	})
 }
 
+func getEntryWithoutMemberOf(ctx context.Context, st store.Store, dn string) (*models.Entry, error) {
+	return st.GetEntryWithOptions(ctx, dn, store.EntryOptions{IncludeMemberOf: false})
+}
+
 // GetBaseDN returns the base DN string for templates
 func GetBaseDN(cfg *config.Config) string {
 	return cfg.LDAP.BaseDN

@@ -124,7 +124,7 @@ func (h *GroupHandler) Edit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	entry, err := h.store.GetEntry(ctx, dn)
+	entry, err := getEntryWithoutMemberOf(ctx, h.store, dn)
 	if err != nil {
 		h.showError(w, r, fmt.Sprintf("Group not found: %v", err), nil)
 		return
@@ -150,7 +150,7 @@ func (h *GroupHandler) Edit(w http.ResponseWriter, r *http.Request) {
 func (h *GroupHandler) update(w http.ResponseWriter, r *http.Request, dn string) {
 	ctx := r.Context()
 
-	entry, err := h.store.GetEntry(ctx, dn)
+	entry, err := getEntryWithoutMemberOf(ctx, h.store, dn)
 	if err != nil {
 		h.showError(w, r, fmt.Sprintf("Group not found: %v", err), nil)
 		return

@@ -10,6 +10,7 @@ import (
 	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/protocol"
+	"github.com/smarzola/ldaplite/internal/store"
 )
 
 // handleAdd handles add operations
@@ -106,7 +107,7 @@ func (s *Server) handleModify(ctx context.Context, conn *protocol.Connection, ms
 	}
 
 	// Get entry
-	entry, err := s.store.GetEntry(ctx, dn)
+	entry, err := s.store.GetEntryWithOptions(ctx, dn, store.EntryOptions{IncludeMemberOf: false})
 	if err != nil {
 		slog.Error("Failed to get entry", "dn", dn, "error", err)
 		return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeOperationsError))

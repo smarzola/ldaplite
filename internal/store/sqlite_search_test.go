@@ -1064,6 +1064,35 @@ func TestSearchEntriesWithOptionsCanSkipMemberOfProjection(t *testing.T) {
 	}
 }
 
+func TestGetEntryWithOptionsCanSkipMemberOfProjection(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	entry, err := store.GetEntryWithOptions(ctx, "uid=jdoe,ou=users,dc=test,dc=com", EntryOptions{
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		t.Fatalf("GetEntryWithOptions() failed: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("GetEntryWithOptions() returned nil")
+	}
+	if entry.HasAttribute("memberOf") {
+		t.Fatalf("memberOf should not be populated when IncludeMemberOf is false: %v", entry.GetAttributes("memberOf"))
+	}
+
+	entry, err = store.GetEntryWithOptions(ctx, "uid=jdoe,ou=users,dc=test,dc=com", EntryOptions{
+		IncludeMemberOf: true,
+	})
+	if err != nil {
+		t.Fatalf("GetEntryWithOptions() with IncludeMemberOf failed: %v", err)
+	}
+	if !containsValue(entry.GetAttributes("memberOf"), "cn=admins,ou=groups,dc=test,dc=com") {
+		t.Fatalf("memberOf should be populated when IncludeMemberOf is true: %v", entry.GetAttributes("memberOf"))
+	}
+}
+
 func TestSearchEntriesWithOptionsMemberOfFilterDoesNotForceProjection(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()

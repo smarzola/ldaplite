@@ -21,6 +21,11 @@ type SQLiteStore struct {
 
 // GetEntry retrieves an entry by DN
 func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, error) {
+	return s.GetEntryWithOptions(ctx, dn, EntryOptions{IncludeMemberOf: true})
+}
+
+// GetEntryWithOptions retrieves an entry by DN with optional computed attributes.
+func (s *SQLiteStore) GetEntryWithOptions(ctx context.Context, dn string, options EntryOptions) (*models.Entry, error) {
 	// Use JSON aggregation to fetch entry with attributes in a single query
 	query := `
 		SELECT
@@ -41,7 +46,7 @@ func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, e
 		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
-	entries, err := s.queryEntriesWithAttributes(ctx, "get entry", query, dn)
+	entries, err := s.queryEntriesWithAttributesOptions(ctx, "get entry", options.IncludeMemberOf, query, dn)
 	if err != nil {
 		return nil, err
 	}

@@ -114,7 +114,7 @@ func (h *OUHandler) Edit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	entry, err := h.store.GetEntry(ctx, dn)
+	entry, err := getEntryWithoutMemberOf(ctx, h.store, dn)
 	if err != nil {
 		h.showError(w, r, fmt.Sprintf("OU not found: %v", err), nil)
 		return
@@ -140,7 +140,7 @@ func (h *OUHandler) Edit(w http.ResponseWriter, r *http.Request) {
 func (h *OUHandler) update(w http.ResponseWriter, r *http.Request, dn string) {
 	ctx := r.Context()
 
-	entry, err := h.store.GetEntry(ctx, dn)
+	entry, err := getEntryWithoutMemberOf(ctx, h.store, dn)
 	if err != nil {
 		h.showError(w, r, fmt.Sprintf("OU not found: %v", err), nil)
 		return

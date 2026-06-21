@@ -134,7 +134,7 @@ func (h *UserHandler) Edit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	entry, err := h.store.GetEntry(ctx, dn)
+	entry, err := getEntryWithoutMemberOf(ctx, h.store, dn)
 	if err != nil {
 		h.showError(w, r, fmt.Sprintf("User not found: %v", err), nil)
 		return
@@ -160,7 +160,7 @@ func (h *UserHandler) Edit(w http.ResponseWriter, r *http.Request) {
 func (h *UserHandler) update(w http.ResponseWriter, r *http.Request, dn string) {
 	ctx := r.Context()
 
-	entry, err := h.store.GetEntry(ctx, dn)
+	entry, err := getEntryWithoutMemberOf(ctx, h.store, dn)
 	if err != nil {
 		h.showError(w, r, fmt.Sprintf("User not found: %v", err), nil)
 		return
