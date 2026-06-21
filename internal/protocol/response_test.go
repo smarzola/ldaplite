@@ -86,3 +86,27 @@ func TestSearchResultEntryBERUsesCanonicalKnownAttributeNames(t *testing.T) {
 		}
 	}
 }
+
+func TestWhoAmIResponseBERIncludesOIDAndAuthzID(t *testing.T) {
+	const authzID = "dn:uid=admin,ou=users,dc=example,dc=com"
+
+	resp, err := NewWhoAmIResponse(authzID)
+	if err != nil {
+		t.Fatalf("NewWhoAmIResponse() failed: %v", err)
+	}
+
+	msg := message.NewLDAPMessageWithProtocolOp(resp)
+	msg.SetMessageID(1)
+	encoded, err := msg.Write()
+	if err != nil {
+		t.Fatalf("failed to encode extended response: %v", err)
+	}
+	ber := encoded.Bytes()
+
+	if !bytes.Contains(ber, []byte(WhoAmIOID)) {
+		t.Fatalf("encoded BER extended response is missing Who Am I OID %q: %x", WhoAmIOID, ber)
+	}
+	if !bytes.Contains(ber, []byte(authzID)) {
+		t.Fatalf("encoded BER extended response is missing authzID %q: %x", authzID, ber)
+	}
+}

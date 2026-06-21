@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"reflect"
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/lor00x/goldap/message"
 
@@ -600,12 +598,8 @@ func (s *Server) handleExtended(conn *protocol.Connection, msg *message.LDAPMess
 
 	// Handle "Who am I?" extended operation (RFC 4532)
 	// OID: 1.3.6.1.4.1.4203.1.11.3
-	if reqOID == "1.3.6.1.4.1.4203.1.11.3" {
+	if reqOID == protocol.WhoAmIOID {
 		boundDN := conn.GetBoundDN()
-
-		// Create response with the authorization identity
-		resp := protocol.NewExtendedResponse(message.ResultCodeSuccess)
-		resp.SetResponseName(message.LDAPOID(reqOID))
 
 		// Set the response value to the bound DN
 		// RFC 4532 specifies the format as "dn:<distinguished-name>" or empty for anonymous
@@ -616,15 +610,10 @@ func (s *Server) handleExtended(conn *protocol.Connection, msg *message.LDAPMess
 			authzID = "dn:" + boundDN
 		}
 
-		// WORKAROUND: goldap library doesn't provide a public method to set responseValue
-		// Use reflection to set the unexported field until the library is updated
-		octetString := message.OCTETSTRING(authzID)
-		respValue := reflect.ValueOf(&resp).Elem()
-		responseValueField := respValue.FieldByName("responseValue")
-		if responseValueField.IsValid() {
-			// Use unsafe to modify the unexported field
-			ptr := unsafe.Pointer(responseValueField.UnsafeAddr())
-			*(**message.OCTETSTRING)(ptr) = &octetString
+		resp, err := protocol.NewWhoAmIResponse(authzID)
+		if err != nil {
+			slog.Error("Failed to build Who am I response", "error", err)
+			return conn.WriteResponse(msg.MessageID(), protocol.NewExtendedResponse(message.ResultCodeOperationsError))
 		}
 
 		slog.Debug("Who am I response", "authzID", authzID)
