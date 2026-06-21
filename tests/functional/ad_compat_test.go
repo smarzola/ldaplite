@@ -133,6 +133,35 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 		assertTimestampAttr(t, entry, "modifyTimestamp")
 	})
 
+	t.Run("escaped DN compatibility", func(t *testing.T) {
+		conn := srv.dial(t)
+		bindAdmin(t, conn)
+
+		escapedDN := `uid=comma\,user,` + usersOUDN
+		caseVariantDN := `UID=COMMA\,USER,OU=USERS,DC=EXAMPLE,DC=COM`
+
+		user := ldap.NewAddRequest(escapedDN, nil)
+		user.Attribute("objectClass", []string{"inetOrgPerson"})
+		user.Attribute("uid", []string{"comma,user"})
+		user.Attribute("cn", []string{"Comma User"})
+		user.Attribute("sn", []string{"User"})
+		user.Attribute("userPassword", []string{"CommaPassword123!"})
+		if err := conn.Add(user); err != nil {
+			t.Fatalf("add escaped DN user: %v", err)
+		}
+
+		res := search(t, conn, "(uid=comma,user)", []string{"*", "+"})
+		assertDNs(t, res, []string{escapedDN})
+		assertBindSucceeds(t, srv, caseVariantDN, "CommaPassword123!")
+
+		if err := conn.Del(ldap.NewDelRequest(caseVariantDN, nil)); err != nil {
+			t.Fatalf("delete escaped DN user by case variant: %v", err)
+		}
+
+		res = search(t, conn, "(uid=comma,user)", []string{"dn"})
+		assertDNs(t, res, nil)
+	})
+
 	t.Run("modify compatibility", func(t *testing.T) {
 		conn := srv.dial(t)
 		bindAdmin(t, conn)
