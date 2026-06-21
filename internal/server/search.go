@@ -169,7 +169,7 @@ func isOperationalAttribute(attrName string) bool {
 }
 
 func searchResponseAttributes(entry *models.Entry, selection searchAttributeSelection) []searchResponseAttribute {
-	attrs := make([]searchResponseAttribute, 0, len(entry.Attributes)+3)
+	attrs := make([]searchResponseAttribute, 0, len(entry.Attributes)+4)
 	if entry.ObjectClass != "" && selection.includes("objectClass") {
 		attrs = append(attrs, searchResponseAttribute{
 			name:   "objectClass",
@@ -186,6 +186,12 @@ func searchResponseAttributes(entry *models.Entry, selection searchAttributeSele
 		attrs = append(attrs, searchResponseAttribute{
 			name:   "modifyTimestamp",
 			values: []string{models.FormatLDAPTimestamp(entry.UpdatedAt)},
+		})
+	}
+	if memberOf := entry.GetAttributes("memberOf"); len(memberOf) > 0 && selection.includes("memberOf") {
+		attrs = append(attrs, searchResponseAttribute{
+			name:   "memberOf",
+			values: memberOf,
 		})
 	}
 
@@ -206,7 +212,7 @@ func searchResponseAttributes(entry *models.Entry, selection searchAttributeSele
 
 func isSearchProjectedAttribute(attrName string) bool {
 	switch strings.ToLower(attrName) {
-	case "objectclass", "createtimestamp", "modifytimestamp":
+	case "objectclass", "createtimestamp", "modifytimestamp", "memberof":
 		return true
 	default:
 		return false

@@ -141,6 +141,32 @@ func TestSearchResponseAttributesProjectsOperationalTimestamps(t *testing.T) {
 	}
 }
 
+func TestSearchResponseAttributesProjectsMemberOfOnce(t *testing.T) {
+	entry := models.NewEntry("uid=jdoe,ou=users,dc=example,dc=com", "inetOrgPerson")
+	entry.SetAttribute("cn", "John Doe")
+	entry.SetAttributes("memberOf", []string{"cn=admins,ou=groups,dc=example,dc=com"})
+
+	attrs := searchResponseAttributes(entry, newSearchAttributeSelection(message.AttributeSelection{
+		message.LDAPString("+"),
+	}))
+
+	memberOfCount := 0
+	for _, attr := range attrs {
+		if strings.EqualFold(attr.name, "memberOf") {
+			memberOfCount++
+			if len(attr.values) != 1 || attr.values[0] != "cn=admins,ou=groups,dc=example,dc=com" {
+				t.Fatalf("memberOf values = %v", attr.values)
+			}
+		}
+		if attr.name == "cn" {
+			t.Fatalf("+ selection should not include user attribute cn: %v", attrs)
+		}
+	}
+	if memberOfCount != 1 {
+		t.Fatalf("search response should emit exactly one memberOf attribute, got %d in %v", memberOfCount, attrs)
+	}
+}
+
 func TestEscapeLDAPFilterAssertionValue(t *testing.T) {
 	got := escapeLDAPFilterAssertionValue(`A*B(C)\` + string(rune(0)))
 	want := `A\2aB\28C\29\5c\00`
