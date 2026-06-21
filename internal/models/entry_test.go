@@ -1,7 +1,6 @@
 package models
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -251,80 +250,4 @@ func TestFormatLDAPTimestamp(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
-}
-
-func TestAddOperationalAttributes(t *testing.T) {
-	entry := NewEntry("uid=test,dc=example,dc=com", "inetOrgPerson")
-	entry.SetAttribute("uid", "test")
-	entry.SetAttribute("cn", "Test User")
-
-	// Add operational attributes
-	entry.AddOperationalAttributes()
-
-	// Check objectClass was added
-	assert.True(t, entry.HasAttribute("objectclass"), "objectclass attribute should be present")
-	assert.Equal(t, "inetOrgPerson", entry.GetAttribute("objectclass"))
-
-	// Check createTimestamp was added
-	assert.True(t, entry.HasAttribute("createtimestamp"), "createtimestamp attribute should be present")
-
-	// Check modifyTimestamp was added
-	assert.True(t, entry.HasAttribute("modifytimestamp"), "modifytimestamp attribute should be present")
-
-	// Verify format (should be 14 chars + Z = 15 total)
-	createTS := entry.GetAttribute("createtimestamp")
-	assert.Len(t, createTS, 15, "createtimestamp should be 15 characters")
-	assert.True(t, strings.HasSuffix(createTS, "Z"), "createtimestamp should end with 'Z'")
-
-	modifyTS := entry.GetAttribute("modifytimestamp")
-	assert.Len(t, modifyTS, 15, "modifytimestamp should be 15 characters")
-	assert.True(t, strings.HasSuffix(modifyTS, "Z"), "modifytimestamp should end with 'Z'")
-
-	// Verify format with regex (YYYYMMDDHHMMSSz)
-	timestampPattern := `^\d{14}Z$`
-	assert.Regexp(t, timestampPattern, createTS, "createtimestamp should match format YYYYMMDDHHMMSSz")
-	assert.Regexp(t, timestampPattern, modifyTS, "modifytimestamp should match format YYYYMMDDHHMMSSz")
-}
-
-func TestAddOperationalAttributesUpdatesModifyTimestamp(t *testing.T) {
-	entry := NewEntry("uid=test,dc=example,dc=com", "inetOrgPerson")
-	entry.SetAttribute("uid", "test")
-
-	// Add operational attributes first time
-	entry.AddOperationalAttributes()
-	createTS1 := entry.GetAttribute("createtimestamp")
-	modifyTS1 := entry.GetAttribute("modifytimestamp")
-
-	// Initially, createTimestamp and modifyTimestamp should be the same
-	assert.Equal(t, createTS1, modifyTS1, "createTimestamp and modifyTimestamp should match initially")
-
-	// Wait a bit and modify the entry
-	time.Sleep(10 * time.Millisecond)
-	entry.SetAttribute("cn", "Modified User")
-
-	// Add operational attributes again
-	entry.AddOperationalAttributes()
-	createTS2 := entry.GetAttribute("createtimestamp")
-
-	// createTimestamp should remain the same
-	assert.Equal(t, createTS1, createTS2, "createTimestamp should not change")
-
-	// modifyTimestamp should be updated - verify via UpdatedAt field
-	assert.False(t, entry.CreatedAt.Equal(entry.UpdatedAt), "UpdatedAt should be different from CreatedAt after modification")
-}
-
-func TestOperationalAttributesCaseInsensitive(t *testing.T) {
-	entry := NewEntry("uid=test,dc=example,dc=com", "inetOrgPerson")
-	entry.AddOperationalAttributes()
-
-	// Verify attributes are stored in lowercase
-	assert.True(t, entry.HasAttribute("objectclass"))
-	assert.True(t, entry.HasAttribute("createtimestamp"))
-	assert.True(t, entry.HasAttribute("modifytimestamp"))
-
-	// Verify case-insensitive access works
-	assert.True(t, entry.HasAttribute("objectClass"))
-	assert.True(t, entry.HasAttribute("createTimestamp"))
-	assert.True(t, entry.HasAttribute("modifyTimestamp"))
-	assert.True(t, entry.HasAttribute("CREATETIMESTAMP"))
 }

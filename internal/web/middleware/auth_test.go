@@ -213,7 +213,6 @@ func TestRequireAuthNotInAdminGroup(t *testing.T) {
 	modelEntry.SetAttribute("cn", "Regular User")
 	modelEntry.SetAttribute("sn", "User")
 	modelEntry.SetAttribute("userPassword", hashedPassword)
-	modelEntry.AddOperationalAttributes()
 
 	if err := st.CreateEntry(ctx, modelEntry); err != nil {
 		t.Fatalf("Failed to create regular user: %v", err)
