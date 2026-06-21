@@ -25,6 +25,72 @@ func TestAttributeValuesConvertsGoldapValues(t *testing.T) {
 	}
 }
 
+func TestNewAddEntryBuildsEntryFromAttributes(t *testing.T) {
+	srv := &Server{}
+
+	entry, resultCode, err := srv.newAddEntry("uid=jane,ou=users,dc=example,dc=com", map[string][]string{
+		"objectClass": {"inetOrgPerson", "top"},
+		"cn":          {"Jane Doe"},
+		"mail":        {"jane@example.com", "j.doe@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("newAddEntry() failed: %v", err)
+	}
+	if resultCode != message.ResultCodeSuccess {
+		t.Fatalf("resultCode = %d, want success", resultCode)
+	}
+	if entry.DN != "uid=jane,ou=users,dc=example,dc=com" {
+		t.Fatalf("DN = %q", entry.DN)
+	}
+	if entry.ParentDN != "ou=users,dc=example,dc=com" {
+		t.Fatalf("ParentDN = %q", entry.ParentDN)
+	}
+	if entry.ObjectClass != "inetOrgPerson" {
+		t.Fatalf("ObjectClass = %q, want inetOrgPerson", entry.ObjectClass)
+	}
+	if got := entry.GetAttribute("cn"); got != "Jane Doe" {
+		t.Fatalf("cn = %q, want Jane Doe", got)
+	}
+	if got := entry.GetAttributes("mail"); len(got) != 2 {
+		t.Fatalf("mail values = %#v, want 2 values", got)
+	}
+}
+
+func TestNewAddEntryRejectsProtectedAttributes(t *testing.T) {
+	srv := &Server{}
+
+	entry, resultCode, err := srv.newAddEntry("uid=jane,dc=example,dc=com", map[string][]string{
+		"objectClass":     {"inetOrgPerson"},
+		"createTimestamp": {"20260102030405Z"},
+	})
+	if err != nil {
+		t.Fatalf("newAddEntry() error = %v", err)
+	}
+	if entry != nil {
+		t.Fatalf("entry = %#v, want nil", entry)
+	}
+	if resultCode != message.ResultCodeUnwillingToPerform {
+		t.Fatalf("resultCode = %d, want unwillingToPerform", resultCode)
+	}
+}
+
+func TestNewAddEntryRequiresObjectClass(t *testing.T) {
+	srv := &Server{}
+
+	entry, resultCode, err := srv.newAddEntry("uid=jane,dc=example,dc=com", map[string][]string{
+		"cn": {"Jane Doe"},
+	})
+	if err != nil {
+		t.Fatalf("newAddEntry() error = %v", err)
+	}
+	if entry != nil {
+		t.Fatalf("entry = %#v, want nil", entry)
+	}
+	if resultCode != message.ResultCodeObjectClassViolation {
+		t.Fatalf("resultCode = %d, want objectClassViolation", resultCode)
+	}
+}
+
 func TestDeleteModifyValues(t *testing.T) {
 	entry := models.NewEntry("uid=jane,ou=users,dc=example,dc=com", "inetOrgPerson")
 	entry.AddAttribute("mail", "jane@example.com")

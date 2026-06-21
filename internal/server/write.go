@@ -36,56 +36,19 @@ func (s *Server) handleAdd(ctx context.Context, conn *protocol.Connection, msg *
 		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeEntryAlreadyExists))
 	}
 
-	// Create new entry
-	entry := &models.Entry{
-		DN:         dn,
-		ParentDN:   ldapdn.Parent(dn),
-		Attributes: make(map[string][]string),
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+	entry, resultCode, err := s.newAddEntry(dn, addRequestAttributes(addReq.Attributes()))
+	if err != nil {
+		slog.Debug("Invalid add request", "dn", dn, "error", err)
+		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(resultCode))
 	}
-
-	// Parse attributes
-	attrs := addReq.Attributes()
-	for _, attr := range attrs {
-		name := string(attr.Type_())
-
-		// Check protected attributes
-		if isAddProtectedAttribute(name) {
-			slog.Debug("Attempt to set protected attribute", "dn", dn, "attribute", name)
-			return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeUnwillingToPerform))
+	if resultCode != message.ResultCodeSuccess {
+		if resultCode == message.ResultCodeUnwillingToPerform {
+			slog.Debug("Attempt to set protected attribute", "dn", dn)
 		}
-
-		values := attr.Vals()
-		for _, val := range values {
-			entry.AddAttribute(name, string(val))
-		}
+		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(resultCode))
 	}
 
-	// Process userPassword
-	if userPassword := entry.GetAttribute("userPassword"); userPassword != "" {
-		processedPassword, err := s.hasher.ProcessPassword(userPassword)
-		if err != nil {
-			slog.Debug("Invalid password format", "dn", dn, "error", err)
-			return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeConstraintViolation))
-		}
-		entry.SetAttribute("userPassword", processedPassword)
-	}
-
-	// Determine object class
-	objectClasses := entry.GetAttribute("objectClass")
-	if objectClasses == "" {
-		slog.Debug("No objectClass provided", "dn", dn)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeObjectClassViolation))
-	}
-
-	entry.ObjectClass = objectClasses
-	allClasses := entry.GetAttributes("objectClass")
-	if len(allClasses) > 0 {
-		entry.ObjectClass = allClasses[0]
-	}
-
-	slog.Debug("Creating entry", "dn", dn, "objectClass", objectClasses)
+	slog.Debug("Creating entry", "dn", dn, "objectClass", entry.ObjectClass)
 
 	// Store entry
 	if err := s.store.CreateEntry(ctx, entry); err != nil {
@@ -198,6 +161,54 @@ func (s *Server) handleModify(ctx context.Context, conn *protocol.Connection, ms
 
 	slog.Info("Entry modified", "dn", dn)
 	return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeSuccess))
+}
+
+func addRequestAttributes(attrs []message.Attribute) map[string][]string {
+	values := make(map[string][]string, len(attrs))
+	for _, attr := range attrs {
+		name := string(attr.Type_())
+		values[name] = append(values[name], attributeValues(attr.Vals())...)
+	}
+	return values
+}
+
+func (s *Server) newAddEntry(dn string, attrs map[string][]string) (*models.Entry, int, error) {
+	entry := &models.Entry{
+		DN:         dn,
+		ParentDN:   ldapdn.Parent(dn),
+		Attributes: make(map[string][]string),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+
+	for name, values := range attrs {
+		if isAddProtectedAttribute(name) {
+			return nil, message.ResultCodeUnwillingToPerform, nil
+		}
+		for _, value := range values {
+			entry.AddAttribute(name, value)
+		}
+	}
+
+	if userPassword := entry.GetAttribute("userPassword"); userPassword != "" {
+		processedPassword, err := s.hasher.ProcessPassword(userPassword)
+		if err != nil {
+			return nil, message.ResultCodeConstraintViolation, err
+		}
+		entry.SetAttribute("userPassword", processedPassword)
+	}
+
+	objectClass := entry.GetAttribute("objectClass")
+	if objectClass == "" {
+		return nil, message.ResultCodeObjectClassViolation, nil
+	}
+	allClasses := entry.GetAttributes("objectClass")
+	if len(allClasses) > 0 {
+		objectClass = allClasses[0]
+	}
+	entry.ObjectClass = objectClass
+
+	return entry, message.ResultCodeSuccess, nil
 }
 
 func attributeValues(vals []message.AttributeValue) []string {
