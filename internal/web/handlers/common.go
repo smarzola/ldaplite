@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/smarzola/ldaplite/internal/ldapdn"
@@ -38,6 +39,32 @@ func RenderTemplate(w http.ResponseWriter, getter TemplateGetter, name string, d
 	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to render template %s: %v", name, err), http.StatusInternalServerError)
 	}
+}
+
+func redirectWithMessage(w http.ResponseWriter, r *http.Request, path, key, message string) {
+	values := url.Values{}
+	values.Set(key, message)
+	http.Redirect(w, r, path+"?"+values.Encode(), http.StatusFound)
+}
+
+func deleteEntry(w http.ResponseWriter, r *http.Request, st store.Store, path, errorResourceName, successResourceName string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	dn := r.FormValue("dn")
+	if dn == "" {
+		http.Error(w, "DN parameter required", http.StatusBadRequest)
+		return
+	}
+
+	if err := st.DeleteEntry(r.Context(), dn); err != nil {
+		redirectWithMessage(w, r, path, "error", fmt.Sprintf("Failed to delete %s: %v", errorResourceName, err))
+		return
+	}
+
+	redirectWithMessage(w, r, path, "success", fmt.Sprintf("%s deleted successfully", successResourceName))
 }
 
 // ParseAttributes parses additional attributes from form input

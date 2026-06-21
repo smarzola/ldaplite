@@ -168,24 +168,7 @@ func (h *OUHandler) update(w http.ResponseWriter, r *http.Request, dn string) {
 }
 
 func (h *OUHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	dn := r.FormValue("dn")
-	if dn == "" {
-		http.Error(w, "DN parameter required", http.StatusBadRequest)
-		return
-	}
-
-	ctx := r.Context()
-	if err := h.store.DeleteEntry(ctx, dn); err != nil {
-		http.Redirect(w, r, fmt.Sprintf("/ous?error=Failed to delete OU: %v", err), http.StatusFound)
-		return
-	}
-
-	http.Redirect(w, r, "/ous?success=OU deleted successfully", http.StatusFound)
+	deleteEntry(w, r, h.store, "/ous", "OU", "OU")
 }
 
 func (h *OUHandler) showError(w http.ResponseWriter, r *http.Request, errMsg string, ou *models.Entry) {

@@ -181,24 +181,7 @@ func (h *GroupHandler) update(w http.ResponseWriter, r *http.Request, dn string)
 }
 
 func (h *GroupHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	dn := r.FormValue("dn")
-	if dn == "" {
-		http.Error(w, "DN parameter required", http.StatusBadRequest)
-		return
-	}
-
-	ctx := r.Context()
-	if err := h.store.DeleteEntry(ctx, dn); err != nil {
-		http.Redirect(w, r, fmt.Sprintf("/groups?error=Failed to delete group: %v", err), http.StatusFound)
-		return
-	}
-
-	http.Redirect(w, r, "/groups?success=Group deleted successfully", http.StatusFound)
+	deleteEntry(w, r, h.store, "/groups", "group", "Group")
 }
 
 func (h *GroupHandler) showError(w http.ResponseWriter, r *http.Request, errMsg string, group *models.Entry) {

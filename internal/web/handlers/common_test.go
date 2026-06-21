@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/smarzola/ldaplite/internal/models"
@@ -38,6 +40,22 @@ func TestReplaceExtraAttributesReplacesStaleExtrasAndDropsComputedAttributes(t *
 		if entry.HasAttribute(attr) {
 			t.Fatalf("%s should be removed before update persistence", attr)
 		}
+	}
+}
+
+func TestRedirectWithMessageEscapesQueryValue(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/users/delete", nil)
+	rr := httptest.NewRecorder()
+
+	redirectWithMessage(rr, req, "/users", "error", "Failed to delete User: cn=a b,dc=test")
+
+	if rr.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusFound)
+	}
+
+	want := "/users?error=Failed+to+delete+User%3A+cn%3Da+b%2Cdc%3Dtest"
+	if got := rr.Header().Get("Location"); got != want {
+		t.Fatalf("Location = %q, want %q", got, want)
 	}
 }
 
