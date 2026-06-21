@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/pkg/config"
@@ -993,6 +994,31 @@ func TestMemberOfBasicPresence(t *testing.T) {
 	}
 
 	t.Logf("✓ jdoe memberOf: %v", memberOfValues)
+}
+
+func TestMemberOfPopulationDoesNotMutateUpdatedAt(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	var storedUpdatedAt time.Time
+	if err := store.db.QueryRowContext(ctx,
+		`SELECT updated_at FROM entries WHERE dn = ?`,
+		"uid=jdoe,ou=users,dc=test,dc=com",
+	).Scan(&storedUpdatedAt); err != nil {
+		t.Fatalf("failed to read stored updated_at: %v", err)
+	}
+
+	jdoeEntry, err := store.GetEntry(ctx, "uid=jdoe,ou=users,dc=test,dc=com")
+	if err != nil {
+		t.Fatalf("GetEntry() failed: %v", err)
+	}
+	if !containsValue(jdoeEntry.GetAttributes("memberOf"), "cn=admins,ou=groups,dc=test,dc=com") {
+		t.Fatalf("expected memberOf to be populated, got %v", jdoeEntry.GetAttributes("memberOf"))
+	}
+	if !jdoeEntry.UpdatedAt.Equal(storedUpdatedAt) {
+		t.Fatalf("memberOf population mutated UpdatedAt: got %v, want stored %v", jdoeEntry.UpdatedAt, storedUpdatedAt)
+	}
 }
 
 func TestSearchEntriesWithOptionsCanSkipMemberOfProjection(t *testing.T) {

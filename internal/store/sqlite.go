@@ -968,7 +968,7 @@ func (s *SQLiteStore) populateMemberOf(ctx context.Context, entries []*models.En
 		}
 
 		if entry, ok := userEntriesByID[memberEntryID]; ok {
-			entry.AddAttribute("memberOf", groupDN)
+			entry.Attributes["memberof"] = append(entry.Attributes["memberof"], groupDN)
 		}
 	}
 
