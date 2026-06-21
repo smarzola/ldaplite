@@ -200,6 +200,36 @@ func TestCreateGroupAcceptsCaseVariantMemberDN(t *testing.T) {
 	}
 }
 
+func TestCreateGroupIgnoresDuplicateCaseVariantMembers(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	group := models.NewGroup("ou=groups,dc=test,dc=com", "duplicatemembers", "Duplicate members group")
+	group.AddMember("uid=jdoe,ou=users,dc=test,dc=com")
+	group.AddMember("UID=JDOE,OU=USERS,DC=TEST,DC=COM")
+
+	if err := store.CreateEntry(ctx, group.Entry); err != nil {
+		t.Fatalf("CreateEntry() with duplicate case-variant members failed: %v", err)
+	}
+
+	var count int
+	err := store.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM group_members gm
+		INNER JOIN entries g ON g.id = gm.group_entry_id
+		INNER JOIN entries m ON m.id = gm.member_entry_id
+		WHERE LOWER(g.dn) = LOWER(?)
+		  AND LOWER(m.dn) = LOWER(?)
+	`, "cn=duplicatemembers,ou=groups,dc=test,dc=com", "uid=jdoe,ou=users,dc=test,dc=com").Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to count duplicate memberships: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("group_members row count = %d, want 1", count)
+	}
+}
+
 func TestUpdateGroupRejectsMissingMemberDNAndRollsBack(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()

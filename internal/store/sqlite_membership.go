@@ -19,17 +19,9 @@ func syncGroupMembers(ctx context.Context, tx *sql.Tx, groupEntryID int64, group
 		return nil
 	}
 
-	memberEntryIDs := make([]int64, 0, len(memberDNs))
-	for _, memberDN := range memberDNs {
-		var memberEntryID int64
-		err := tx.QueryRowContext(ctx, `SELECT id FROM entries WHERE LOWER(dn) = LOWER(?)`, memberDN).Scan(&memberEntryID)
-		if err == sql.ErrNoRows {
-			return fmt.Errorf("%w: group member does not exist: %s", ErrConstraintViolation, memberDN)
-		}
-		if err != nil {
-			return fmt.Errorf("failed to verify group member %s: %w", memberDN, err)
-		}
-		memberEntryIDs = append(memberEntryIDs, memberEntryID)
+	memberEntryIDs, err := resolveMemberEntryIDs(ctx, tx, memberDNs)
+	if err != nil {
+		return err
 	}
 
 	if replace {
@@ -38,18 +30,72 @@ func syncGroupMembers(ctx context.Context, tx *sql.Tx, groupEntryID int64, group
 		}
 	}
 
-	for i, memberEntryID := range memberEntryIDs {
+	seenMemberIDs := make(map[int64]struct{}, len(memberEntryIDs))
+	for _, memberEntryID := range memberEntryIDs {
+		if _, seen := seenMemberIDs[memberEntryID]; seen {
+			continue
+		}
+		seenMemberIDs[memberEntryID] = struct{}{}
+
 		if _, err := tx.ExecContext(
 			ctx,
 			`INSERT INTO group_members (group_entry_id, member_entry_id) VALUES (?, ?)`,
 			groupEntryID,
 			memberEntryID,
 		); err != nil {
-			return fmt.Errorf("failed to add member %s to group %s: %w", memberDNs[i], groupDN, err)
+			return fmt.Errorf("failed to add member to group %s: %w", groupDN, err)
 		}
 	}
 
 	return nil
+}
+
+func resolveMemberEntryIDs(ctx context.Context, tx *sql.Tx, memberDNs []string) ([]int64, error) {
+	lowerMemberDNs := make([]string, 0, len(memberDNs))
+	args := make([]interface{}, 0, len(memberDNs))
+	placeholders := make([]string, 0, len(memberDNs))
+	for _, memberDN := range memberDNs {
+		lowerMemberDN := strings.ToLower(memberDN)
+		lowerMemberDNs = append(lowerMemberDNs, lowerMemberDN)
+		args = append(args, lowerMemberDN)
+		placeholders = append(placeholders, "?")
+	}
+
+	query := `
+		SELECT id, LOWER(dn)
+		FROM entries
+		WHERE LOWER(dn) IN (` + strings.Join(placeholders, ",") + `)
+	`
+
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify group members: %w", err)
+	}
+	defer rows.Close()
+
+	entryIDsByLowerDN := make(map[string]int64, len(memberDNs))
+	for rows.Next() {
+		var entryID int64
+		var lowerDN string
+		if err := rows.Scan(&entryID, &lowerDN); err != nil {
+			return nil, fmt.Errorf("failed to scan group member: %w", err)
+		}
+		entryIDsByLowerDN[lowerDN] = entryID
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to verify group members: %w", err)
+	}
+
+	memberEntryIDs := make([]int64, 0, len(memberDNs))
+	for i, lowerMemberDN := range lowerMemberDNs {
+		entryID, ok := entryIDsByLowerDN[lowerMemberDN]
+		if !ok {
+			return nil, fmt.Errorf("%w: group member does not exist: %s", ErrConstraintViolation, memberDNs[i])
+		}
+		memberEntryIDs = append(memberEntryIDs, entryID)
+	}
+
+	return memberEntryIDs, nil
 }
 
 // IsUserInGroup checks if a user is a member of a group, including membership
