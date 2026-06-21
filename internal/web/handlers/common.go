@@ -1,13 +1,16 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
+	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/internal/web/middleware"
 	"github.com/smarzola/ldaplite/pkg/config"
 )
@@ -112,6 +115,15 @@ func setOptionalAttribute(entry *models.Entry, name, value string) {
 		return
 	}
 	entry.SetAttribute(name, value)
+}
+
+func loadOrganizationalUnits(ctx context.Context, st store.Store, baseDN string) []*models.Entry {
+	ous, err := st.SearchEntries(ctx, baseDN, "(objectClass=organizationalUnit)")
+	if err != nil {
+		slog.Error("Failed to fetch OUs", "error", err)
+		return []*models.Entry{}
+	}
+	return ous
 }
 
 // GetBaseDN returns the base DN string for templates

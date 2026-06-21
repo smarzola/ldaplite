@@ -60,13 +60,7 @@ func (h *UserHandler) New(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-
-	// Fetch all OUs for parent selection, including base DN
-	ous, err := h.store.SearchEntries(ctx, h.cfg.LDAP.BaseDN, "(objectClass=organizationalUnit)")
-	if err != nil {
-		slog.Error("Failed to fetch OUs", "error", err)
-		ous = []*models.Entry{}
-	}
+	ous := loadOrganizationalUnits(ctx, h.store, h.cfg.LDAP.BaseDN)
 
 	data := struct {
 		BaseData
@@ -151,12 +145,7 @@ func (h *UserHandler) Edit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch all OUs for parent selection
-	ous, err := h.store.SearchEntries(ctx, h.cfg.LDAP.BaseDN, "(objectClass=organizationalUnit)")
-	if err != nil {
-		slog.Error("Failed to fetch OUs", "error", err)
-		ous = []*models.Entry{}
-	}
+	ous := loadOrganizationalUnits(ctx, h.store, h.cfg.LDAP.BaseDN)
 
 	data := struct {
 		BaseData
@@ -243,12 +232,7 @@ func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 func (h *UserHandler) showError(w http.ResponseWriter, r *http.Request, errMsg string, user *models.Entry) {
 	ctx := r.Context()
 
-	// Fetch all OUs for parent selection
-	ous, err := h.store.SearchEntries(ctx, h.cfg.LDAP.BaseDN, "(objectClass=organizationalUnit)")
-	if err != nil {
-		slog.Error("Failed to fetch OUs", "error", err)
-		ous = []*models.Entry{}
-	}
+	ous := loadOrganizationalUnits(ctx, h.store, h.cfg.LDAP.BaseDN)
 
 	extraAttrs := ""
 	if user != nil {
