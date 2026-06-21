@@ -137,12 +137,21 @@ func addExtraAttributes(entry *models.Entry, attrs map[string][]string) {
 }
 
 func loadOrganizationalUnits(ctx context.Context, st store.Store, baseDN string) []*models.Entry {
-	ous, err := st.SearchEntries(ctx, baseDN, "(objectClass=organizationalUnit)")
+	ous, err := searchEntriesWithoutMemberOf(ctx, st, baseDN, "(objectClass=organizationalUnit)")
 	if err != nil {
 		slog.Error("Failed to fetch OUs", "error", err)
 		return []*models.Entry{}
 	}
 	return ous
+}
+
+func searchEntriesWithoutMemberOf(ctx context.Context, st store.Store, baseDN, filter string) ([]*models.Entry, error) {
+	return st.SearchEntriesWithOptions(ctx, store.SearchOptions{
+		BaseDN:          baseDN,
+		Filter:          filter,
+		Scope:           store.SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
 }
 
 // GetBaseDN returns the base DN string for templates

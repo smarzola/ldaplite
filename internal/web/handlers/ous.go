@@ -32,7 +32,7 @@ func NewOUHandler(st store.Store, cfg *config.Config, getter TemplateGetter) *OU
 func (h *OUHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	entries, err := h.store.SearchEntries(ctx, h.cfg.LDAP.BaseDN, "(objectClass=organizationalUnit)")
+	entries, err := searchEntriesWithoutMemberOf(ctx, h.store, h.cfg.LDAP.BaseDN, "(objectClass=organizationalUnit)")
 	if err != nil {
 		slog.Error("Failed to search OUs", "error", err)
 		entries = []*models.Entry{}

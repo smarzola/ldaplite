@@ -36,7 +36,7 @@ func (h *UserHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Get all users from all OUs (search recursively from base DN)
-	entries, err := h.store.SearchEntries(ctx, h.cfg.LDAP.BaseDN, "(objectClass=inetOrgPerson)")
+	entries, err := searchEntriesWithoutMemberOf(ctx, h.store, h.cfg.LDAP.BaseDN, "(objectClass=inetOrgPerson)")
 	if err != nil {
 		slog.Error("Failed to search users", "error", err)
 		entries = []*models.Entry{}

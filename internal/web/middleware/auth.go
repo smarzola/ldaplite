@@ -80,7 +80,12 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 		}
 
 		// Search for the admin group entry to get its actual DN
-		adminGroups, err := a.store.SearchEntries(ctx, a.cfg.LDAP.BaseDN, "(&(objectClass=groupOfNames)(cn=ldaplite.admin))")
+		adminGroups, err := a.store.SearchEntriesWithOptions(ctx, store.SearchOptions{
+			BaseDN:          a.cfg.LDAP.BaseDN,
+			Filter:          "(&(objectClass=groupOfNames)(cn=ldaplite.admin))",
+			Scope:           store.SearchScopeWholeSubtree,
+			IncludeMemberOf: false,
+		})
 		if err != nil {
 			slog.Error("Failed to search for admin group", "error", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)

@@ -33,7 +33,7 @@ func (h *GroupHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Get all groups from all OUs (search recursively from base DN)
-	entries, err := h.store.SearchEntries(ctx, h.cfg.LDAP.BaseDN, "(objectClass=groupOfNames)")
+	entries, err := searchEntriesWithoutMemberOf(ctx, h.store, h.cfg.LDAP.BaseDN, "(objectClass=groupOfNames)")
 	if err != nil {
 		slog.Error("Failed to search groups", "error", err)
 		entries = []*models.Entry{}
