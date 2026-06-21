@@ -219,8 +219,8 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 	if entry.IsUser() {
 		passwordHash := entry.GetAttribute("userPassword")
 		if passwordHash != "" {
-			updatePasswordQuery := `UPDATE users SET password_hash = ? WHERE entry_id = (SELECT id FROM entries WHERE LOWER(dn) = LOWER(?))`
-			if _, err := tx.ExecContext(ctx, updatePasswordQuery, passwordHash, entry.DN); err != nil {
+			updatePasswordQuery := `UPDATE users SET password_hash = ? WHERE entry_id = ?`
+			if _, err := tx.ExecContext(ctx, updatePasswordQuery, passwordHash, entryID); err != nil {
 				return fmt.Errorf("failed to update user password: %w", err)
 			}
 		}
