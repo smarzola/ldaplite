@@ -105,6 +105,23 @@ func TestSQLiteUniqueConstraintDetection(t *testing.T) {
 	}
 }
 
+func TestDatabaseRejectsCaseVariantDuplicateDN(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	_, err := store.db.ExecContext(ctx, `
+		INSERT INTO entries (dn, parent_dn, object_class)
+		VALUES (?, ?, ?)
+	`, "UID=ADMIN,OU=USERS,DC=TEST,DC=COM", "ou=users,dc=test,dc=com", "inetOrgPerson")
+	if err == nil {
+		t.Fatal("case-variant duplicate insert should fail")
+	}
+	if !isSQLiteUniqueConstraint(err) {
+		t.Fatalf("isSQLiteUniqueConstraint() = false for %T: %v", err, err)
+	}
+}
+
 func TestCreateEntryAcceptsCaseVariantParentDN(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()
