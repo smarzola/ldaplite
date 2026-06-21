@@ -3,8 +3,12 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
+
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
@@ -103,7 +107,7 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 	)
 
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+		if isSQLiteUniqueConstraint(err) {
 			return fmt.Errorf("%w: %s", ErrEntryAlreadyExists, entry.DN)
 		}
 		return fmt.Errorf("failed to create entry: %w", err)
@@ -318,6 +322,11 @@ func entryExistsTx(ctx context.Context, tx *sql.Tx, dn string) (bool, error) {
 		return false, err
 	}
 	return exists, nil
+}
+
+func isSQLiteUniqueConstraint(err error) bool {
+	var sqliteErr *sqlite.Error
+	return errors.As(err, &sqliteErr) && sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE
 }
 
 // DeleteEntry deletes an entry

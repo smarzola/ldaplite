@@ -74,6 +74,37 @@ func TestCreateEntryRejectsCaseVariantDuplicateDN(t *testing.T) {
 	}
 }
 
+func TestCreateEntryRejectsExactDuplicateDN(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	user := models.NewUser("ou=users,dc=test,dc=com", "admin", "Admin Duplicate", "Duplicate", "admin2@test.com")
+	user.SetPassword("{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=2$dummyhash$dummyhash")
+
+	err := store.CreateEntry(ctx, user.Entry)
+	if !errors.Is(err, ErrEntryAlreadyExists) {
+		t.Fatalf("CreateEntry() error = %v, want ErrEntryAlreadyExists", err)
+	}
+}
+
+func TestSQLiteUniqueConstraintDetection(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	_, err := store.db.ExecContext(ctx, `
+		INSERT INTO entries (dn, parent_dn, object_class)
+		VALUES (?, ?, ?)
+	`, "uid=admin,ou=users,dc=test,dc=com", "ou=users,dc=test,dc=com", "inetOrgPerson")
+	if err == nil {
+		t.Fatal("duplicate insert should fail")
+	}
+	if !isSQLiteUniqueConstraint(err) {
+		t.Fatalf("isSQLiteUniqueConstraint() = false for %T: %v", err, err)
+	}
+}
+
 func TestCreateEntryAcceptsCaseVariantParentDN(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()
