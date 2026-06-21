@@ -40,6 +40,7 @@ func TestValidateUserMissingUID(t *testing.T) {
 	err := user.ValidateUser()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "uid")
+	assert.ErrorIs(t, err, ErrRequiredAttributeEmpty)
 }
 
 func TestValidateUserMissingCN(t *testing.T) {
@@ -49,6 +50,7 @@ func TestValidateUserMissingCN(t *testing.T) {
 	err := user.ValidateUser()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cn")
+	assert.ErrorIs(t, err, ErrRequiredAttributeEmpty)
 }
 
 func TestValidateUserMissingSN(t *testing.T) {
@@ -58,4 +60,5 @@ func TestValidateUserMissingSN(t *testing.T) {
 	err := user.ValidateUser()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "sn")
+	assert.ErrorIs(t, err, ErrRequiredAttributeEmpty)
 }

@@ -3,7 +3,8 @@ package store
 import (
 	"errors"
 	"fmt"
-	"strings"
+
+	"github.com/smarzola/ldaplite/internal/models"
 )
 
 var (
@@ -18,10 +19,8 @@ func classifyModelValidationError(err error) error {
 		return nil
 	}
 
-	errMsg := strings.ToLower(err.Error())
-	if strings.Contains(errMsg, "required attribute") ||
-		strings.Contains(errMsg, "objectclass is required") ||
-		strings.Contains(errMsg, "objectclass is missing") {
+	if errors.Is(err, models.ErrRequiredAttributeEmpty) ||
+		errors.Is(err, models.ErrObjectClassRequired) {
 		return fmt.Errorf("%w: %w", ErrObjectClassViolation, err)
 	}
 

@@ -34,7 +34,7 @@ func (o *OrganizationalUnit) ValidateOU() error {
 	}
 
 	if o.Entry.GetAttribute("ou") == "" {
-		return fmt.Errorf("required attribute ou is missing")
+		return fmt.Errorf("required attribute ou is missing: %w", ErrRequiredAttributeEmpty)
 	}
 
 	return nil

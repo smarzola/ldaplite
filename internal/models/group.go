@@ -49,7 +49,7 @@ func (g *Group) ValidateGroup() error {
 	}
 
 	if g.Entry.GetAttribute("cn") == "" {
-		return fmt.Errorf("required attribute cn is missing")
+		return fmt.Errorf("required attribute cn is missing: %w", ErrRequiredAttributeEmpty)
 	}
 
 	return nil

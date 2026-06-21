@@ -187,6 +187,7 @@ func TestValidate(t *testing.T) {
 	}
 	err = invalidEntry2.Validate()
 	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrObjectClassRequired)
 }
 
 func TestAttributeCaseSensitivity(t *testing.T) {

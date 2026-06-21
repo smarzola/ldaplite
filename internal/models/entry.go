@@ -131,7 +131,7 @@ func (e *Entry) Validate() error {
 		return fmt.Errorf("DN is required")
 	}
 	if e.ObjectClass == "" {
-		return fmt.Errorf("ObjectClass is required")
+		return fmt.Errorf("ObjectClass is required: %w", ErrObjectClassRequired)
 	}
 	return nil
 }

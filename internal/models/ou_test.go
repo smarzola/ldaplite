@@ -31,6 +31,7 @@ func TestValidateOUMissingAttribute(t *testing.T) {
 	err := ou.ValidateOU()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "ou")
+	assert.ErrorIs(t, err, ErrRequiredAttributeEmpty)
 }
 
 func TestOUHierarchy(t *testing.T) {

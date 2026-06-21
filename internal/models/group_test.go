@@ -67,4 +67,5 @@ func TestValidateGroupMissingCN(t *testing.T) {
 	err := group.ValidateGroup()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cn")
+	assert.ErrorIs(t, err, ErrRequiredAttributeEmpty)
 }

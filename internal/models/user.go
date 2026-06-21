@@ -46,7 +46,7 @@ func (u *User) ValidateUser() error {
 	requiredAttrs := []string{"uid", "cn", "sn"}
 	for _, attr := range requiredAttrs {
 		if u.Entry.GetAttribute(attr) == "" {
-			return fmt.Errorf("required attribute %s is missing", attr)
+			return fmt.Errorf("required attribute %s is missing: %w", attr, ErrRequiredAttributeEmpty)
 		}
 	}
 
