@@ -83,22 +83,13 @@ func (h *GroupHandler) create(w http.ResponseWriter, r *http.Request) {
 	parentDN := strings.TrimSpace(r.FormValue("parentDN"))
 	cn := strings.TrimSpace(r.FormValue("cn"))
 	description := strings.TrimSpace(r.FormValue("description"))
-	membersInput := r.FormValue("member")
 
 	if parentDN == "" || cn == "" {
 		h.showError(w, r, "Parent OU and CN are required", nil)
 		return
 	}
 
-	// Parse members
-	var members []string
-	for _, line := range strings.Split(membersInput, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			members = append(members, line)
-		}
-	}
-
+	members := parseNonEmptyLines(r.FormValue("member"))
 	if len(members) == 0 {
 		h.showError(w, r, "At least one member is required", nil)
 		return
@@ -178,16 +169,7 @@ func (h *GroupHandler) update(w http.ResponseWriter, r *http.Request, dn string)
 	setOptionalAttribute(entry, "description", r.FormValue("description"))
 
 	// Update members
-	membersInput := r.FormValue("member")
-	var members []string
-	for _, line := range strings.Split(membersInput, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			members = append(members, line)
-		}
-	}
-
-	entry.Attributes["member"] = members
+	entry.Attributes["member"] = parseNonEmptyLines(r.FormValue("member"))
 
 	// Update extra attributes
 	extraAttrs := ParseAttributes(r.FormValue("attributes"))

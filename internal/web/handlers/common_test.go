@@ -52,6 +52,20 @@ func TestSetOptionalAttributeRemovesBlankValues(t *testing.T) {
 	}
 }
 
+func TestParseNonEmptyLinesTrimsAndDropsBlanks(t *testing.T) {
+	got := parseNonEmptyLines(" uid=one,dc=test,dc=com \n\nuid=two,dc=test,dc=com\r\n   ")
+	want := []string{"uid=one,dc=test,dc=com", "uid=two,dc=test,dc=com"}
+
+	if len(got) != len(want) {
+		t.Fatalf("parseNonEmptyLines() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("parseNonEmptyLines()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestExtractUIDFromDNUsesFirstRDN(t *testing.T) {
 	tests := []struct {
 		name string

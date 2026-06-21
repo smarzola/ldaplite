@@ -117,6 +117,17 @@ func setOptionalAttribute(entry *models.Entry, name, value string) {
 	entry.SetAttribute(name, value)
 }
 
+func parseNonEmptyLines(input string) []string {
+	var lines []string
+	for _, line := range strings.Split(input, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
 func loadOrganizationalUnits(ctx context.Context, st store.Store, baseDN string) []*models.Entry {
 	ous, err := st.SearchEntries(ctx, baseDN, "(objectClass=organizationalUnit)")
 	if err != nil {
