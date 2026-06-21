@@ -351,25 +351,8 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 
 		// Sync group_members table with member attributes for referential integrity
 		// This allows efficient group membership queries and supports future nested group features
-		members := entry.GetAttributes("member")
-		if len(members) > 0 {
-			memberQuery := `
-				INSERT INTO group_members (group_entry_id, member_entry_id)
-				SELECT ?, id FROM entries WHERE dn = ?
-			`
-			for _, memberDN := range members {
-				result, err := tx.ExecContext(ctx, memberQuery, entryID, memberDN)
-				if err != nil {
-					return fmt.Errorf("failed to add member %s to group %s: %w", memberDN, entry.DN, err)
-				}
-				rowsAffected, err := result.RowsAffected()
-				if err != nil {
-					return fmt.Errorf("failed to verify group member %s: %w", memberDN, err)
-				}
-				if rowsAffected == 0 {
-					return fmt.Errorf("%w: group member does not exist: %s", ErrConstraintViolation, memberDN)
-				}
-			}
+		if err := syncGroupMembers(ctx, tx, entryID, entry.DN, entry.GetAttributes("member"), false); err != nil {
+			return err
 		}
 	} else if entry.IsOrganizationalUnit() {
 		// Validate OU-specific requirements
@@ -463,36 +446,55 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 			return fmt.Errorf("failed to get entry ID: %w", err)
 		}
 
-		// Delete existing memberships for this group
-		delMembersQuery := `DELETE FROM group_members WHERE group_entry_id = ?`
-		if _, err := tx.ExecContext(ctx, delMembersQuery, entryID); err != nil {
-			return fmt.Errorf("failed to delete group members: %w", err)
-		}
-
-		// Re-insert all members from attributes
-		members := entry.GetAttributes("member")
-		if len(members) > 0 {
-			memberQuery := `
-				INSERT INTO group_members (group_entry_id, member_entry_id)
-				SELECT ?, id FROM entries WHERE dn = ?
-			`
-			for _, memberDN := range members {
-				result, err := tx.ExecContext(ctx, memberQuery, entryID, memberDN)
-				if err != nil {
-					return fmt.Errorf("failed to add member %s to group %s: %w", memberDN, entry.DN, err)
-				}
-				rowsAffected, err := result.RowsAffected()
-				if err != nil {
-					return fmt.Errorf("failed to verify group member %s: %w", memberDN, err)
-				}
-				if rowsAffected == 0 {
-					return fmt.Errorf("%w: group member does not exist: %s", ErrConstraintViolation, memberDN)
-				}
-			}
+		if err := syncGroupMembers(ctx, tx, entryID, entry.DN, entry.GetAttributes("member"), true); err != nil {
+			return err
 		}
 	}
 
 	return tx.Commit()
+}
+
+func syncGroupMembers(ctx context.Context, tx *sql.Tx, groupEntryID int64, groupDN string, memberDNs []string, replace bool) error {
+	if len(memberDNs) == 0 {
+		if replace {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM group_members WHERE group_entry_id = ?`, groupEntryID); err != nil {
+				return fmt.Errorf("failed to delete group members: %w", err)
+			}
+		}
+		return nil
+	}
+
+	memberEntryIDs := make([]int64, 0, len(memberDNs))
+	for _, memberDN := range memberDNs {
+		var memberEntryID int64
+		err := tx.QueryRowContext(ctx, `SELECT id FROM entries WHERE dn = ?`, memberDN).Scan(&memberEntryID)
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("%w: group member does not exist: %s", ErrConstraintViolation, memberDN)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to verify group member %s: %w", memberDN, err)
+		}
+		memberEntryIDs = append(memberEntryIDs, memberEntryID)
+	}
+
+	if replace {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM group_members WHERE group_entry_id = ?`, groupEntryID); err != nil {
+			return fmt.Errorf("failed to delete group members: %w", err)
+		}
+	}
+
+	for i, memberEntryID := range memberEntryIDs {
+		if _, err := tx.ExecContext(
+			ctx,
+			`INSERT INTO group_members (group_entry_id, member_entry_id) VALUES (?, ?)`,
+			groupEntryID,
+			memberEntryID,
+		); err != nil {
+			return fmt.Errorf("failed to add member %s to group %s: %w", memberDNs[i], groupDN, err)
+		}
+	}
+
+	return nil
 }
 
 func (s *SQLiteStore) validateEntryPlacement(ctx context.Context, tx *sql.Tx, entry *models.Entry) error {
