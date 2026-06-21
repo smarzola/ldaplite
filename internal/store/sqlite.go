@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/sqlite"
+	sqlitemigrate "github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "modernc.org/sqlite"
 
@@ -72,9 +72,20 @@ func (s *SQLiteStore) Initialize(ctx context.Context) error {
 		return fmt.Errorf("failed to create migration source: %w", err)
 	}
 
-	dbURL := fmt.Sprintf("sqlite://%s", s.cfg.Database.Path)
-	m, err := migrate.NewWithSourceInstance("iofs", srcDriver, dbURL)
+	migrationDB, err := sql.Open("sqlite", s.cfg.Database.Path)
 	if err != nil {
+		return fmt.Errorf("failed to open migration database: %w", err)
+	}
+
+	dbDriver, err := sqlitemigrate.WithInstance(migrationDB, &sqlitemigrate.Config{})
+	if err != nil {
+		_ = migrationDB.Close()
+		return fmt.Errorf("failed to create migration database driver: %w", err)
+	}
+
+	m, err := migrate.NewWithInstance("iofs", srcDriver, "sqlite", dbDriver)
+	if err != nil {
+		_ = migrationDB.Close()
 		return fmt.Errorf("failed to initialize migrations: %w", err)
 	}
 	defer m.Close()
