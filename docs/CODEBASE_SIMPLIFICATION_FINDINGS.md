@@ -4,6 +4,25 @@ Date: 2026-06-21
 
 Issue: https://github.com/smarzola/ldaplite/issues/13
 
+> Status note, 2026-06-22: this document is now the original audit record, not
+> a fully current action list. The current implementation has addressed much of
+> the P0/P1 work: LDAP handlers are split by operation, config loading returns
+> errors, DN parsing is centralized in `internal/ldapdn`, store errors are typed,
+> operational attributes are projected at protocol boundaries, server-managed
+> attributes are not stored generically, search scope/options are pushed into the
+> store, `memberOf` projection can be skipped when unused, expression indexes
+> back case-insensitive filters, case-insensitive DN uniqueness is enforced by
+> migration, Web UI extra attributes use replacement semantics, group membership
+> sync is shared, and the Who Am I unsafe workaround is isolated in
+> `internal/protocol`.
+>
+> Remaining high-value themes are smaller now: continue reducing duplicated Web
+> UI handler flow, consider further splitting entry CRUD from `sqlite.go`, add
+> targeted benchmarks for store/search behavior, add cancellation tests around
+> request-scoped operation handlers, and keep extending functional coverage for
+> escaped or normalized DN edge cases. Avoid treating the line-number evidence
+> below as current without direct source inspection.
+
 ## Summary
 
 The codebase is in a healthy state for a small LDAP server: the normal Go test
