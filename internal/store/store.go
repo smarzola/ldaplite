@@ -43,10 +43,6 @@ type Store interface {
 	SearchEntriesWithOptions(ctx context.Context, options SearchOptions) ([]*models.Entry, error)
 	EntryExists(ctx context.Context, dn string) (bool, error)
 
-	// Miscellaneous
-	GetAllEntries(ctx context.Context) ([]*models.Entry, error)
-	GetChildren(ctx context.Context, dn string) ([]*models.Entry, error)
-
 	// Authentication and Authorization
 	GetUserPasswordHash(ctx context.Context, uid string) (passwordHash string, dn string, err error)
 	GetUserPasswordHashByDN(ctx context.Context, dn string) (passwordHash string, canonicalDN string, err error)

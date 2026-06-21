@@ -89,10 +89,6 @@ func isSQLiteUniqueConstraint(err error) bool {
 	return errors.As(err, &sqliteErr) && sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE
 }
 
-func (s *SQLiteStore) queryEntriesWithAttributes(ctx context.Context, operation string, query string, args ...interface{}) ([]*models.Entry, error) {
-	return s.queryEntriesWithAttributesOptions(ctx, operation, true, query, args...)
-}
-
 func (s *SQLiteStore) queryEntriesWithAttributesOptions(ctx context.Context, operation string, includeMemberOf bool, query string, args ...interface{}) ([]*models.Entry, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

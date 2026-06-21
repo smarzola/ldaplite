@@ -142,12 +142,17 @@ func TestCreateEntryAcceptsCaseVariantParentDN(t *testing.T) {
 		t.Fatal("GetEntry() should find mixed-case parent entry by lower-case DN")
 	}
 
-	children, err := store.GetChildren(ctx, "OU=USERS,DC=TEST,DC=COM")
+	children, err := store.SearchEntriesWithOptions(ctx, SearchOptions{
+		BaseDN:          "OU=USERS,DC=TEST,DC=COM",
+		Filter:          "(uid=mixedcaseparent)",
+		Scope:           SearchScopeSingleLevel,
+		IncludeMemberOf: false,
+	})
 	if err != nil {
-		t.Fatalf("GetChildren() failed: %v", err)
+		t.Fatalf("SearchEntriesWithOptions() failed: %v", err)
 	}
-	if len(children) == 0 {
-		t.Fatal("GetChildren() should find children using a case-variant parent DN")
+	if len(children) != 1 {
+		t.Fatalf("single-level search should find child using a case-variant parent DN, got %d", len(children))
 	}
 }
 
