@@ -45,17 +45,34 @@ func NewServer(cfg *config.Config, st store.Store, version string) *Server {
 	}
 }
 
-// protectedAttributes lists LDAP operational attributes that cannot be modified by clients
-var protectedAttributes = []string{
+// addProtectedAttributes lists LDAP operational attributes clients cannot set
+// during Add. objectClass is structural and required during Add, so it is only
+// protected from later Modify operations.
+var addProtectedAttributes = []string{
 	"createtimestamp",
 	"modifytimestamp",
 }
 
-// isProtectedAttribute checks if an attribute name is protected from modification
-func isProtectedAttribute(attrName string) bool {
+// modifyProtectedAttributes lists LDAP operational/structural attributes that
+// cannot be changed after entry creation.
+var modifyProtectedAttributes = []string{
+	"createtimestamp",
+	"modifytimestamp",
+	"objectclass",
+}
+
+func isAddProtectedAttribute(attrName string) bool {
+	return containsAttributeName(addProtectedAttributes, attrName)
+}
+
+func isModifyProtectedAttribute(attrName string) bool {
+	return containsAttributeName(modifyProtectedAttributes, attrName)
+}
+
+func containsAttributeName(names []string, attrName string) bool {
 	attrLower := strings.ToLower(attrName)
-	for _, protected := range protectedAttributes {
-		if attrLower == protected {
+	for _, name := range names {
+		if attrLower == name {
 			return true
 		}
 	}
@@ -148,6 +165,7 @@ func (s *Server) Stop() error {
 // handleBind handles bind operations
 func (s *Server) handleBind(conn *protocol.Connection, msg *message.LDAPMessage) error {
 	ctx := context.Background()
+	conn.ClearBoundDN()
 
 	bindReq := msg.ProtocolOp().(message.BindRequest)
 	bindDN := string(bindReq.Name())
@@ -212,6 +230,7 @@ func (s *Server) handleSearch(conn *protocol.Connection, msg *message.LDAPMessag
 	searchReq := msg.ProtocolOp().(message.SearchRequest)
 	baseDN := string(searchReq.BaseObject())
 	scope := int(searchReq.Scope())
+	selection := newSearchAttributeSelection(searchReq.Attributes())
 
 	// Handle RootDSE queries (empty base DN)
 	if baseDN == "" {
@@ -223,6 +242,11 @@ func (s *Server) handleSearch(conn *protocol.Connection, msg *message.LDAPMessag
 	if baseDN == "cn=Subschema" || baseDN == "cn=subschema" {
 		slog.Debug("Schema query")
 		return s.handleSchema(conn, msg)
+	}
+
+	if !s.canSearch(conn, baseDN) {
+		slog.Info("Search rejected - bind required", "baseDN", baseDN)
+		return conn.WriteResponse(msg.MessageID(), protocol.NewSearchResultDone(message.ResultCodeInsufficientAccessRights))
 	}
 
 	// Get filter from request
@@ -256,17 +280,8 @@ func (s *Server) handleSearch(conn *protocol.Connection, msg *message.LDAPMessag
 		// Build search result entry
 		result := protocol.NewSearchResultEntry(entry.DN)
 
-		// Add objectClass attribute
-		if entry.ObjectClass != "" {
-			protocol.AddAttribute(&result, "objectClass", entry.ObjectClass)
-		}
-
-		// Add all other attributes
-		for attrName, attrValues := range entry.Attributes {
-			if strings.EqualFold(attrName, "objectClass") {
-				continue
-			}
-			protocol.AddAttribute(&result, attrName, attrValues...)
+		for _, attr := range searchResponseAttributes(entry, selection) {
+			addSearchAttribute(&result, attr.name, attr.values, bool(searchReq.TypesOnly()))
 		}
 
 		// Write entry
@@ -286,6 +301,11 @@ func (s *Server) handleAdd(conn *protocol.Connection, msg *message.LDAPMessage) 
 
 	dn := string(addReq.Entry())
 	slog.Debug("Add request", "dn", dn)
+
+	if !s.canWrite(conn) {
+		slog.Info("Add rejected - authenticated bind required", "dn", dn)
+		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeInsufficientAccessRights))
+	}
 
 	// Check if entry already exists
 	exists, err := s.store.EntryExists(ctx, dn)
@@ -320,7 +340,7 @@ func (s *Server) handleAdd(conn *protocol.Connection, msg *message.LDAPMessage) 
 		name := string(attr.Type_())
 
 		// Check protected attributes
-		if isProtectedAttribute(name) {
+		if isAddProtectedAttribute(name) {
 			slog.Debug("Attempt to set protected attribute", "dn", dn, "attribute", name)
 			return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeUnwillingToPerform))
 		}
@@ -374,6 +394,11 @@ func (s *Server) handleDelete(conn *protocol.Connection, msg *message.LDAPMessag
 	dn := string(delReq)
 	slog.Debug("Delete request", "dn", dn)
 
+	if !s.canWrite(conn) {
+		slog.Info("Delete rejected - authenticated bind required", "dn", dn)
+		return conn.WriteResponse(msg.MessageID(), protocol.NewDelResponse(message.ResultCodeInsufficientAccessRights))
+	}
+
 	// Check if entry exists
 	exists, err := s.store.EntryExists(ctx, dn)
 	if err != nil {
@@ -403,6 +428,11 @@ func (s *Server) handleModify(conn *protocol.Connection, msg *message.LDAPMessag
 	dn := string(modReq.Object())
 	slog.Debug("Modify request", "dn", dn)
 
+	if !s.canWrite(conn) {
+		slog.Info("Modify rejected - authenticated bind required", "dn", dn)
+		return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeInsufficientAccessRights))
+	}
+
 	// Get entry
 	entry, err := s.store.GetEntry(ctx, dn)
 	if err != nil {
@@ -422,7 +452,7 @@ func (s *Server) handleModify(conn *protocol.Connection, msg *message.LDAPMessag
 		attrType := string(modification.Type_())
 
 		// Check protected attributes
-		if isProtectedAttribute(attrType) {
+		if isModifyProtectedAttribute(attrType) {
 			slog.Debug("Attempt to modify protected attribute", "dn", dn, "attribute", attrType)
 			return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeUnwillingToPerform))
 		}
@@ -608,7 +638,126 @@ func (s *Server) handleExtended(conn *protocol.Connection, msg *message.LDAPMess
 // handleUnbind handles unbind operations
 func (s *Server) handleUnbind(conn *protocol.Connection, msg *message.LDAPMessage) error {
 	slog.Debug("Unbind request")
+	conn.ClearBoundDN()
 	return nil // Connection will be closed by handler
+}
+
+func (s *Server) canSearch(conn *protocol.Connection, baseDN string) bool {
+	if isPublicSearchBase(baseDN) {
+		return true
+	}
+	if !conn.IsBound() {
+		return false
+	}
+	if conn.GetBoundDN() == "" {
+		return s.cfg.Security.AllowAnonymousBind
+	}
+	return true
+}
+
+func (s *Server) canWrite(conn *protocol.Connection) bool {
+	return conn.IsBound() && conn.GetBoundDN() != ""
+}
+
+func isPublicSearchBase(baseDN string) bool {
+	return baseDN == "" || strings.EqualFold(baseDN, "cn=Subschema")
+}
+
+type searchAttributeSelection struct {
+	noAttributes       bool
+	includeAll         bool
+	includeOperational bool
+	names              map[string]bool
+}
+
+type searchResponseAttribute struct {
+	name   string
+	values []string
+}
+
+func newSearchAttributeSelection(selection message.AttributeSelection) searchAttributeSelection {
+	if len(selection) == 0 {
+		return searchAttributeSelection{includeAll: true, includeOperational: true}
+	}
+
+	result := searchAttributeSelection{names: make(map[string]bool)}
+	for _, selector := range selection {
+		name := strings.TrimSpace(string(selector))
+		if name == "" {
+			continue
+		}
+
+		switch strings.ToLower(name) {
+		case "1.1":
+			result.noAttributes = true
+		case "*":
+			result.includeAll = true
+			result.noAttributes = false
+		case "+":
+			result.includeOperational = true
+			result.noAttributes = false
+		default:
+			result.names[strings.ToLower(name)] = true
+			result.noAttributes = false
+		}
+	}
+
+	return result
+}
+
+func (s searchAttributeSelection) includes(attrName string) bool {
+	if s.noAttributes {
+		return false
+	}
+	attrLower := strings.ToLower(attrName)
+	if s.names[attrLower] {
+		return true
+	}
+	if s.includeOperational && isOperationalAttribute(attrLower) {
+		return true
+	}
+	return s.includeAll && !isOperationalAttribute(attrLower)
+}
+
+func isOperationalAttribute(attrName string) bool {
+	switch strings.ToLower(attrName) {
+	case "createtimestamp", "modifytimestamp", "memberof":
+		return true
+	default:
+		return false
+	}
+}
+
+func searchResponseAttributes(entry *models.Entry, selection searchAttributeSelection) []searchResponseAttribute {
+	attrs := make([]searchResponseAttribute, 0, len(entry.Attributes)+1)
+	if entry.ObjectClass != "" && selection.includes("objectClass") {
+		attrs = append(attrs, searchResponseAttribute{
+			name:   "objectClass",
+			values: []string{entry.ObjectClass},
+		})
+	}
+
+	for attrName, attrValues := range entry.Attributes {
+		if strings.EqualFold(attrName, "objectClass") {
+			continue
+		}
+		if selection.includes(attrName) {
+			attrs = append(attrs, searchResponseAttribute{
+				name:   attrName,
+				values: attrValues,
+			})
+		}
+	}
+
+	return attrs
+}
+
+func addSearchAttribute(result *message.SearchResultEntry, name string, values []string, typesOnly bool) {
+	if typesOnly {
+		protocol.AddAttribute(result, name)
+		return
+	}
+	protocol.AddAttribute(result, name, values...)
 }
 
 // extractUID extracts UID from a DN

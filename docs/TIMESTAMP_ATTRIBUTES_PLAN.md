@@ -1,7 +1,9 @@
 # LDAP Operational Timestamp Attributes Implementation Plan
 
+> Historical note, 2026-06-21: operational timestamps are implemented and returned as LDAP operational attributes. This document is kept as design history; use `docs/ROADMAP.md` for current status and remaining work.
+
 **Date:** 2025-10-25
-**Status:** Planning
+**Status:** Historical / implemented
 **Version:** 1.0
 
 ---

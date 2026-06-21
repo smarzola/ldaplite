@@ -64,7 +64,7 @@
                                         </svg>
                                         Edit
                                     </a>
-                                    <button class="btn btn-ghost btn-sm text-error" data-delete-url="/ous/delete?dn={{.DN}}" data-delete-name="{{.GetAttribute "ou"}}" onclick="showDeleteConfirm(event, this)">
+                                    <button class="btn btn-ghost btn-sm text-error" data-delete-dn="{{.DN}}" data-delete-name="{{.GetAttribute "ou"}}" onclick="showDeleteConfirm(event, this)">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                                             <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
                                         </svg>
@@ -92,10 +92,11 @@
     <div class="modal-box">
         <h3 class="font-bold text-lg">Confirm Deletion</h3>
         <p class="py-4" id="delete-message"></p>
-        <div class="modal-action">
+        <form method="POST" action="/ous/delete" class="modal-action" id="delete-form">
+            <input type="hidden" name="dn" id="delete-dn">
             <button class="btn btn-ghost" onclick="closeDeleteConfirm()">Cancel</button>
-            <button class="btn btn-error" id="delete-confirm-btn">Delete</button>
-        </div>
+            <button class="btn btn-error" type="submit">Delete</button>
+        </form>
     </div>
     <form method="dialog" class="modal-backdrop">
         <button onclick="closeDeleteConfirm()">close</button>
@@ -105,12 +106,11 @@
 
 {{define "scripts"}}
 <script>
-    let deleteUrl = '';
-
     function showDeleteConfirm(event, element) {
         event.preventDefault();
-        deleteUrl = element.getAttribute('data-delete-url');
+        const deleteDN = element.getAttribute('data-delete-dn');
         const deleteName = element.getAttribute('data-delete-name');
+        document.getElementById('delete-dn').value = deleteDN;
         document.getElementById('delete-message').textContent = `Are you sure you want to delete "${deleteName}"? This action cannot be undone.`;
         document.getElementById('delete-confirm').showModal();
     }
@@ -118,13 +118,7 @@
     function closeDeleteConfirm() {
         const dialog = document.getElementById('delete-confirm');
         dialog.close();
-        deleteUrl = '';
+        document.getElementById('delete-dn').value = '';
     }
-
-    document.getElementById('delete-confirm-btn').addEventListener('click', function() {
-        if (deleteUrl) {
-            window.location.href = deleteUrl;
-        }
-    });
 </script>
 {{end}}

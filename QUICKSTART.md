@@ -27,7 +27,7 @@ The server is now running at `localhost:3389`.
 ```bash
 # From your host machine (requires ldap-utils installed)
 ldapsearch -H ldap://localhost:3389 \
-  -D "cn=admin,dc=example,dc=com" \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
   -w ChangeMe123! \
   -b "dc=example,dc=com" \
   "(objectClass=*)"
@@ -38,7 +38,7 @@ You should see the base DN entry and default OUs.
 ## Option 2: Local Binary
 
 ### Prerequisites
-- Go 1.22 or higher
+- Go 1.25 or higher
 - Port 3389 available
 
 ### Steps
@@ -51,6 +51,7 @@ go build -o ldaplite ./cmd/ldaplite
 export LDAP_BASE_DN=dc=example,dc=com
 export LDAP_ADMIN_PASSWORD=secure-password-here
 export LDAP_DATABASE_PATH=./ldaplite.db
+export LDAP_WEB_UI_ENABLED=true
 
 # Run the server
 ./ldaplite server
@@ -65,7 +66,7 @@ INFO     LDAP server starting address=0.0.0.0:3389
 
 ```bash
 ldapsearch -H ldap://localhost:3389 \
-  -D "cn=admin,dc=example,dc=com" \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
   -w secure-password-here \
   -b "dc=example,dc=com" \
   "(objectClass=*)"
@@ -90,7 +91,7 @@ Add the user:
 
 ```bash
 ldapadd -H ldap://localhost:3389 \
-  -D "cn=admin,dc=example,dc=com" \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
   -w ChangeMe123! \
   -f add-user.ldif
 ```
@@ -99,7 +100,7 @@ Verify:
 
 ```bash
 ldapsearch -H ldap://localhost:3389 \
-  -D "cn=admin,dc=example,dc=com" \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
   -w ChangeMe123! \
   -b "uid=john,ou=users,dc=example,dc=com"
 ```
@@ -119,7 +120,7 @@ Add the group:
 
 ```bash
 ldapadd -H ldap://localhost:3389 \
-  -D "cn=admin,dc=example,dc=com" \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
   -w ChangeMe123! \
   -f add-group.ldif
 ```
@@ -130,7 +131,7 @@ ldapadd -H ldap://localhost:3389 \
 2. Create new connection:
    - Network Parameter: `localhost:3389`
    - Authentication: Simple
-   - Bind DN: `cn=admin,dc=example,dc=com`
+   - Bind DN: `uid=admin,ou=users,dc=example,dc=com`
    - Bind password: `ChangeMe123!`
 3. Connect and browse the directory
 
@@ -191,7 +192,7 @@ docker-compose exec ldaplite /bin/sh
 
 ```bash
 ldapwhoami -H ldap://localhost:3389 \
-  -D "cn=admin,dc=example,dc=com" \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
   -w ChangeMe123!
 ```
 
@@ -206,7 +207,7 @@ ldapwhoami -H ldap://localhost:3389 \
 ### Authentication failed
 
 - Verify password in docker-compose.yml
-- Check user exists: `ldapsearch ... -b "cn=admin,dc=example,dc=com"`
+- Check user exists: `ldapsearch ... -b "uid=admin,ou=users,dc=example,dc=com"`
 
 ### Data not persisting
 

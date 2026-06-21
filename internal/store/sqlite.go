@@ -107,6 +107,7 @@ func (s *SQLiteStore) initializeDatabase(ctx context.Context) error {
 
 	// Create base DN entry (root)
 	baseEntry := models.NewEntry(baseDN, string(models.ObjectClassTop))
+	baseEntry.ParentDN = ""
 	for _, component := range components {
 		if strings.HasPrefix(component, "dc=") {
 			dc := strings.TrimPrefix(component, "dc=")
@@ -252,6 +253,10 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 	}
 	defer tx.Rollback()
 
+	if err := s.validateEntryPlacement(ctx, tx, entry); err != nil {
+		return err
+	}
+
 	// Step 1: Insert core entry metadata into entries table
 	query := `
 		INSERT INTO entries (dn, parent_dn, object_class, created_at, updated_at)
@@ -340,12 +345,16 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 				SELECT ?, id FROM entries WHERE dn = ?
 			`
 			for _, memberDN := range members {
-				if _, err := tx.ExecContext(ctx, memberQuery, entryID, memberDN); err != nil {
-					// Log warning but don't fail - member DN might not exist yet
-					slog.Warn("Failed to add member to group_members table",
-						"group_dn", entry.DN,
-						"member_dn", memberDN,
-						"error", err)
+				result, err := tx.ExecContext(ctx, memberQuery, entryID, memberDN)
+				if err != nil {
+					return fmt.Errorf("failed to add member %s to group %s: %w", memberDN, entry.DN, err)
+				}
+				rowsAffected, err := result.RowsAffected()
+				if err != nil {
+					return fmt.Errorf("failed to verify group member %s: %w", memberDN, err)
+				}
+				if rowsAffected == 0 {
+					return fmt.Errorf("group member does not exist: %s", memberDN)
 				}
 			}
 		}
@@ -386,8 +395,16 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 
 	// Step 1: Update entry metadata (timestamp)
 	query := `UPDATE entries SET updated_at = ? WHERE dn = ?`
-	if _, err := tx.ExecContext(ctx, query, entry.UpdatedAt, entry.DN); err != nil {
+	result, err := tx.ExecContext(ctx, query, entry.UpdatedAt, entry.DN)
+	if err != nil {
 		return fmt.Errorf("failed to update entry: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to verify entry update: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("entry not found: %s", entry.DN)
 	}
 
 	// Step 2: Replace attributes in attributes table (delete-then-insert pattern)
@@ -447,18 +464,68 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 				SELECT ?, id FROM entries WHERE dn = ?
 			`
 			for _, memberDN := range members {
-				if _, err := tx.ExecContext(ctx, memberQuery, entryID, memberDN); err != nil {
-					// Log warning but don't fail - member DN might not exist
-					slog.Warn("Failed to add member to group_members table during update",
-						"group_dn", entry.DN,
-						"member_dn", memberDN,
-						"error", err)
+				result, err := tx.ExecContext(ctx, memberQuery, entryID, memberDN)
+				if err != nil {
+					return fmt.Errorf("failed to add member %s to group %s: %w", memberDN, entry.DN, err)
+				}
+				rowsAffected, err := result.RowsAffected()
+				if err != nil {
+					return fmt.Errorf("failed to verify group member %s: %w", memberDN, err)
+				}
+				if rowsAffected == 0 {
+					return fmt.Errorf("group member does not exist: %s", memberDN)
 				}
 			}
 		}
 	}
 
 	return tx.Commit()
+}
+
+func (s *SQLiteStore) validateEntryPlacement(ctx context.Context, tx *sql.Tx, entry *models.Entry) error {
+	baseDN := strings.TrimSpace(s.cfg.LDAP.BaseDN)
+	if baseDN == "" {
+		return fmt.Errorf("base DN is not configured")
+	}
+	if !dnWithinBase(entry.DN, baseDN) {
+		return fmt.Errorf("entry DN %s is outside base DN %s", entry.DN, baseDN)
+	}
+
+	if strings.EqualFold(entry.DN, baseDN) {
+		if entry.ParentDN != "" {
+			return fmt.Errorf("base DN entry must not have parent DN: %s", entry.ParentDN)
+		}
+		return nil
+	}
+
+	if entry.ParentDN == "" {
+		return fmt.Errorf("parent DN is required for entry: %s", entry.DN)
+	}
+
+	exists, err := entryExistsTx(ctx, tx, entry.ParentDN)
+	if err != nil {
+		return fmt.Errorf("failed to verify parent DN: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("parent DN does not exist: %s", entry.ParentDN)
+	}
+
+	return nil
+}
+
+func entryExistsTx(ctx context.Context, tx *sql.Tx, dn string) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM entries WHERE dn = ?)`
+	var exists bool
+	if err := tx.QueryRowContext(ctx, query, dn).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func dnWithinBase(dn, baseDN string) bool {
+	dn = strings.TrimSpace(dn)
+	baseDN = strings.TrimSpace(baseDN)
+	return strings.EqualFold(dn, baseDN) || strings.HasSuffix(strings.ToLower(dn), ","+strings.ToLower(baseDN))
 }
 
 // DeleteEntry deletes an entry
@@ -805,18 +872,32 @@ func (s *SQLiteStore) GetUserPasswordHash(ctx context.Context, uid string) (stri
 	return passwordHash, dn, nil
 }
 
-// IsUserInGroup checks if a user is a member of a group (direct membership only)
-// This uses the group_members junction table for efficient lookups.
-// Returns true if the user is a direct member, false otherwise.
-// For nested group support, this could be extended with a recursive CTE query.
+// IsUserInGroup checks if a user is a member of a group, including membership
+// through nested groups. A recursive CTE walks from the user's direct groups up
+// through parent groups with cycle protection.
 func (s *SQLiteStore) IsUserInGroup(ctx context.Context, userDN, groupDN string) (bool, error) {
 	query := `
-		SELECT EXISTS(
-			SELECT 1
+		WITH RECURSIVE user_groups(group_id, depth, path) AS (
+			-- Direct groups containing the user
+			SELECT gm.group_entry_id, 0, printf(',%d,', gm.group_entry_id)
 			FROM group_members gm
 			INNER JOIN entries user_entry ON gm.member_entry_id = user_entry.id
-			INNER JOIN entries group_entry ON gm.group_entry_id = group_entry.id
-			WHERE user_entry.dn = ? AND group_entry.dn = ?
+			WHERE user_entry.dn = ?
+
+			UNION ALL
+
+			-- Parent groups containing one of the user's groups
+			SELECT gm.group_entry_id, ug.depth + 1, ug.path || gm.group_entry_id || ','
+			FROM group_members gm
+			INNER JOIN user_groups ug ON gm.member_entry_id = ug.group_id
+			WHERE ug.depth < 100
+			  AND instr(ug.path, printf(',%d,', gm.group_entry_id)) = 0
+		)
+		SELECT EXISTS(
+			SELECT 1
+			FROM user_groups ug
+			INNER JOIN entries group_entry ON ug.group_id = group_entry.id
+			WHERE group_entry.dn = ?
 		)
 	`
 	var isMember bool
@@ -834,9 +915,8 @@ func fileExists(path string) bool {
 }
 
 // populateMemberOf adds the memberOf attribute to user entries (inetOrgPerson).
-// This is a virtual attribute computed from the group_members table.
-// For each user entry, it adds a memberOf attribute containing the DN of each
-// group the user belongs to (as per LDAP memberOf overlay semantics).
+// This is a virtual attribute computed from the group_members table. It
+// includes direct and nested group memberships with cycle protection.
 //
 // This function efficiently batches the lookup to minimize database queries:
 // 1. Collect all user entry IDs
@@ -869,13 +949,28 @@ func (s *SQLiteStore) populateMemberOf(ctx context.Context, entries []*models.En
 		args[i] = id
 	}
 
-	// Query all group memberships for these users
-	// Returns: member_entry_id (user), group_dn
+	// Query all direct and nested group memberships for these users.
+	// Returns: user entry_id, group_dn.
 	query := `
-		SELECT gm.member_entry_id, g_entry.dn
-		FROM group_members gm
-		INNER JOIN entries g_entry ON gm.group_entry_id = g_entry.id
-		WHERE gm.member_entry_id IN (` + strings.Join(placeholders, ",") + `)
+		WITH RECURSIVE memberships(user_id, group_id, group_dn, depth, path) AS (
+			-- Direct groups containing each user
+			SELECT gm.member_entry_id, gm.group_entry_id, g_entry.dn, 0, printf(',%d,', gm.group_entry_id)
+			FROM group_members gm
+			INNER JOIN entries g_entry ON gm.group_entry_id = g_entry.id
+			WHERE gm.member_entry_id IN (` + strings.Join(placeholders, ",") + `)
+
+			UNION ALL
+
+			-- Parent groups containing one of the user's groups
+			SELECT m.user_id, gm.group_entry_id, g_entry.dn, m.depth + 1, m.path || gm.group_entry_id || ','
+			FROM memberships m
+			INNER JOIN group_members gm ON gm.member_entry_id = m.group_id
+			INNER JOIN entries g_entry ON gm.group_entry_id = g_entry.id
+			WHERE m.depth < 100
+			  AND instr(m.path, printf(',%d,', gm.group_entry_id)) = 0
+		)
+		SELECT DISTINCT user_id, group_dn
+		FROM memberships
 	`
 
 	rows, err := s.db.QueryContext(ctx, query, args...)

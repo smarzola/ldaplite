@@ -83,8 +83,8 @@ export LDAP_BASE_DN="dc=example,dc=com"
 export LDAP_ADMIN_PASSWORD="YourSecurePassword123!"
 
 # Optional: Enable Web UI
-export LDAP_WEBUI_ENABLED=true
-export LDAP_WEBUI_PORT=8080
+export LDAP_WEB_UI_ENABLED=true
+export LDAP_WEB_UI_PORT=8080
 
 # Run
 ./ldaplite-linux-amd64 server
@@ -101,7 +101,7 @@ docker run -d \
   -p 8080:8080 \
   -e LDAP_BASE_DN=dc=example,dc=com \
   -e LDAP_ADMIN_PASSWORD=YourSecurePassword \
-  -e LDAP_WEBUI_ENABLED=true \
+  -e LDAP_WEB_UI_ENABLED=true \
   -v ldap_data:/data \
   ghcr.io/smarzola/ldaplite:latest
 
@@ -121,7 +121,7 @@ services:
     environment:
       LDAP_BASE_DN: dc=example,dc=com
       LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD}
-      LDAP_WEBUI_ENABLED: "true"
+      LDAP_WEB_UI_ENABLED: "true"
     volumes:
       - ldap_data:/data
     restart: unless-stopped
@@ -133,7 +133,7 @@ volumes:
 ### Option 3: Build from Source
 
 ```bash
-# Prerequisites: Go 1.23+
+# Prerequisites: Go 1.25+
 git clone https://github.com/smarzola/ldaplite.git
 cd ldaplite
 
@@ -143,7 +143,7 @@ make build
 # Run with Web UI enabled
 export LDAP_BASE_DN=dc=example,dc=com
 export LDAP_ADMIN_PASSWORD=SecurePassword123!
-export LDAP_WEBUI_ENABLED=true
+export LDAP_WEB_UI_ENABLED=true
 ./bin/ldaplite server
 
 # Access Web UI at http://localhost:8080
@@ -226,11 +226,11 @@ All configuration via environment variables. No config files needed.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LDAP_WEBUI_ENABLED` | `false` | Enable the embedded web UI |
-| `LDAP_WEBUI_PORT` | `8080` | Web UI HTTP port |
-| `LDAP_WEBUI_BIND_ADDRESS` | `0.0.0.0` | Web UI bind address |
+| `LDAP_WEB_UI_ENABLED` | `false` | Enable the embedded web UI |
+| `LDAP_WEB_UI_PORT` | `8080` | Web UI HTTP port |
+| `LDAP_WEB_UI_BIND_ADDRESS` | `0.0.0.0` | Web UI bind address |
 
-**Note**: Web UI requires authentication using admin user credentials (HTTP Basic Auth). Only members of the `cn=ldaplite.admin,ou=groups` group can access the web interface.
+**Note**: Web UI requires authentication using admin user credentials (HTTP Basic Auth). Only members of the `cn=ldaplite.admin,ou=groups` group can access the web interface. Mutating Web UI requests require a same-origin `Origin` or `Referer` header, and delete actions use POST requests. The older `LDAP_WEBUI_*` spelling is still accepted as a compatibility alias.
 
 ### Security Configuration
 
@@ -242,6 +242,8 @@ All configuration via environment variables. No config files needed.
 | `LDAP_ARGON2_PARALLELISM` | `2` | Argon2 parallelism factor |
 | `LDAP_ARGON2_SALT_LENGTH` | `16` | Salt length in bytes |
 | `LDAP_ARGON2_KEY_LENGTH` | `32` | Derived key length in bytes |
+
+LDAPLite requires a successful bind before normal directory searches and all write operations. RootDSE and schema searches are intentionally readable before bind so clients can discover server capabilities. When `LDAP_ALLOW_ANONYMOUS_BIND=true`, anonymous clients must still perform an anonymous bind first, and anonymous sessions are limited to search access; Add, Modify, and Delete require an authenticated user DN.
 
 **Note**: Argon2id parameters follow [OWASP recommendations](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#argon2id) for secure password hashing.
 
@@ -307,7 +309,7 @@ ldapadd -H ldap://localhost:3389 \
 
 ### Querying User Group Memberships (memberOf)
 
-LDAPLite automatically populates the `memberOf` attribute for user entries per [RFC2307bis](https://datatracker.ietf.org/doc/html/draft-howard-rfc2307bis-02):
+LDAPLite automatically populates the `memberOf` attribute for user entries per [RFC2307bis](https://datatracker.ietf.org/doc/html/draft-howard-rfc2307bis-02). Membership is transitive through nested groups, with cycle protection to avoid infinite traversal:
 
 ```bash
 # Search for a user - memberOf is automatically included
@@ -334,6 +336,10 @@ ldapsearch -H ldap://localhost:3389 \
   -b "ou=users,dc=example,dc=com" \
   "(memberOf=cn=developers,ou=groups,dc=example,dc=com)"
 ```
+
+Search result attribute selection is honored case-insensitively. Requesting `1.1` returns no attributes, `*` returns user attributes, and `+` returns operational attributes such as `memberOf`, `createTimestamp`, and `modifyTimestamp`. When no attribute list is supplied, LDAPLite returns both user and operational attributes for compatibility with common clients.
+
+LDAPLite emits canonical presentation casing for known LDAP attributes such as `objectClass`, `memberOf`, `createTimestamp`, `modifyTimestamp`, `givenName`, `displayName`, and `telephoneNumber`. Custom attributes remain case-insensitive internally and are currently presented using the normalized stored name.
 
 ## LDAP Filters
 
@@ -405,15 +411,12 @@ LDAPLite supports comprehensive LDAP filter syntax:
 
 ## Roadmap
 
-### Planned Features
+See [docs/ROADMAP.md](docs/ROADMAP.md) for current project status and planned work.
 
 - **SCIM 2.0 Support** - Modern API for user/group provisioning alongside LDAP
   - RESTful HTTP interface (RFC 7643, RFC 7644)
   - JSON payloads for easier integration
   - Compatible with modern IdP systems
-
-### Future Considerations
-
 - Enhanced ACLs for granular permissions
 - Import/export tools (LDIF, CSV)
 - TLS/LDAPS support (currently recommend reverse proxy)

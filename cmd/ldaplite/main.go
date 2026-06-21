@@ -2,23 +2,27 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/smarzola/ldaplite/internal/server"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/internal/web"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/spf13/cobra"
+	_ "modernc.org/sqlite"
 )
 
 var (
-	version = "0.1.0"
+	version = "0.7.0"
 	commit  = "dev"
 )
 
@@ -163,8 +167,91 @@ var healthcheckCmd = &cobra.Command{
 	Use:   "healthcheck",
 	Short: "Perform a health check",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// TODO: Implement health check
+		cfg := config.Load()
+		if err := runHealthcheck(cmd.Context(), cfg); err != nil {
+			return err
+		}
 		fmt.Println("Health check passed")
 		return nil
 	},
+}
+
+func runHealthcheck(ctx context.Context, cfg *config.Config) error {
+	if cfg.Database.Path == "" {
+		return fmt.Errorf("LDAP_DATABASE_PATH is required")
+	}
+	if cfg.LDAP.BaseDN == "" {
+		return fmt.Errorf("LDAP_BASE_DN is required")
+	}
+
+	info, err := os.Stat(cfg.Database.Path)
+	if err != nil {
+		return fmt.Errorf("database is not accessible at %s: %w", cfg.Database.Path, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("database path is a directory: %s", cfg.Database.Path)
+	}
+
+	db, err := sql.Open("sqlite", cfg.Database.Path)
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer db.Close()
+
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	requiredTables := []string{
+		"entries",
+		"attributes",
+		"users",
+		"groups",
+		"group_members",
+		"organizational_units",
+	}
+	for _, table := range requiredTables {
+		var exists bool
+		err := db.QueryRowContext(
+			ctx,
+			`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?)`,
+			table,
+		).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("failed to check table %s: %w", table, err)
+		}
+		if !exists {
+			return fmt.Errorf("database schema is missing required table: %s", table)
+		}
+	}
+
+	var baseExists bool
+	err = db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM entries WHERE dn = ?)`, cfg.LDAP.BaseDN).Scan(&baseExists)
+	if err != nil {
+		return fmt.Errorf("failed to check base DN: %w", err)
+	}
+	if !baseExists {
+		return fmt.Errorf("base DN does not exist in database: %s", cfg.LDAP.BaseDN)
+	}
+
+	if cfg.Server.Port <= 0 {
+		return fmt.Errorf("LDAP_PORT must be greater than zero")
+	}
+	address := healthcheckAddress(cfg.Server.BindAddress, cfg.Server.Port)
+	dialer := net.Dialer{Timeout: 2 * time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", address)
+	if err != nil {
+		return fmt.Errorf("LDAP listener is not reachable at %s: %w", address, err)
+	}
+	conn.Close()
+
+	return nil
+}
+
+func healthcheckAddress(bindAddress string, port int) string {
+	host := bindAddress
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, fmt.Sprintf("%d", port))
 }

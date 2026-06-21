@@ -230,7 +230,12 @@ func (h *UserHandler) update(w http.ResponseWriter, r *http.Request, dn string) 
 }
 
 func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	dn := r.URL.Query().Get("dn")
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	dn := r.FormValue("dn")
 	if dn == "" {
 		http.Error(w, "DN parameter required", http.StatusBadRequest)
 		return

@@ -67,6 +67,9 @@ func (s *Server) setupRoutes() {
 	userHandler := handlers.NewUserHandler(s.store, s.cfg, s.GetTemplate)
 	groupHandler := handlers.NewGroupHandler(s.store, s.cfg, s.GetTemplate)
 	ouHandler := handlers.NewOUHandler(s.store, s.cfg, s.GetTemplate)
+	protected := func(handler http.HandlerFunc) http.Handler {
+		return auth.RequireAuth(middleware.RequireSameOrigin(handler))
+	}
 
 	// Serve static CSS (no auth required)
 	s.mux.Handle("/static/", http.FileServer(http.FS(staticCSS)))
@@ -90,21 +93,21 @@ func (s *Server) setupRoutes() {
 
 	// User routes
 	s.mux.Handle("/users", auth.RequireAuth(http.HandlerFunc(userHandler.List)))
-	s.mux.Handle("/users/new", auth.RequireAuth(http.HandlerFunc(userHandler.New)))
-	s.mux.Handle("/users/edit", auth.RequireAuth(http.HandlerFunc(userHandler.Edit)))
-	s.mux.Handle("/users/delete", auth.RequireAuth(http.HandlerFunc(userHandler.Delete)))
+	s.mux.Handle("/users/new", protected(userHandler.New))
+	s.mux.Handle("/users/edit", protected(userHandler.Edit))
+	s.mux.Handle("/users/delete", protected(userHandler.Delete))
 
 	// Group routes
 	s.mux.Handle("/groups", auth.RequireAuth(http.HandlerFunc(groupHandler.List)))
-	s.mux.Handle("/groups/new", auth.RequireAuth(http.HandlerFunc(groupHandler.New)))
-	s.mux.Handle("/groups/edit", auth.RequireAuth(http.HandlerFunc(groupHandler.Edit)))
-	s.mux.Handle("/groups/delete", auth.RequireAuth(http.HandlerFunc(groupHandler.Delete)))
+	s.mux.Handle("/groups/new", protected(groupHandler.New))
+	s.mux.Handle("/groups/edit", protected(groupHandler.Edit))
+	s.mux.Handle("/groups/delete", protected(groupHandler.Delete))
 
 	// OU routes
 	s.mux.Handle("/ous", auth.RequireAuth(http.HandlerFunc(ouHandler.List)))
-	s.mux.Handle("/ous/new", auth.RequireAuth(http.HandlerFunc(ouHandler.New)))
-	s.mux.Handle("/ous/edit", auth.RequireAuth(http.HandlerFunc(ouHandler.Edit)))
-	s.mux.Handle("/ous/delete", auth.RequireAuth(http.HandlerFunc(ouHandler.Delete)))
+	s.mux.Handle("/ous/new", protected(ouHandler.New))
+	s.mux.Handle("/ous/edit", protected(ouHandler.Edit))
+	s.mux.Handle("/ous/delete", protected(ouHandler.Delete))
 }
 
 // Start starts the web server

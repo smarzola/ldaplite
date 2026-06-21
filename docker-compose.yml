@@ -11,6 +11,7 @@ services:
 
     ports:
       - "3389:3389"
+      - "8080:8080"
 
     environment:
       # Required on first run
@@ -22,6 +23,9 @@ services:
       LDAP_BIND_ADDRESS: "0.0.0.0"
       LDAP_LOG_LEVEL: "info"
       LDAP_LOG_FORMAT: "json"
+      LDAP_WEB_UI_ENABLED: "true"
+      LDAP_WEB_UI_PORT: "8080"
+      LDAP_WEB_UI_BIND_ADDRESS: "0.0.0.0"
       LDAP_READ_TIMEOUT: "30"
       LDAP_WRITE_TIMEOUT: "30"
       LDAP_DATABASE_PATH: "/data/ldaplite.db"

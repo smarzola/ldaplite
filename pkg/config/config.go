@@ -92,9 +92,9 @@ func Load() *Config {
 			},
 		},
 		WebUI: WebUIConfig{
-			Enabled:     getEnvBool("LDAP_WEB_UI_ENABLED", true),
-			Port:        getEnvInt("LDAP_WEB_UI_PORT", 8080),
-			BindAddress: getEnvString("LDAP_WEB_UI_BIND_ADDRESS", "0.0.0.0"),
+			Enabled:     getEnvBoolAny(false, "LDAP_WEB_UI_ENABLED", "LDAP_WEBUI_ENABLED"),
+			Port:        getEnvIntAny(8080, "LDAP_WEB_UI_PORT", "LDAP_WEBUI_PORT"),
+			BindAddress: getEnvStringAny("0.0.0.0", "LDAP_WEB_UI_BIND_ADDRESS", "LDAP_WEBUI_BIND_ADDRESS"),
 		},
 	}
 
@@ -139,6 +139,37 @@ func getEnvBool(key string, defaultValue bool) bool {
 	if value := os.Getenv(key); value != "" {
 		if boolVal, err := strconv.ParseBool(value); err == nil {
 			return boolVal
+		}
+	}
+	return defaultValue
+}
+
+func getEnvStringAny(defaultValue string, keys ...string) string {
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			return value
+		}
+	}
+	return defaultValue
+}
+
+func getEnvIntAny(defaultValue int, keys ...string) int {
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			if intVal, err := strconv.Atoi(value); err == nil {
+				return intVal
+			}
+		}
+	}
+	return defaultValue
+}
+
+func getEnvBoolAny(defaultValue bool, keys ...string) bool {
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			if boolVal, err := strconv.ParseBool(value); err == nil {
+				return boolVal
+			}
 		}
 	}
 	return defaultValue

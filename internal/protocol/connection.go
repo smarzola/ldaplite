@@ -15,6 +15,7 @@ type Connection struct {
 	conn     net.Conn
 	mu       sync.Mutex
 	closed   bool
+	bound    bool
 	boundDN  string
 	handlers OperationHandlers
 }
@@ -150,11 +151,28 @@ func (c *Connection) RemoteAddr() net.Addr {
 	return c.conn.RemoteAddr()
 }
 
-// SetBoundDN sets the bound DN for this connection after successful authentication
+// SetBoundDN marks this connection as bound after a successful bind. Anonymous
+// binds are represented by bound=true with an empty DN.
 func (c *Connection) SetBoundDN(dn string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.bound = true
 	c.boundDN = dn
+}
+
+// ClearBoundDN clears any previous bind state after a failed bind or unbind.
+func (c *Connection) ClearBoundDN() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.bound = false
+	c.boundDN = ""
+}
+
+// IsBound reports whether this connection has completed a successful bind.
+func (c *Connection) IsBound() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.bound
 }
 
 // GetBoundDN returns the currently bound DN for this connection

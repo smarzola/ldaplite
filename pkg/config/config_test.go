@@ -13,6 +13,8 @@ func TestLoadDefaults(t *testing.T) {
 		os.Unsetenv("LDAP_BASE_DN")
 		os.Unsetenv("LDAP_PORT")
 		os.Unsetenv("LDAP_BIND_ADDRESS")
+		os.Unsetenv("LDAP_WEB_UI_ENABLED")
+		os.Unsetenv("LDAP_WEBUI_ENABLED")
 	})
 
 	// Set required variable
@@ -27,6 +29,7 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, "/data/ldaplite.db", cfg.Database.Path)
 	assert.Equal(t, "info", cfg.Logging.Level)
 	assert.Equal(t, "json", cfg.Logging.Format)
+	assert.False(t, cfg.WebUI.Enabled)
 }
 
 func TestLoadCustomPort(t *testing.T) {
@@ -193,4 +196,43 @@ func TestConfigDatabase(t *testing.T) {
 
 	assert.Equal(t, 50, cfg.Database.MaxOpenConns)
 	assert.Equal(t, 10, cfg.Database.MaxIdleConns)
+}
+
+func TestConfigWebUI(t *testing.T) {
+	t.Setenv("LDAP_BASE_DN", "dc=test,dc=com")
+	t.Setenv("LDAP_WEB_UI_ENABLED", "true")
+	t.Setenv("LDAP_WEB_UI_PORT", "18080")
+	t.Setenv("LDAP_WEB_UI_BIND_ADDRESS", "127.0.0.1")
+
+	cfg := Load()
+
+	assert.True(t, cfg.WebUI.Enabled)
+	assert.Equal(t, 18080, cfg.WebUI.Port)
+	assert.Equal(t, "127.0.0.1", cfg.WebUI.BindAddress)
+}
+
+func TestConfigWebUILegacyAliases(t *testing.T) {
+	t.Setenv("LDAP_BASE_DN", "dc=test,dc=com")
+	t.Setenv("LDAP_WEBUI_ENABLED", "true")
+	t.Setenv("LDAP_WEBUI_PORT", "28080")
+	t.Setenv("LDAP_WEBUI_BIND_ADDRESS", "127.0.0.2")
+
+	cfg := Load()
+
+	assert.True(t, cfg.WebUI.Enabled)
+	assert.Equal(t, 28080, cfg.WebUI.Port)
+	assert.Equal(t, "127.0.0.2", cfg.WebUI.BindAddress)
+}
+
+func TestConfigWebUICanonicalEnvWinsOverLegacyAlias(t *testing.T) {
+	t.Setenv("LDAP_BASE_DN", "dc=test,dc=com")
+	t.Setenv("LDAP_WEB_UI_ENABLED", "false")
+	t.Setenv("LDAP_WEBUI_ENABLED", "true")
+	t.Setenv("LDAP_WEB_UI_PORT", "18080")
+	t.Setenv("LDAP_WEBUI_PORT", "28080")
+
+	cfg := Load()
+
+	assert.False(t, cfg.WebUI.Enabled)
+	assert.Equal(t, 18080, cfg.WebUI.Port)
 }
