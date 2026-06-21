@@ -22,7 +22,7 @@ func syncGroupMembers(ctx context.Context, tx *sql.Tx, groupEntryID int64, group
 	memberEntryIDs := make([]int64, 0, len(memberDNs))
 	for _, memberDN := range memberDNs {
 		var memberEntryID int64
-		err := tx.QueryRowContext(ctx, `SELECT id FROM entries WHERE dn = ?`, memberDN).Scan(&memberEntryID)
+		err := tx.QueryRowContext(ctx, `SELECT id FROM entries WHERE LOWER(dn) = LOWER(?)`, memberDN).Scan(&memberEntryID)
 		if err == sql.ErrNoRows {
 			return fmt.Errorf("%w: group member does not exist: %s", ErrConstraintViolation, memberDN)
 		}

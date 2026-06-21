@@ -145,7 +145,7 @@ func searchEntriesQuery(scope SearchScope, filterClause string, baseDN string, f
 		return selectClause + `
 		FROM entries e
 	` + joinWhere + `
-		  AND e.dn = ?
+		  AND LOWER(e.dn) = LOWER(?)
 	` + groupBy, args
 	case SearchScopeSingleLevel:
 		args := append([]interface{}{}, filterArgs...)
@@ -153,7 +153,7 @@ func searchEntriesQuery(scope SearchScope, filterClause string, baseDN string, f
 		return selectClause + `
 		FROM entries e
 	` + joinWhere + `
-		  AND e.parent_dn = ?
+		  AND LOWER(e.parent_dn) = LOWER(?)
 	` + groupBy, args
 	default:
 		args := []interface{}{baseDN}
@@ -164,13 +164,13 @@ func searchEntriesQuery(scope SearchScope, filterClause string, baseDN string, f
 		WITH RECURSIVE subtree AS (
 			SELECT id, dn, parent_dn, object_class, created_at, updated_at, 0 as depth
 			FROM entries
-			WHERE dn = ?
+			WHERE LOWER(dn) = LOWER(?)
 
 			UNION ALL
 
 			SELECT e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at, s.depth + 1
 			FROM entries e
-			INNER JOIN subtree s ON e.parent_dn = s.dn
+			INNER JOIN subtree s ON LOWER(e.parent_dn) = LOWER(s.dn)
 			WHERE s.depth < 100
 		)
 	` + selectClause + `

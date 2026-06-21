@@ -46,6 +46,63 @@ func TestCreateEntryRejectsMissingParentDN(t *testing.T) {
 	}
 }
 
+func TestEntryExistsIsCaseInsensitive(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	exists, err := store.EntryExists(ctx, "UID=ADMIN,OU=USERS,DC=TEST,DC=COM")
+	if err != nil {
+		t.Fatalf("EntryExists() failed: %v", err)
+	}
+	if !exists {
+		t.Fatal("EntryExists() should find entries case-insensitively")
+	}
+}
+
+func TestCreateEntryRejectsCaseVariantDuplicateDN(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	user := models.NewUser("OU=USERS,DC=TEST,DC=COM", "ADMIN", "Admin Duplicate", "Duplicate", "admin2@test.com")
+	user.SetPassword("{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=2$dummyhash$dummyhash")
+
+	err := store.CreateEntry(ctx, user.Entry)
+	if !errors.Is(err, ErrEntryAlreadyExists) {
+		t.Fatalf("CreateEntry() error = %v, want ErrEntryAlreadyExists", err)
+	}
+}
+
+func TestCreateEntryAcceptsCaseVariantParentDN(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	user := models.NewUser("OU=USERS,DC=TEST,DC=COM", "mixedcaseparent", "Mixed Parent", "Parent", "mixed@test.com")
+	user.SetPassword("{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=2$dummyhash$dummyhash")
+
+	if err := store.CreateEntry(ctx, user.Entry); err != nil {
+		t.Fatalf("CreateEntry() with mixed-case parent failed: %v", err)
+	}
+
+	found, err := store.GetEntry(ctx, "uid=mixedcaseparent,ou=users,dc=test,dc=com")
+	if err != nil {
+		t.Fatalf("GetEntry() failed: %v", err)
+	}
+	if found == nil {
+		t.Fatal("GetEntry() should find mixed-case parent entry by lower-case DN")
+	}
+
+	children, err := store.GetChildren(ctx, "OU=USERS,DC=TEST,DC=COM")
+	if err != nil {
+		t.Fatalf("GetChildren() failed: %v", err)
+	}
+	if len(children) == 0 {
+		t.Fatal("GetChildren() should find children using a case-variant parent DN")
+	}
+}
+
 func TestCreateGroupRejectsMissingMemberDN(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()
@@ -71,6 +128,27 @@ func TestCreateGroupRejectsMissingMemberDN(t *testing.T) {
 	}
 	if exists {
 		t.Fatal("group entry should have rolled back after missing member")
+	}
+}
+
+func TestCreateGroupAcceptsCaseVariantMemberDN(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	group := models.NewGroup("ou=groups,dc=test,dc=com", "mixedmember", "Mixed member group")
+	group.AddMember("UID=JDOE,OU=USERS,DC=TEST,DC=COM")
+
+	if err := store.CreateEntry(ctx, group.Entry); err != nil {
+		t.Fatalf("CreateEntry() with mixed-case member failed: %v", err)
+	}
+
+	jdoe, err := store.GetEntry(ctx, "uid=jdoe,ou=users,dc=test,dc=com")
+	if err != nil {
+		t.Fatalf("GetEntry(jdoe) failed: %v", err)
+	}
+	if !containsValue(jdoe.GetAttributes("memberOf"), "cn=mixedmember,ou=groups,dc=test,dc=com") {
+		t.Fatalf("memberOf missing mixedmember group, got %v", jdoe.GetAttributes("memberOf"))
 	}
 }
 

@@ -189,16 +189,16 @@ func TestSearchEntriesQueryUsesScopeSpecificShape(t *testing.T) {
 	if strings.Contains(baseQuery, "WITH RECURSIVE") {
 		t.Fatalf("base-object query should not use recursive CTE:\n%s", baseQuery)
 	}
-	if !strings.Contains(baseQuery, "AND e.dn = ?") {
-		t.Fatalf("base-object query should constrain exact DN:\n%s", baseQuery)
+	if !strings.Contains(baseQuery, "AND LOWER(e.dn) = LOWER(?)") {
+		t.Fatalf("base-object query should constrain DN case-insensitively:\n%s", baseQuery)
 	}
 
 	oneQuery, _ := searchEntriesQuery(SearchScopeSingleLevel, filterClause, "dc=test,dc=com", nil)
 	if strings.Contains(oneQuery, "WITH RECURSIVE") {
 		t.Fatalf("single-level query should not use recursive CTE:\n%s", oneQuery)
 	}
-	if !strings.Contains(oneQuery, "AND e.parent_dn = ?") {
-		t.Fatalf("single-level query should constrain parent DN:\n%s", oneQuery)
+	if !strings.Contains(oneQuery, "AND LOWER(e.parent_dn) = LOWER(?)") {
+		t.Fatalf("single-level query should constrain parent DN case-insensitively:\n%s", oneQuery)
 	}
 
 	subtreeQuery, _ := searchEntriesQuery(SearchScopeWholeSubtree, filterClause, "dc=test,dc=com", nil)

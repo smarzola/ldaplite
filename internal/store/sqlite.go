@@ -37,7 +37,7 @@ func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, e
 			) as attributes_json
 		FROM entries e
 		LEFT JOIN attributes a ON e.id = a.entry_id
-		WHERE e.dn = ?
+		WHERE LOWER(e.dn) = LOWER(?)
 		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
@@ -72,6 +72,13 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 
 	if err := s.validateEntryPlacement(ctx, tx, entry); err != nil {
 		return err
+	}
+	exists, err := entryExistsTx(ctx, tx, entry.DN)
+	if err != nil {
+		return fmt.Errorf("failed to check entry existence: %w", err)
+	}
+	if exists {
+		return fmt.Errorf("%w: %s", ErrEntryAlreadyExists, entry.DN)
 	}
 
 	// Step 1: Insert core entry metadata into entries table
@@ -195,7 +202,7 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 	defer tx.Rollback()
 
 	// Step 1: Update entry metadata (timestamp)
-	query := `UPDATE entries SET updated_at = ? WHERE dn = ?`
+	query := `UPDATE entries SET updated_at = ? WHERE LOWER(dn) = LOWER(?)`
 	result, err := tx.ExecContext(ctx, query, entry.UpdatedAt, entry.DN)
 	if err != nil {
 		return fmt.Errorf("failed to update entry: %w", err)
@@ -210,14 +217,14 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 
 	// Step 2: Replace attributes in attributes table (delete-then-insert pattern)
 	// This is simpler than diffing changes and ensures consistency
-	delAttrQuery := `DELETE FROM attributes WHERE entry_id = (SELECT id FROM entries WHERE dn = ?)`
+	delAttrQuery := `DELETE FROM attributes WHERE entry_id = (SELECT id FROM entries WHERE LOWER(dn) = LOWER(?))`
 	if _, err := tx.ExecContext(ctx, delAttrQuery, entry.DN); err != nil {
 		return fmt.Errorf("failed to delete attributes: %w", err)
 	}
 
 	// Insert updated generic attributes. Server-managed attributes are excluded
 	// because entries, users, and group_members own those values.
-	insertAttrQuery := `INSERT INTO attributes (entry_id, name, value) VALUES ((SELECT id FROM entries WHERE dn = ?), ?, ?)`
+	insertAttrQuery := `INSERT INTO attributes (entry_id, name, value) VALUES ((SELECT id FROM entries WHERE LOWER(dn) = LOWER(?)), ?, ?)`
 	for name, values := range entry.Attributes {
 		if !isGenericStoredAttribute(name) {
 			continue
@@ -234,7 +241,7 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 	if entry.IsUser() {
 		passwordHash := entry.GetAttribute("userPassword")
 		if passwordHash != "" {
-			updatePasswordQuery := `UPDATE users SET password_hash = ? WHERE entry_id = (SELECT id FROM entries WHERE dn = ?)`
+			updatePasswordQuery := `UPDATE users SET password_hash = ? WHERE entry_id = (SELECT id FROM entries WHERE LOWER(dn) = LOWER(?))`
 			if _, err := tx.ExecContext(ctx, updatePasswordQuery, passwordHash, entry.DN); err != nil {
 				return fmt.Errorf("failed to update user password: %w", err)
 			}
@@ -246,7 +253,7 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 	if entry.IsGroup() {
 		// Get the entry ID
 		var entryID int64
-		getIDQuery := `SELECT id FROM entries WHERE dn = ?`
+		getIDQuery := `SELECT id FROM entries WHERE LOWER(dn) = LOWER(?)`
 		if err := tx.QueryRowContext(ctx, getIDQuery, entry.DN).Scan(&entryID); err != nil {
 			return fmt.Errorf("failed to get entry ID: %w", err)
 		}
@@ -300,7 +307,7 @@ func (s *SQLiteStore) validateEntryPlacement(ctx context.Context, tx *sql.Tx, en
 }
 
 func entryExistsTx(ctx context.Context, tx *sql.Tx, dn string) (bool, error) {
-	query := `SELECT EXISTS(SELECT 1 FROM entries WHERE dn = ?)`
+	query := `SELECT EXISTS(SELECT 1 FROM entries WHERE LOWER(dn) = LOWER(?))`
 	var exists bool
 	if err := tx.QueryRowContext(ctx, query, dn).Scan(&exists); err != nil {
 		return false, err
@@ -310,7 +317,7 @@ func entryExistsTx(ctx context.Context, tx *sql.Tx, dn string) (bool, error) {
 
 // DeleteEntry deletes an entry
 func (s *SQLiteStore) DeleteEntry(ctx context.Context, dn string) error {
-	query := `DELETE FROM entries WHERE dn = ?`
+	query := `DELETE FROM entries WHERE LOWER(dn) = LOWER(?)`
 	result, err := s.db.ExecContext(ctx, query, dn)
 	if err != nil {
 		return fmt.Errorf("failed to delete entry: %w", err)
@@ -330,7 +337,7 @@ func (s *SQLiteStore) DeleteEntry(ctx context.Context, dn string) error {
 
 // EntryExists checks if an entry exists
 func (s *SQLiteStore) EntryExists(ctx context.Context, dn string) (bool, error) {
-	query := `SELECT 1 FROM entries WHERE dn = ? LIMIT 1`
+	query := `SELECT 1 FROM entries WHERE LOWER(dn) = LOWER(?) LIMIT 1`
 	var exists int
 	err := s.db.QueryRowContext(ctx, query, dn).Scan(&exists)
 	if err == sql.ErrNoRows {
@@ -384,7 +391,7 @@ func (s *SQLiteStore) GetChildren(ctx context.Context, dn string) ([]*models.Ent
 			) as attributes_json
 		FROM entries e
 		LEFT JOIN attributes a ON e.id = a.entry_id
-		WHERE e.parent_dn = ?
+		WHERE LOWER(e.parent_dn) = LOWER(?)
 		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
