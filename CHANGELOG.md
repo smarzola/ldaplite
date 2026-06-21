@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.8.1 - 2026-06-21
+
+This release expands native platform compatibility for CI and release artifacts.
+
+### Compatibility
+
+- Added Linux, macOS, and Windows CI coverage for unit, race, and functional compatibility tests.
+- Added release binaries for macOS and Windows on `amd64` and `arm64`.
+- Fixed the functional test server launcher to use a `.exe` binary on Windows.
+- Documented the full native binary archive matrix in the README.
+
 ## v0.8.0 - 2026-06-21
 
 This release adds AD-like compatibility verification and CI coverage for the functional test suite.

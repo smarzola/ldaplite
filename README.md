@@ -73,7 +73,7 @@ Perfect for homelabs, development environments, and single-instance deployments 
 ### Option 1: Download Binary
 
 ```bash
-# Download latest release
+# Download latest Linux AMD64 release
 curl -LO https://github.com/smarzola/ldaplite/releases/latest/download/ldaplite-linux-amd64.tar.gz
 tar -xzf ldaplite-linux-amd64.tar.gz
 chmod +x ldaplite-linux-amd64
@@ -91,6 +91,17 @@ export LDAP_WEB_UI_PORT=8080
 
 # Access Web UI at http://localhost:8080 (login with admin:YourSecurePassword123!)
 ```
+
+Release archives are available for:
+
+| Platform | Archive |
+|----------|---------|
+| Linux AMD64 | `ldaplite-linux-amd64.tar.gz` |
+| Linux ARM64 | `ldaplite-linux-arm64.tar.gz` |
+| macOS Intel | `ldaplite-darwin-amd64.tar.gz` |
+| macOS Apple Silicon | `ldaplite-darwin-arm64.tar.gz` |
+| Windows AMD64 | `ldaplite-windows-amd64.zip` |
+| Windows ARM64 | `ldaplite-windows-arm64.zip` |
 
 ### Option 2: Docker
 

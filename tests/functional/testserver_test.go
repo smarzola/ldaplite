@@ -36,6 +36,9 @@ func startTestServer(t *testing.T) *testServer {
 	repoRoot := findRepoRoot(t)
 	tmpDir := t.TempDir()
 	binaryPath := filepath.Join(tmpDir, "ldaplite")
+	if runtime.GOOS == "windows" {
+		binaryPath += ".exe"
+	}
 
 	build := exec.Command("go", "build", "-o", binaryPath, "./cmd/ldaplite")
 	build.Dir = repoRoot
