@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/store"
@@ -156,8 +155,6 @@ func (h *OUHandler) update(w http.ResponseWriter, r *http.Request, dn string) {
 	// Update extra attributes
 	extraAttrs := ParseAttributes(r.FormValue("attributes"))
 	ReplaceExtraAttributes(entry, ouFormAttributes, extraAttrs)
-
-	entry.UpdatedAt = time.Now()
 
 	if err := h.store.UpdateEntry(ctx, entry); err != nil {
 		h.showError(w, r, fmt.Sprintf("Failed to update OU: %v", err), entry)

@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/store"
@@ -192,8 +191,6 @@ func (h *UserHandler) update(w http.ResponseWriter, r *http.Request, dn string) 
 		}
 		entry.SetAttribute("userPassword", hashedPassword)
 	}
-
-	entry.UpdatedAt = time.Now()
 
 	if err := h.store.UpdateEntry(ctx, entry); err != nil {
 		h.showError(w, r, fmt.Sprintf("Failed to update user: %v", err), entry)

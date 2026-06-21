@@ -47,6 +47,13 @@ func (e *Entry) SetAttribute(name, value string) {
 	e.UpdatedAt = time.Now()
 }
 
+// SetAttributes replaces all values for a multi-valued attribute.
+func (e *Entry) SetAttributes(name string, values []string) {
+	name = strings.ToLower(name)
+	e.Attributes[name] = append([]string(nil), values...)
+	e.UpdatedAt = time.Now()
+}
+
 // AddAttribute adds a value to a multi-valued attribute
 func (e *Entry) AddAttribute(name, value string) {
 	name = strings.ToLower(name)

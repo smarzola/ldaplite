@@ -30,6 +30,18 @@ func TestSetAttribute(t *testing.T) {
 	assert.Equal(t, "Test User", value)
 }
 
+func TestSetAttributesCopiesValuesAndUpdatesTimestamp(t *testing.T) {
+	entry := NewEntry("cn=test,dc=example,dc=com", "inetOrgPerson")
+	entry.UpdatedAt = time.Unix(0, 0)
+
+	values := []string{"test@example.com", "alt@example.com"}
+	entry.SetAttributes("MAIL", values)
+	values[0] = "mutated@example.com"
+
+	assert.Equal(t, []string{"test@example.com", "alt@example.com"}, entry.GetAttributes("mail"))
+	assert.True(t, entry.UpdatedAt.After(time.Unix(0, 0)))
+}
+
 func TestAddAttribute(t *testing.T) {
 	entry := NewEntry("cn=test,dc=example,dc=com", "inetOrgPerson")
 	entry.AddAttribute("mail", "test@example.com")

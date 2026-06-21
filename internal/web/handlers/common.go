@@ -126,12 +126,12 @@ func ReplaceExtraAttributes(entry *models.Entry, preserve []string, extras map[s
 
 	for name := range entry.Attributes {
 		if !preserveMap[strings.ToLower(name)] {
-			delete(entry.Attributes, name)
+			entry.RemoveAttribute(name)
 		}
 	}
 
 	for name, values := range extras {
-		entry.Attributes[strings.ToLower(name)] = values
+		entry.SetAttributes(name, values)
 	}
 }
 
