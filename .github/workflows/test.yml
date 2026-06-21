@@ -40,12 +40,15 @@ jobs:
           cache: true
 
       - name: Download dependencies
+        shell: bash
         run: go mod download
 
       - name: Run tests
+        shell: bash
         run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
       - name: Run AD-like functional compatibility tests
+        shell: bash
         run: go test -tags=functional -v ./tests/functional/...
 
       - name: Upload coverage to Codecov
@@ -58,6 +61,7 @@ jobs:
         continue-on-error: true
 
       - name: Run go vet
+        shell: bash
         run: go vet ./...
 
       - name: Run go fmt check
@@ -70,4 +74,5 @@ jobs:
           fi
 
       - name: Build
+        shell: bash
         run: go build -v ./...
