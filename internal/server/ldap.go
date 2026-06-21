@@ -257,9 +257,10 @@ func (s *Server) handleSearch(conn *protocol.Connection, msg *message.LDAPMessag
 	slog.Debug("Search request", "baseDN", baseDN, "scope", scope, "filter", filterStr)
 
 	entries, err := s.store.SearchEntriesWithOptions(ctx, store.SearchOptions{
-		BaseDN: baseDN,
-		Filter: filterStr,
-		Scope:  scope,
+		BaseDN:          baseDN,
+		Filter:          filterStr,
+		Scope:           scope,
+		IncludeMemberOf: selection.includes("memberOf"),
 	})
 	if err != nil {
 		slog.Error("Search error", "error", err)

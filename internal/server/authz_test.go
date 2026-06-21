@@ -200,6 +200,27 @@ func TestEntryWriteResultCodeUsesTypedStoreErrors(t *testing.T) {
 	}
 }
 
+func TestLDAPSearchScopeMapping(t *testing.T) {
+	tests := []struct {
+		name  string
+		scope message.ENUMERATED
+		want  store.SearchScope
+	}{
+		{name: "base object", scope: 0, want: store.SearchScopeBaseObject},
+		{name: "single level", scope: 1, want: store.SearchScopeSingleLevel},
+		{name: "whole subtree", scope: 2, want: store.SearchScopeWholeSubtree},
+		{name: "unknown defaults to subtree", scope: 99, want: store.SearchScopeWholeSubtree},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ldapSearchScope(tt.scope); got != tt.want {
+				t.Fatalf("ldapSearchScope() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func strPtr(s string) *string {
 	return &s
 }

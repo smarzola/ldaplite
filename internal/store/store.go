@@ -15,9 +15,10 @@ const (
 )
 
 type SearchOptions struct {
-	BaseDN string
-	Filter string
-	Scope  SearchScope
+	BaseDN          string
+	Filter          string
+	Scope           SearchScope
+	IncludeMemberOf bool
 }
 
 // Store defines the interface for LDAP data storage

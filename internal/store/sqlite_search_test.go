@@ -995,6 +995,69 @@ func TestMemberOfBasicPresence(t *testing.T) {
 	t.Logf("✓ jdoe memberOf: %v", memberOfValues)
 }
 
+func TestSearchEntriesWithOptionsCanSkipMemberOfProjection(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	entries, err := store.SearchEntriesWithOptions(ctx, SearchOptions{
+		BaseDN:          "dc=test,dc=com",
+		Filter:          "(uid=jdoe)",
+		Scope:           SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		t.Fatalf("SearchEntriesWithOptions() failed: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("SearchEntriesWithOptions() got %d entries, want 1", len(entries))
+	}
+	if entries[0].HasAttribute("memberOf") {
+		t.Fatalf("memberOf should not be populated when IncludeMemberOf is false: %v", entries[0].GetAttributes("memberOf"))
+	}
+
+	entries, err = store.SearchEntriesWithOptions(ctx, SearchOptions{
+		BaseDN:          "dc=test,dc=com",
+		Filter:          "(uid=jdoe)",
+		Scope:           SearchScopeWholeSubtree,
+		IncludeMemberOf: true,
+	})
+	if err != nil {
+		t.Fatalf("SearchEntriesWithOptions() with IncludeMemberOf failed: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("SearchEntriesWithOptions() with IncludeMemberOf got %d entries, want 1", len(entries))
+	}
+	if !containsValue(entries[0].GetAttributes("memberOf"), "cn=admins,ou=groups,dc=test,dc=com") {
+		t.Fatalf("memberOf should be populated when IncludeMemberOf is true: %v", entries[0].GetAttributes("memberOf"))
+	}
+}
+
+func TestSearchEntriesWithOptionsMemberOfFilterDoesNotForceProjection(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	entries, err := store.SearchEntriesWithOptions(ctx, SearchOptions{
+		BaseDN:          "dc=test,dc=com",
+		Filter:          "(memberOf=cn=admins,ou=groups,dc=test,dc=com)",
+		Scope:           SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		t.Fatalf("SearchEntriesWithOptions() failed: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("SearchEntriesWithOptions() got %d entries, want 1", len(entries))
+	}
+	if entries[0].DN != "uid=jdoe,ou=users,dc=test,dc=com" {
+		t.Fatalf("SearchEntriesWithOptions() got %s, want jdoe", entries[0].DN)
+	}
+	if entries[0].HasAttribute("memberOf") {
+		t.Fatalf("memberOf filter should not force memberOf projection when IncludeMemberOf is false: %v", entries[0].GetAttributes("memberOf"))
+	}
+}
+
 // TestMemberOfMultipleGroups verifies that users in multiple groups have
 // multiple memberOf values (multi-valued attribute per RFC2307bis).
 func TestMemberOfMultipleGroups(t *testing.T) {

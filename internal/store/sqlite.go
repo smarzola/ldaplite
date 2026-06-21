@@ -566,9 +566,10 @@ func (s *SQLiteStore) EntryExists(ctx context.Context, dn string) (bool, error) 
 // SearchEntries searches for entries matching a filter
 func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filterStr string) ([]*models.Entry, error) {
 	return s.SearchEntriesWithOptions(ctx, SearchOptions{
-		BaseDN: baseDN,
-		Filter: filterStr,
-		Scope:  SearchScopeWholeSubtree,
+		BaseDN:          baseDN,
+		Filter:          filterStr,
+		Scope:           SearchScopeWholeSubtree,
+		IncludeMemberOf: true,
 	})
 }
 
@@ -629,9 +630,9 @@ func (s *SQLiteStore) SearchEntriesWithOptions(ctx context.Context, options Sear
 	// This reduces work when non-memberOf filters significantly reduce the result set
 	var entries []*models.Entry
 
-	if useInMemoryFilter {
-		filterUsesComputed := schema.FilterUsesComputedAttributes(parsedFilter)
+	filterUsesComputed := schema.FilterUsesComputedAttributes(parsedFilter)
 
+	if useInMemoryFilter {
 		if filterUsesComputed {
 			// Filter needs memberOf → populate first, then filter
 			if err := s.populateMemberOf(ctx, allEntries); err != nil {
@@ -651,16 +652,26 @@ func (s *SQLiteStore) SearchEntriesWithOptions(ctx context.Context, options Sear
 				}
 			}
 			// Now populate memberOf only for filtered entries
-			if err := s.populateMemberOf(ctx, entries); err != nil {
-				return nil, fmt.Errorf("failed to populate memberOf: %w", err)
+			if options.IncludeMemberOf {
+				if err := s.populateMemberOf(ctx, entries); err != nil {
+					return nil, fmt.Errorf("failed to populate memberOf: %w", err)
+				}
 			}
 		}
 	} else {
-		// No in-memory filter needed - all entries pass, populate memberOf for all
-		if err := s.populateMemberOf(ctx, allEntries); err != nil {
-			return nil, fmt.Errorf("failed to populate memberOf: %w", err)
+		// No in-memory filter needed - all entries pass.
+		if options.IncludeMemberOf {
+			if err := s.populateMemberOf(ctx, allEntries); err != nil {
+				return nil, fmt.Errorf("failed to populate memberOf: %w", err)
+			}
 		}
 		entries = allEntries
+	}
+
+	if filterUsesComputed && !options.IncludeMemberOf {
+		for _, entry := range entries {
+			delete(entry.Attributes, "memberof")
+		}
 	}
 
 	return entries, nil
