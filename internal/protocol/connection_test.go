@@ -2,7 +2,9 @@ package protocol
 
 import (
 	"context"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/lor00x/goldap/message"
 )
@@ -39,6 +41,29 @@ func TestConnectionBoundState(t *testing.T) {
 	}
 	if got := conn.GetBoundDN(); got != "" {
 		t.Fatalf("cleared bound DN = %q, want empty", got)
+	}
+}
+
+func TestHandleReturnsNilWhenClientDisconnects(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	conn := NewConnection(serverConn, OperationHandlers{})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- conn.Handle(context.Background())
+	}()
+
+	if err := clientConn.Close(); err != nil {
+		t.Fatalf("client close: %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Handle() error = %v, want nil", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Handle() did not return after client disconnect")
 	}
 }
 

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -46,6 +47,9 @@ func ReadLDAPMessage(conn net.Conn) (*message.LDAPMessage, error) {
 	if n < totalLen {
 		_, err = io.ReadFull(conn, data[n:])
 		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil, err
+			}
 			return nil, fmt.Errorf("failed to read full message: %w", err)
 		}
 	}

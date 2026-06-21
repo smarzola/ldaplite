@@ -2,7 +2,9 @@ package protocol
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"sync"
@@ -55,7 +57,7 @@ func (c *Connection) Handle(ctx context.Context) error {
 		msg, err := ReadLDAPMessage(c.conn)
 		if err != nil {
 			// EOF is normal when client disconnects
-			if err.Error() == "EOF" {
+			if errors.Is(err, io.EOF) {
 				slog.Debug("Client disconnected", "remote", c.conn.RemoteAddr())
 				return nil
 			}
