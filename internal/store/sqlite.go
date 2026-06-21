@@ -40,27 +40,14 @@ func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, e
 		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
-	rows, err := s.db.QueryContext(ctx, query, dn)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get entry: %w", err)
-	}
-	defer rows.Close()
-
-	entries, err := scanEntriesWithAttributes(rows)
+	entries, err := s.queryEntriesWithAttributes(ctx, "get entry", query, dn)
 	if err != nil {
 		return nil, err
 	}
 	if len(entries) == 0 {
 		return nil, nil
 	}
-	entry := entries[0]
-
-	// Add memberOf attribute for user entries
-	if err := s.populateMemberOf(ctx, []*models.Entry{entry}); err != nil {
-		return nil, fmt.Errorf("failed to populate memberOf: %w", err)
-	}
-
-	return entry, nil
+	return entries[0], nil
 }
 
 // CreateEntry creates a new entry using the dual-storage architecture:
@@ -373,23 +360,7 @@ func (s *SQLiteStore) GetAllEntries(ctx context.Context) ([]*models.Entry, error
 		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
-	rows, err := s.db.QueryContext(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get all entries: %w", err)
-	}
-	defer rows.Close()
-
-	entries, err := scanEntriesWithAttributes(rows)
-	if err != nil {
-		return nil, err
-	}
-
-	// Add memberOf attribute for user entries
-	if err := s.populateMemberOf(ctx, entries); err != nil {
-		return nil, fmt.Errorf("failed to populate memberOf: %w", err)
-	}
-
-	return entries, nil
+	return s.queryEntriesWithAttributes(ctx, "get all entries", query)
 }
 
 // GetChildren returns all children of a given DN
@@ -414,23 +385,7 @@ func (s *SQLiteStore) GetChildren(ctx context.Context, dn string) ([]*models.Ent
 		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
 	`
 
-	rows, err := s.db.QueryContext(ctx, query, dn)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get children: %w", err)
-	}
-	defer rows.Close()
-
-	entries, err := scanEntriesWithAttributes(rows)
-	if err != nil {
-		return nil, err
-	}
-
-	// Add memberOf attribute for user entries
-	if err := s.populateMemberOf(ctx, entries); err != nil {
-		return nil, fmt.Errorf("failed to populate memberOf: %w", err)
-	}
-
-	return entries, nil
+	return s.queryEntriesWithAttributes(ctx, "get children", query, dn)
 }
 
 // GetUserPasswordHash retrieves the password hash for a user by UID.
