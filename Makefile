@@ -1,8 +1,8 @@
-.PHONY: help build build-css test docker-build docker-run docker-stop clean lint install-tools
+.PHONY: help build build-css test test-functional docker-build docker-run docker-stop clean lint install-tools
 
 # Variables
 BINARY_NAME=ldaplite
-VERSION?=0.7.0
+VERSION?=0.8.0
 GO=go
 DOCKER=docker
 LDFLAGS=-ldflags "-w -s"
@@ -14,6 +14,7 @@ help:
 	@echo "  build              Build the binary (with CSS)"
 	@echo "  build-css          Build Tailwind CSS"
 	@echo "  test               Run tests"
+	@echo "  test-functional    Run AD-like functional compatibility tests"
 	@echo "  test-race          Run tests with race detector"
 	@echo "  test-coverage      Run tests with coverage report"
 	@echo "  lint               Run linter"
@@ -50,6 +51,10 @@ build-static:
 test: build-css
 	@echo "Running tests..."
 	${GO} test -v -race ./...
+
+test-functional:
+	@echo "Running AD-like functional compatibility tests..."
+	${GO} test -tags=functional -v ./tests/functional/...
 
 test-race: build-css
 	@echo "Running tests with race detector..."

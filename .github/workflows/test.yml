@@ -41,6 +41,9 @@ jobs:
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
+      - name: Run AD-like functional compatibility tests
+        run: make test-functional
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:

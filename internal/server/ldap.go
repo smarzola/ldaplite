@@ -379,7 +379,7 @@ func (s *Server) handleAdd(conn *protocol.Connection, msg *message.LDAPMessage) 
 	// Store entry
 	if err := s.store.CreateEntry(ctx, entry); err != nil {
 		slog.Error("Failed to create entry", "dn", dn, "error", err)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeOperationsError))
+		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(entryWriteResultCode(err)))
 	}
 
 	slog.Info("Entry created", "dn", dn)
@@ -530,7 +530,7 @@ func (s *Server) handleModify(conn *protocol.Connection, msg *message.LDAPMessag
 	// Update entry
 	if err := s.store.UpdateEntry(ctx, entry); err != nil {
 		slog.Error("Failed to update entry", "dn", dn, "error", err)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeOperationsError))
+		return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(entryWriteResultCode(err)))
 	}
 
 	slog.Info("Entry modified", "dn", dn)
@@ -758,6 +758,21 @@ func addSearchAttribute(result *message.SearchResultEntry, name string, values [
 		return
 	}
 	protocol.AddAttribute(result, name, values...)
+}
+
+func entryWriteResultCode(err error) int {
+	if err == nil {
+		return message.ResultCodeSuccess
+	}
+
+	errMsg := strings.ToLower(err.Error())
+	if strings.Contains(errMsg, "required attribute") ||
+		strings.Contains(errMsg, "objectclass is required") ||
+		strings.Contains(errMsg, "objectclass is missing") {
+		return message.ResultCodeObjectClassViolation
+	}
+
+	return message.ResultCodeOperationsError
 }
 
 // extractUID extracts UID from a DN

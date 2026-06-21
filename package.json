@@ -1,6 +1,6 @@
 {
   "name": "ldaplite",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Lightweight LDAP server with web UI",
   "private": true,
   "scripts": {
@@ -11,5 +11,6 @@
     "@tailwindcss/cli": "^4.1.16",
     "daisyui": "^5.3.10",
     "tailwindcss": "^4.1.16"
-  }
+  },
+  "license": "MIT"
 }

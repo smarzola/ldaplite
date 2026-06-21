@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.8.0 - 2026-06-21
+
+This release adds AD-like compatibility verification and CI coverage for the functional test suite.
+
+### Compatibility
+
+- Added a black-box AD-like functional compatibility suite using `github.com/go-ldap/ldap/v3`.
+- Covered simple bind, subtree search, AD-facing attributes, group membership searches, password modification, deletion, hidden password attributes, operational timestamps, and LDAP result codes.
+- Returned LDAP object class violation for entry validation failures instead of a generic operations error.
+
+### Operations And Release Hygiene
+
+- Added a GitHub Actions CI pipeline that runs unit tests and AD-like functional compatibility tests.
+- Added `make test-functional`.
+- Added the MIT license.
+- Documented compatibility scope and testing commands in the README.
+
 ## v0.7.0 - 2026-06-21
 
 This release is a security and interoperability hardening release.

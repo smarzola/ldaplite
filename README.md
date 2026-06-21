@@ -442,6 +442,9 @@ These are intentional trade-offs for simplicity. For large enterprise deployment
 # Run all tests with race detection (also builds embedded Web UI CSS)
 make test
 
+# Run AD-like functional compatibility tests
+make test-functional
+
 # Run with coverage (also builds embedded Web UI CSS)
 make test-coverage
 
@@ -450,6 +453,16 @@ open coverage.html
 ```
 
 Note: direct `go test ./...` requires `internal/web/static/output.css` to exist because the Web UI embeds it at compile time. Prefer `make test` on a fresh checkout so CSS is generated first.
+
+### Compatibility Testing
+
+LDAPLite includes a black-box functional compatibility suite that starts the real `ldaplite server` binary on a random local port, uses a temporary SQLite database, and drives LDAP operations through `github.com/go-ldap/ldap/v3`.
+
+The suite covers an Active Directory-like first milestone for common LDAP clients: simple bind, subtree search, AD-facing attributes such as `sAMAccountName` and `userPrincipalName`, group `member` searches, password modification, deletion, hidden `userPassword`, operational timestamps, and LDAP result codes for invalid credentials, missing objects, password scheme violations, and object class violations.
+
+This is not full Active Directory compatibility. LDAPLite still intentionally excludes Kerberos, SASL/GSSAPI, LDAPS/TLS termination, Global Catalog, DirSync, paging controls, server-side sorting controls, the AD recursive matching rule, and complete Microsoft schema behavior.
+
+CI runs both the normal Go test suite and the AD-like functional compatibility suite for pull requests and pushes to `main`.
 
 ### Code Structure
 
