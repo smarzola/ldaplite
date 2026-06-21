@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,10 +25,13 @@ const (
 )
 
 type testServer struct {
-	URL    string
-	cmd    *exec.Cmd
-	cancel context.CancelFunc
-	logs   *bytes.Buffer
+	URL     string
+	cmd     *exec.Cmd
+	cancel  context.CancelFunc
+	logs    *bytes.Buffer
+	done    chan struct{}
+	waitMu  sync.Mutex
+	waitErr error
 }
 
 func startTestServer(t *testing.T) *testServer {
@@ -69,12 +73,18 @@ func startTestServer(t *testing.T) *testServer {
 		t.Fatalf("start ldaplite: %v", err)
 	}
 
+	done := make(chan struct{})
 	srv := &testServer{
 		URL:    fmt.Sprintf("ldap://127.0.0.1:%d", port),
 		cmd:    cmd,
 		cancel: cancel,
 		logs:   logs,
+		done:   done,
 	}
+	go func() {
+		srv.setWaitErr(cmd.Wait())
+		close(done)
+	}()
 	t.Cleanup(func() {
 		srv.stop(t)
 	})
@@ -91,35 +101,52 @@ func (s *testServer) stop(t *testing.T) {
 	}
 
 	s.cancel()
-	done := make(chan error, 1)
-	go func() {
-		done <- s.cmd.Wait()
-	}()
 
 	select {
-	case <-done:
+	case <-s.done:
 	case <-time.After(5 * time.Second):
 		_ = s.cmd.Process.Kill()
-		<-done
+		<-s.done
 	}
+}
+
+func (s *testServer) setWaitErr(err error) {
+	s.waitMu.Lock()
+	defer s.waitMu.Unlock()
+	s.waitErr = err
+}
+
+func (s *testServer) waitError() error {
+	s.waitMu.Lock()
+	defer s.waitMu.Unlock()
+	return s.waitErr
 }
 
 func (s *testServer) waitReady(t *testing.T) {
 	t.Helper()
 
 	deadline := time.Now().Add(15 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
 	var lastErr error
-	for time.Now().Before(deadline) {
+	for {
 		conn, err := ldap.DialURL(s.URL, ldap.DialWithDialer(&net.Dialer{Timeout: 500 * time.Millisecond}))
 		if err == nil {
 			conn.Close()
 			return
 		}
 		lastErr = err
-		time.Sleep(100 * time.Millisecond)
-	}
 
-	t.Fatalf("ldaplite did not become ready: %v\nlogs:\n%s", lastErr, s.logs.String())
+		select {
+		case <-s.done:
+			t.Fatalf("ldaplite exited before becoming ready: %v\nlast dial error: %v\nlogs:\n%s", s.waitError(), lastErr, s.logs.String())
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				t.Fatalf("ldaplite did not become ready: %v\nlogs:\n%s", lastErr, s.logs.String())
+			}
+		}
+	}
 }
 
 func (s *testServer) dial(t *testing.T) *ldap.Conn {
