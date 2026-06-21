@@ -267,11 +267,11 @@ func (f *Filter) Matches(entry *models.Entry) bool {
 		return true
 
 	case FilterTypePresent:
-		return entry.HasAttribute(f.Attribute)
+		return len(filterAttributeValues(entry, f.Attribute)) > 0
 
 	case FilterTypeEquality:
 		// Case-insensitive equality matching per LDAP RFC 4517
-		values := entry.GetAttributes(f.Attribute)
+		values := filterAttributeValues(entry, f.Attribute)
 		filterValue := strings.ToLower(f.Value)
 		for _, v := range values {
 			if strings.ToLower(v) == filterValue {
@@ -283,7 +283,7 @@ func (f *Filter) Matches(entry *models.Entry) bool {
 	case FilterTypeSubstrings:
 		// Substring matching with wildcards
 		// Convert LDAP wildcard pattern to Go regexp-like matching
-		values := entry.GetAttributes(f.Attribute)
+		values := filterAttributeValues(entry, f.Attribute)
 		for _, v := range values {
 			if matchSubstring(v, f.Value) {
 				return true
@@ -298,7 +298,7 @@ func (f *Filter) Matches(entry *models.Entry) bool {
 			return compareTimestamp(entry, f.Attribute, f.Value, ">=")
 		}
 		// For non-timestamp attributes, fall back to string comparison
-		values := entry.GetAttributes(f.Attribute)
+		values := filterAttributeValues(entry, f.Attribute)
 		for _, v := range values {
 			if v >= f.Value {
 				return true
@@ -313,7 +313,7 @@ func (f *Filter) Matches(entry *models.Entry) bool {
 			return compareTimestamp(entry, f.Attribute, f.Value, "<=")
 		}
 		// For non-timestamp attributes, fall back to string comparison
-		values := entry.GetAttributes(f.Attribute)
+		values := filterAttributeValues(entry, f.Attribute)
 		for _, v := range values {
 			if v <= f.Value {
 				return true
@@ -323,7 +323,7 @@ func (f *Filter) Matches(entry *models.Entry) bool {
 
 	case FilterTypeApproxMatch:
 		// Not implemented yet, treat as equality
-		values := entry.GetAttributes(f.Attribute)
+		values := filterAttributeValues(entry, f.Attribute)
 		for _, v := range values {
 			if v == f.Value {
 				return true
@@ -333,6 +333,28 @@ func (f *Filter) Matches(entry *models.Entry) bool {
 
 	default:
 		return false
+	}
+}
+
+func filterAttributeValues(entry *models.Entry, attribute string) []string {
+	switch strings.ToLower(attribute) {
+	case "objectclass":
+		if entry.ObjectClass == "" {
+			return nil
+		}
+		return []string{entry.ObjectClass}
+	case "createtimestamp":
+		if entry.CreatedAt.IsZero() {
+			return nil
+		}
+		return []string{models.FormatLDAPTimestamp(entry.CreatedAt)}
+	case "modifytimestamp":
+		if entry.UpdatedAt.IsZero() {
+			return nil
+		}
+		return []string{models.FormatLDAPTimestamp(entry.UpdatedAt)}
+	default:
+		return entry.GetAttributes(attribute)
 	}
 }
 
@@ -381,10 +403,7 @@ func (f *Filter) String() string {
 // compareTimestamp compares an entry's operational timestamp with a filter value
 // Handles createTimestamp and modifyTimestamp operational attributes
 func compareTimestamp(entry *models.Entry, attribute, filterValue, operator string) bool {
-	attrLower := strings.ToLower(attribute)
-
-	// Get the timestamp from the entry
-	values := entry.GetAttributes(attrLower)
+	values := filterAttributeValues(entry, attribute)
 	if len(values) == 0 {
 		return false
 	}

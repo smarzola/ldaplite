@@ -881,24 +881,25 @@ func TestSearchEntriesWithTimestampFilters(t *testing.T) {
 				}
 			}
 
-			// Verify that returned entries have operational attributes
+			// Verify that returned entries carry operational fields without
+			// injecting operational timestamps into the generic attributes map.
 			if len(entries) > 0 {
 				firstEntry := entries[0]
-				// Make sure operational attributes were added
-				firstEntry.AddOperationalAttributes()
-
-				createTS := firstEntry.GetAttribute("createTimestamp")
-				modifyTS := firstEntry.GetAttribute("modifyTimestamp")
-
-				if createTS == "" {
-					t.Errorf("Entry missing createTimestamp attribute")
+				if firstEntry.CreatedAt.IsZero() {
+					t.Errorf("Entry missing CreatedAt field")
 				}
-				if modifyTS == "" {
-					t.Errorf("Entry missing modifyTimestamp attribute")
+				if firstEntry.UpdatedAt.IsZero() {
+					t.Errorf("Entry missing UpdatedAt field")
+				}
+				if firstEntry.HasAttribute("createTimestamp") {
+					t.Errorf("store result should not inject createTimestamp into attributes")
+				}
+				if firstEntry.HasAttribute("modifyTimestamp") {
+					t.Errorf("store result should not inject modifyTimestamp into attributes")
 				}
 
-				t.Logf("Sample entry %s: createTimestamp=%s, modifyTimestamp=%s",
-					firstEntry.DN, createTS, modifyTS)
+				t.Logf("Sample entry %s: created=%v, updated=%v",
+					firstEntry.DN, firstEntry.CreatedAt, firstEntry.UpdatedAt)
 			}
 		})
 	}

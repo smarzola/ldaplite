@@ -2,6 +2,7 @@ package schema
 
 import (
 	"testing"
+	"time"
 
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -295,9 +296,7 @@ func TestMatchesGreaterOrEqual(t *testing.T) {
 			filter, err := ParseFilter(tt.filter)
 			assert.NoError(t, err)
 
-			entry := models.NewEntry("uid=test,ou=users,dc=example,dc=com", "inetOrgPerson")
-			entry.SetAttribute("modifyTimestamp", tt.timestamp)
-			entry.SetAttribute("createTimestamp", tt.timestamp)
+			entry := testEntryWithOperationalTimestamp(t, tt.timestamp)
 
 			assert.Equal(t, tt.expected, filter.Matches(entry))
 		})
@@ -342,9 +341,7 @@ func TestMatchesLessOrEqual(t *testing.T) {
 			filter, err := ParseFilter(tt.filter)
 			assert.NoError(t, err)
 
-			entry := models.NewEntry("uid=test,ou=users,dc=example,dc=com", "inetOrgPerson")
-			entry.SetAttribute("modifyTimestamp", tt.timestamp)
-			entry.SetAttribute("createTimestamp", tt.timestamp)
+			entry := testEntryWithOperationalTimestamp(t, tt.timestamp)
 
 			assert.Equal(t, tt.expected, filter.Matches(entry))
 		})
@@ -363,8 +360,7 @@ func TestFilterStringLessOrEqual(t *testing.T) {
 
 func TestCompareTimestampWithoutZSuffix(t *testing.T) {
 	filter, _ := ParseFilter("(modifyTimestamp>=20130905020304)")
-	entry := models.NewEntry("uid=test,ou=users,dc=example,dc=com", "inetOrgPerson")
-	entry.SetAttribute("modifyTimestamp", "20251026090445")
+	entry := testEntryWithOperationalTimestamp(t, "20251026090445Z")
 
 	// Should work without Z suffix too
 	assert.True(t, filter.Matches(entry))
@@ -373,8 +369,38 @@ func TestCompareTimestampWithoutZSuffix(t *testing.T) {
 func TestTimestampComparisonCaseInsensitive(t *testing.T) {
 	// Test that attribute name is case-insensitive
 	filter, _ := ParseFilter("(MODIFYTIMESTAMP>=20130905020304Z)")
-	entry := models.NewEntry("uid=test,ou=users,dc=example,dc=com", "inetOrgPerson")
-	entry.SetAttribute("modifytimestamp", "20251026090445Z")
+	entry := testEntryWithOperationalTimestamp(t, "20251026090445Z")
 
 	assert.True(t, filter.Matches(entry))
+}
+
+func TestMatchesOperationalFieldsWithoutAttributeMapProjection(t *testing.T) {
+	entry := testEntryWithOperationalTimestamp(t, "20251026090445Z")
+
+	tests := []string{
+		"(objectClass=inetOrgPerson)",
+		"(objectClass=*)",
+		"(modifyTimestamp=*)",
+		"(createTimestamp>=20200101000000Z)",
+	}
+
+	for _, filterStr := range tests {
+		t.Run(filterStr, func(t *testing.T) {
+			filter, err := ParseFilter(filterStr)
+			assert.NoError(t, err)
+			assert.True(t, filter.Matches(entry))
+		})
+	}
+}
+
+func testEntryWithOperationalTimestamp(t *testing.T, timestamp string) *models.Entry {
+	t.Helper()
+
+	parsed, err := time.Parse("20060102150405Z", timestamp)
+	assert.NoError(t, err)
+
+	entry := models.NewEntry("uid=test,ou=users,dc=example,dc=com", "inetOrgPerson")
+	entry.CreatedAt = parsed
+	entry.UpdatedAt = parsed
+	return entry
 }

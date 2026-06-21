@@ -169,16 +169,28 @@ func isOperationalAttribute(attrName string) bool {
 }
 
 func searchResponseAttributes(entry *models.Entry, selection searchAttributeSelection) []searchResponseAttribute {
-	attrs := make([]searchResponseAttribute, 0, len(entry.Attributes)+1)
+	attrs := make([]searchResponseAttribute, 0, len(entry.Attributes)+3)
 	if entry.ObjectClass != "" && selection.includes("objectClass") {
 		attrs = append(attrs, searchResponseAttribute{
 			name:   "objectClass",
 			values: []string{entry.ObjectClass},
 		})
 	}
+	if selection.includes("createTimestamp") {
+		attrs = append(attrs, searchResponseAttribute{
+			name:   "createTimestamp",
+			values: []string{models.FormatLDAPTimestamp(entry.CreatedAt)},
+		})
+	}
+	if selection.includes("modifyTimestamp") {
+		attrs = append(attrs, searchResponseAttribute{
+			name:   "modifyTimestamp",
+			values: []string{models.FormatLDAPTimestamp(entry.UpdatedAt)},
+		})
+	}
 
 	for attrName, attrValues := range entry.Attributes {
-		if strings.EqualFold(attrName, "objectClass") {
+		if isSearchProjectedAttribute(attrName) {
 			continue
 		}
 		if selection.includes(attrName) {
@@ -190,6 +202,15 @@ func searchResponseAttributes(entry *models.Entry, selection searchAttributeSele
 	}
 
 	return attrs
+}
+
+func isSearchProjectedAttribute(attrName string) bool {
+	switch strings.ToLower(attrName) {
+	case "objectclass", "createtimestamp", "modifytimestamp":
+		return true
+	default:
+		return false
+	}
 }
 
 func addSearchAttribute(result *message.SearchResultEntry, name string, values []string, typesOnly bool) {

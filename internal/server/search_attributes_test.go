@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lor00x/goldap/message"
@@ -111,5 +112,31 @@ func TestSearchResponseAttributesEmitsSingleObjectClass(t *testing.T) {
 	}
 	if objectClassCount != 1 {
 		t.Fatalf("search response should emit exactly one objectClass, got %d in %v", objectClassCount, attrs)
+	}
+}
+
+func TestSearchResponseAttributesProjectsOperationalTimestamps(t *testing.T) {
+	entry := models.NewEntry("uid=jdoe,ou=users,dc=example,dc=com", "inetOrgPerson")
+	entry.SetAttribute("cn", "John Doe")
+	entry.SetAttribute("createTimestamp", "stored-value-should-not-leak")
+	entry.SetAttribute("modifyTimestamp", "stored-value-should-not-leak")
+
+	attrs := searchResponseAttributes(entry, newSearchAttributeSelection(message.AttributeSelection{
+		message.LDAPString("+"),
+	}))
+
+	got := map[string][]string{}
+	for _, attr := range attrs {
+		got[strings.ToLower(attr.name)] = attr.values
+	}
+
+	if got["cn"] != nil {
+		t.Fatalf("+ selection should not include user attribute cn: %v", attrs)
+	}
+	if got["createtimestamp"][0] != models.FormatLDAPTimestamp(entry.CreatedAt) {
+		t.Fatalf("createTimestamp should be projected from Entry.CreatedAt, got %v", got["createtimestamp"])
+	}
+	if got["modifytimestamp"][0] != models.FormatLDAPTimestamp(entry.UpdatedAt) {
+		t.Fatalf("modifyTimestamp should be projected from Entry.UpdatedAt, got %v", got["modifytimestamp"])
 	}
 }

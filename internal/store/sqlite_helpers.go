@@ -72,9 +72,6 @@ func scanEntriesWithAttributes(rows *sql.Rows) ([]*models.Entry, error) {
 		}
 		entry.Attributes = attrs
 
-		// Add operational attributes (objectClass, timestamps)
-		entry.AddOperationalAttributes()
-
 		entries = append(entries, entry)
 	}
 	if err := rows.Err(); err != nil {
