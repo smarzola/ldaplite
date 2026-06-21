@@ -2,8 +2,23 @@ package store
 
 import (
 	"context"
+
 	"github.com/smarzola/ldaplite/internal/models"
 )
+
+type SearchScope int
+
+const (
+	SearchScopeBaseObject SearchScope = iota
+	SearchScopeSingleLevel
+	SearchScopeWholeSubtree
+)
+
+type SearchOptions struct {
+	BaseDN string
+	Filter string
+	Scope  SearchScope
+}
 
 // Store defines the interface for LDAP data storage
 type Store interface {
@@ -19,6 +34,7 @@ type Store interface {
 	UpdateEntry(ctx context.Context, entry *models.Entry) error
 	DeleteEntry(ctx context.Context, dn string) error
 	SearchEntries(ctx context.Context, baseDN string, filter string) ([]*models.Entry, error)
+	SearchEntriesWithOptions(ctx context.Context, options SearchOptions) ([]*models.Entry, error)
 	EntryExists(ctx context.Context, dn string) (bool, error)
 
 	// Miscellaneous

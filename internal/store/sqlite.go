@@ -565,6 +565,20 @@ func (s *SQLiteStore) EntryExists(ctx context.Context, dn string) (bool, error) 
 
 // SearchEntries searches for entries matching a filter
 func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filterStr string) ([]*models.Entry, error) {
+	return s.SearchEntriesWithOptions(ctx, SearchOptions{
+		BaseDN: baseDN,
+		Filter: filterStr,
+		Scope:  SearchScopeWholeSubtree,
+	})
+}
+
+// SearchEntriesWithOptions searches for entries matching a filter and LDAP scope.
+func (s *SQLiteStore) SearchEntriesWithOptions(ctx context.Context, options SearchOptions) ([]*models.Entry, error) {
+	filterStr := options.Filter
+	if filterStr == "" {
+		filterStr = "(objectClass=*)"
+	}
+
 	// Parse the LDAP filter
 	parsedFilter, err := schema.ParseFilter(filterStr)
 	if err != nil {
@@ -595,40 +609,7 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filterSt
 		useInMemoryFilter = true
 	}
 
-	// Build query with recursive CTE for hierarchy traversal
-	// This avoids the leading % LIKE pattern that prevents index usage
-	// Maximum depth of 100 prevents infinite recursion from circular references
-	query := `
-		WITH RECURSIVE subtree AS (
-			-- Base case: exact DN match
-			SELECT id, dn, parent_dn, object_class, created_at, updated_at, 0 as depth
-			FROM entries
-			WHERE dn = ?
-
-			UNION ALL
-
-			-- Recursive case: children (uses index on parent_dn = ?)
-			SELECT e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at, s.depth + 1
-			FROM entries e
-			INNER JOIN subtree s ON e.parent_dn = s.dn
-			WHERE s.depth < 100
-		)
-		SELECT
-			e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at,
-			json_group_array(
-				CASE WHEN a.name IS NOT NULL
-				THEN json_object('name', a.name, 'value', a.value)
-				ELSE NULL END
-			) as attributes_json
-		FROM subtree e
-		LEFT JOIN attributes a ON e.id = a.entry_id
-		WHERE (` + filterClause + `)
-		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
-	`
-
-	// Args: baseDN for CTE + filter args
-	args := []interface{}{baseDN}
-	args = append(args, filterArgs...)
+	query, args := searchEntriesQuery(options.Scope, filterClause, options.BaseDN, filterArgs)
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -683,6 +664,65 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filterSt
 	}
 
 	return entries, nil
+}
+
+func searchEntriesQuery(scope SearchScope, filterClause string, baseDN string, filterArgs []interface{}) (string, []interface{}) {
+	selectClause := `
+		SELECT
+			e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at,
+			json_group_array(
+				CASE WHEN a.name IS NOT NULL
+				THEN json_object('name', a.name, 'value', a.value)
+				ELSE NULL END
+			) as attributes_json
+	`
+	joinWhere := `
+		LEFT JOIN attributes a ON e.id = a.entry_id
+		WHERE (` + filterClause + `)
+	`
+	groupBy := `
+		GROUP BY e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at
+	`
+
+	switch scope {
+	case SearchScopeBaseObject:
+		args := append([]interface{}{}, filterArgs...)
+		args = append(args, baseDN)
+		return selectClause + `
+		FROM entries e
+	` + joinWhere + `
+		  AND e.dn = ?
+	` + groupBy, args
+	case SearchScopeSingleLevel:
+		args := append([]interface{}{}, filterArgs...)
+		args = append(args, baseDN)
+		return selectClause + `
+		FROM entries e
+	` + joinWhere + `
+		  AND e.parent_dn = ?
+	` + groupBy, args
+	default:
+		args := []interface{}{baseDN}
+		args = append(args, filterArgs...)
+		// Recursive CTE for subtree traversal. This avoids leading % LIKE
+		// patterns and uses the parent_dn index for each level.
+		return `
+		WITH RECURSIVE subtree AS (
+			SELECT id, dn, parent_dn, object_class, created_at, updated_at, 0 as depth
+			FROM entries
+			WHERE dn = ?
+
+			UNION ALL
+
+			SELECT e.id, e.dn, e.parent_dn, e.object_class, e.created_at, e.updated_at, s.depth + 1
+			FROM entries e
+			INNER JOIN subtree s ON e.parent_dn = s.dn
+			WHERE s.depth < 100
+		)
+	` + selectClause + `
+		FROM subtree e
+	` + joinWhere + groupBy, args
+	}
 }
 
 // GetAllEntries returns all entries

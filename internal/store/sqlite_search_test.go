@@ -115,6 +115,93 @@ func TestCaseInsensitiveSearchPredicatesUseExpressionIndexes(t *testing.T) {
 	)
 }
 
+func TestSearchEntriesWithOptionsHonorsScope(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		options   SearchOptions
+		wantCount int
+		wantDNs   []string
+	}{
+		{
+			name: "base object returns exact base only",
+			options: SearchOptions{
+				BaseDN: "dc=test,dc=com",
+				Filter: "(objectClass=*)",
+				Scope:  SearchScopeBaseObject,
+			},
+			wantCount: 1,
+			wantDNs:   []string{"dc=test,dc=com"},
+		},
+		{
+			name: "single level returns direct children only",
+			options: SearchOptions{
+				BaseDN: "dc=test,dc=com",
+				Filter: "(objectClass=*)",
+				Scope:  SearchScopeSingleLevel,
+			},
+			wantCount: 2,
+			wantDNs:   []string{"ou=users,dc=test,dc=com", "ou=groups,dc=test,dc=com"},
+		},
+		{
+			name: "subtree returns base and descendants",
+			options: SearchOptions{
+				BaseDN: "dc=test,dc=com",
+				Filter: "(objectClass=*)",
+				Scope:  SearchScopeWholeSubtree,
+			},
+			wantCount: 11,
+			wantDNs:   []string{"dc=test,dc=com", "uid=jdoe,ou=users,dc=test,dc=com", "cn=developers,ou=groups,dc=test,dc=com"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entries, err := store.SearchEntriesWithOptions(ctx, tt.options)
+			if err != nil {
+				t.Fatalf("SearchEntriesWithOptions() error = %v", err)
+			}
+			if len(entries) != tt.wantCount {
+				t.Fatalf("SearchEntriesWithOptions() got %d entries, want %d: %v", len(entries), tt.wantCount, entryDNs(entries))
+			}
+			gotDNs := entryDNSet(entries)
+			for _, wantDN := range tt.wantDNs {
+				if !gotDNs[wantDN] {
+					t.Fatalf("SearchEntriesWithOptions() missing %s from %v", wantDN, entryDNs(entries))
+				}
+			}
+		})
+	}
+}
+
+func TestSearchEntriesQueryUsesScopeSpecificShape(t *testing.T) {
+	filterClause := "e.object_class IS NOT NULL"
+
+	baseQuery, _ := searchEntriesQuery(SearchScopeBaseObject, filterClause, "dc=test,dc=com", nil)
+	if strings.Contains(baseQuery, "WITH RECURSIVE") {
+		t.Fatalf("base-object query should not use recursive CTE:\n%s", baseQuery)
+	}
+	if !strings.Contains(baseQuery, "AND e.dn = ?") {
+		t.Fatalf("base-object query should constrain exact DN:\n%s", baseQuery)
+	}
+
+	oneQuery, _ := searchEntriesQuery(SearchScopeSingleLevel, filterClause, "dc=test,dc=com", nil)
+	if strings.Contains(oneQuery, "WITH RECURSIVE") {
+		t.Fatalf("single-level query should not use recursive CTE:\n%s", oneQuery)
+	}
+	if !strings.Contains(oneQuery, "AND e.parent_dn = ?") {
+		t.Fatalf("single-level query should constrain parent DN:\n%s", oneQuery)
+	}
+
+	subtreeQuery, _ := searchEntriesQuery(SearchScopeWholeSubtree, filterClause, "dc=test,dc=com", nil)
+	if !strings.Contains(subtreeQuery, "WITH RECURSIVE subtree") {
+		t.Fatalf("subtree query should use recursive CTE:\n%s", subtreeQuery)
+	}
+}
+
 func assertQueryPlanUsesIndex(t *testing.T, store *SQLiteStore, indexName string, query string, args ...interface{}) {
 	t.Helper()
 
@@ -141,6 +228,22 @@ func assertQueryPlanUsesIndex(t *testing.T, store *SQLiteStore, indexName string
 	if !strings.Contains(plan, indexName) {
 		t.Fatalf("query plan did not use %s:\n%s", indexName, plan)
 	}
+}
+
+func entryDNSet(entries []*models.Entry) map[string]bool {
+	dns := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		dns[entry.DN] = true
+	}
+	return dns
+}
+
+func entryDNs(entries []*models.Entry) []string {
+	dns := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		dns = append(dns, entry.DN)
+	}
+	return dns
 }
 
 func TestSearchEntriesWithEqualityFilter(t *testing.T) {

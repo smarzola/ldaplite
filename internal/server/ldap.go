@@ -228,7 +228,7 @@ func (s *Server) handleSearch(conn *protocol.Connection, msg *message.LDAPMessag
 
 	searchReq := msg.ProtocolOp().(message.SearchRequest)
 	baseDN := string(searchReq.BaseObject())
-	scope := int(searchReq.Scope())
+	scope := ldapSearchScope(searchReq.Scope())
 	selection := newSearchAttributeSelection(searchReq.Attributes())
 
 	// Handle RootDSE queries (empty base DN)
@@ -256,7 +256,11 @@ func (s *Server) handleSearch(conn *protocol.Connection, msg *message.LDAPMessag
 
 	slog.Debug("Search request", "baseDN", baseDN, "scope", scope, "filter", filterStr)
 
-	entries, err := s.store.SearchEntries(ctx, baseDN, filterStr)
+	entries, err := s.store.SearchEntriesWithOptions(ctx, store.SearchOptions{
+		BaseDN: baseDN,
+		Filter: filterStr,
+		Scope:  scope,
+	})
 	if err != nil {
 		slog.Error("Search error", "error", err)
 		return conn.WriteResponse(msg.MessageID(), protocol.NewSearchResultDone(message.ResultCodeOperationsError))
@@ -264,18 +268,6 @@ func (s *Server) handleSearch(conn *protocol.Connection, msg *message.LDAPMessag
 
 	// Return matching entries
 	for _, entry := range entries {
-		// Apply scope filtering
-		switch scope {
-		case 0: // base - only exact match
-			if !strings.EqualFold(entry.DN, baseDN) {
-				continue
-			}
-		case 1: // one level - only immediate children
-			if !strings.EqualFold(entry.ParentDN, baseDN) {
-				continue
-			}
-		}
-
 		// Build search result entry
 		result := protocol.NewSearchResultEntry(entry.DN)
 
@@ -291,6 +283,17 @@ func (s *Server) handleSearch(conn *protocol.Connection, msg *message.LDAPMessag
 
 	slog.Debug("Search completed", "baseDN", baseDN, "results", len(entries))
 	return conn.WriteResponse(msg.MessageID(), protocol.NewSearchResultDone(message.ResultCodeSuccess))
+}
+
+func ldapSearchScope(scope message.ENUMERATED) store.SearchScope {
+	switch int(scope) {
+	case 0:
+		return store.SearchScopeBaseObject
+	case 1:
+		return store.SearchScopeSingleLevel
+	default:
+		return store.SearchScopeWholeSubtree
+	}
 }
 
 // handleAdd handles add operations
