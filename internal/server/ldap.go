@@ -128,6 +128,16 @@ func (s *Server) acceptLoop() {
 
 // handleConnection handles a single client connection
 func (s *Server) handleConnection(conn net.Conn) {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-s.ctx.Done():
+			_ = conn.Close()
+		case <-done:
+		}
+	}()
+	defer close(done)
+
 	// Create operation handlers
 	handlers := protocol.OperationHandlers{
 		OnBind:     s.handleBind,
