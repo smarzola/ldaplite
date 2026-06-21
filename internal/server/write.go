@@ -166,72 +166,26 @@ func (s *Server) handleModify(ctx context.Context, conn *protocol.Connection, ms
 			return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeUnwillingToPerform))
 		}
 
-		vals := modification.Vals()
+		vals := attributeValues(modification.Vals())
 		opType := int(change.Operation())
 
 		switch opType {
 		case 0: // Add
 			slog.Debug("Add attribute", "attr", attrType)
-			if attrType == "userPassword" {
-				for _, val := range vals {
-					processedPassword, err := s.hasher.ProcessPassword(string(val))
-					if err != nil {
-						slog.Debug("Invalid password format", "dn", dn, "error", err)
-						return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeConstraintViolation))
-					}
-					entry.AddAttribute(attrType, processedPassword)
-				}
-			} else {
-				for _, val := range vals {
-					entry.AddAttribute(attrType, string(val))
-				}
+			if err := s.addModifyValues(entry, attrType, vals); err != nil {
+				slog.Debug("Invalid password format", "dn", dn, "error", err)
+				return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeConstraintViolation))
 			}
 
 		case 1: // Delete
 			slog.Debug("Delete attribute", "attr", attrType)
-			if len(vals) == 0 {
-				entry.RemoveAttribute(attrType)
-			} else {
-				existing := entry.GetAttributes(attrType)
-				newVals := []string{}
-				for _, v := range existing {
-					shouldKeep := true
-					for _, val := range vals {
-						if v == string(val) {
-							shouldKeep = false
-							break
-						}
-					}
-					if shouldKeep {
-						newVals = append(newVals, v)
-					}
-				}
-				if len(newVals) == 0 {
-					entry.RemoveAttribute(attrType)
-				} else {
-					entry.RemoveAttribute(attrType)
-					for _, v := range newVals {
-						entry.AddAttribute(attrType, v)
-					}
-				}
-			}
+			deleteModifyValues(entry, attrType, vals)
 
 		case 2: // Replace
 			slog.Debug("Replace attribute", "attr", attrType)
-			entry.RemoveAttribute(attrType)
-			if attrType == "userPassword" {
-				for _, val := range vals {
-					processedPassword, err := s.hasher.ProcessPassword(string(val))
-					if err != nil {
-						slog.Debug("Invalid password format", "dn", dn, "error", err)
-						return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeConstraintViolation))
-					}
-					entry.AddAttribute(attrType, processedPassword)
-				}
-			} else {
-				for _, val := range vals {
-					entry.AddAttribute(attrType, string(val))
-				}
+			if err := s.replaceModifyValues(entry, attrType, vals); err != nil {
+				slog.Debug("Invalid password format", "dn", dn, "error", err)
+				return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeConstraintViolation))
 			}
 		}
 	}
@@ -244,4 +198,55 @@ func (s *Server) handleModify(ctx context.Context, conn *protocol.Connection, ms
 
 	slog.Info("Entry modified", "dn", dn)
 	return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeSuccess))
+}
+
+func attributeValues(vals []message.AttributeValue) []string {
+	out := make([]string, 0, len(vals))
+	for _, val := range vals {
+		out = append(out, string(val))
+	}
+	return out
+}
+
+func (s *Server) addModifyValues(entry *models.Entry, attrType string, vals []string) error {
+	if attrType == "userPassword" {
+		for _, val := range vals {
+			processedPassword, err := s.hasher.ProcessPassword(val)
+			if err != nil {
+				return err
+			}
+			entry.AddAttribute(attrType, processedPassword)
+		}
+		return nil
+	}
+
+	for _, val := range vals {
+		entry.AddAttribute(attrType, val)
+	}
+	return nil
+}
+
+func deleteModifyValues(entry *models.Entry, attrType string, vals []string) {
+	if len(vals) == 0 {
+		entry.RemoveAttribute(attrType)
+		return
+	}
+
+	remove := make(map[string]struct{}, len(vals))
+	for _, val := range vals {
+		remove[val] = struct{}{}
+	}
+
+	existing := entry.GetAttributes(attrType)
+	entry.RemoveAttribute(attrType)
+	for _, value := range existing {
+		if _, ok := remove[value]; !ok {
+			entry.AddAttribute(attrType, value)
+		}
+	}
+}
+
+func (s *Server) replaceModifyValues(entry *models.Entry, attrType string, vals []string) error {
+	entry.RemoveAttribute(attrType)
+	return s.addModifyValues(entry, attrType, vals)
 }
