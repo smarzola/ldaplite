@@ -207,3 +207,9 @@ func NewBaseData(cfg *config.Config, r *http.Request, currentPage string) BaseDa
 		Error:       r.URL.Query().Get("error"),
 	}
 }
+
+func NewBaseDataWithError(cfg *config.Config, r *http.Request, currentPage, errMsg string) BaseData {
+	data := NewBaseData(cfg, r, currentPage)
+	data.Error = errMsg
+	return data
+}

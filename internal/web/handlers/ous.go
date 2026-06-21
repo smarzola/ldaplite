@@ -187,7 +187,7 @@ func (h *OUHandler) showError(w http.ResponseWriter, r *http.Request, errMsg str
 		ExtraAttributes string
 		OUs             []*models.Entry
 	}{
-		BaseData:        func() BaseData { bd := NewBaseData(h.cfg, r, "ous"); bd.Error = errMsg; return bd }(),
+		BaseData:        NewBaseDataWithError(h.cfg, r, "ous", errMsg),
 		OU:              ou,
 		ExtraAttributes: extraAttrs,
 		OUs:             ous,

@@ -200,7 +200,7 @@ func (h *GroupHandler) showError(w http.ResponseWriter, r *http.Request, errMsg 
 		ExtraAttributes string
 		OUs             []*models.Entry
 	}{
-		BaseData:        func() BaseData { bd := NewBaseData(h.cfg, r, "groups"); bd.Error = errMsg; return bd }(),
+		BaseData:        NewBaseDataWithError(h.cfg, r, "groups", errMsg),
 		Group:           group,
 		ExtraAttributes: extraAttrs,
 		OUs:             ous,

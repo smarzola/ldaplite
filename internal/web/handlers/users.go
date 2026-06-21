@@ -223,7 +223,7 @@ func (h *UserHandler) showError(w http.ResponseWriter, r *http.Request, errMsg s
 		ExtraAttributes string
 		OUs             []*models.Entry
 	}{
-		BaseData:        func() BaseData { bd := NewBaseData(h.cfg, r, "users"); bd.Error = errMsg; return bd }(),
+		BaseData:        NewBaseDataWithError(h.cfg, r, "users", errMsg),
 		User:            user,
 		ExtraAttributes: extraAttrs,
 		OUs:             ous,
