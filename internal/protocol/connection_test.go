@@ -1,6 +1,11 @@
 package protocol
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/lor00x/goldap/message"
+)
 
 func TestConnectionBoundState(t *testing.T) {
 	conn := NewConnection(nil, OperationHandlers{})
@@ -34,5 +39,27 @@ func TestConnectionBoundState(t *testing.T) {
 	}
 	if got := conn.GetBoundDN(); got != "" {
 		t.Fatalf("cleared bound DN = %q, want empty", got)
+	}
+}
+
+func TestDispatchPassesContextToHandler(t *testing.T) {
+	type contextKey string
+	key := contextKey("request-id")
+	ctx := context.WithValue(context.Background(), key, "abc123")
+
+	var got string
+	conn := NewConnection(nil, OperationHandlers{
+		OnBind: func(ctx context.Context, conn *Connection, msg *message.LDAPMessage) error {
+			got, _ = ctx.Value(key).(string)
+			return nil
+		},
+	})
+
+	msg := message.NewLDAPMessageWithProtocolOp(message.BindRequest{})
+	if err := conn.dispatch(ctx, msg); err != nil {
+		t.Fatalf("dispatch() failed: %v", err)
+	}
+	if got != "abc123" {
+		t.Fatalf("handler context value = %q, want abc123", got)
 	}
 }

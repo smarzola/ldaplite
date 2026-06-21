@@ -162,8 +162,7 @@ func (s *Server) Stop() error {
 }
 
 // handleBind handles bind operations
-func (s *Server) handleBind(conn *protocol.Connection, msg *message.LDAPMessage) error {
-	ctx := context.Background()
+func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
 	conn.ClearBoundDN()
 
 	bindReq := msg.ProtocolOp().(message.BindRequest)
@@ -223,9 +222,7 @@ func (s *Server) handleBind(conn *protocol.Connection, msg *message.LDAPMessage)
 }
 
 // handleSearch handles search operations
-func (s *Server) handleSearch(conn *protocol.Connection, msg *message.LDAPMessage) error {
-	ctx := context.Background()
-
+func (s *Server) handleSearch(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
 	searchReq := msg.ProtocolOp().(message.SearchRequest)
 	baseDN := string(searchReq.BaseObject())
 	scope := ldapSearchScope(searchReq.Scope())
@@ -298,8 +295,7 @@ func ldapSearchScope(scope message.ENUMERATED) store.SearchScope {
 }
 
 // handleAdd handles add operations
-func (s *Server) handleAdd(conn *protocol.Connection, msg *message.LDAPMessage) error {
-	ctx := context.Background()
+func (s *Server) handleAdd(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
 	addReq := msg.ProtocolOp().(message.AddRequest)
 
 	dn := string(addReq.Entry())
@@ -390,8 +386,7 @@ func (s *Server) handleAdd(conn *protocol.Connection, msg *message.LDAPMessage) 
 }
 
 // handleDelete handles delete operations
-func (s *Server) handleDelete(conn *protocol.Connection, msg *message.LDAPMessage) error {
-	ctx := context.Background()
+func (s *Server) handleDelete(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
 	delReq := msg.ProtocolOp().(message.DelRequest)
 
 	dn := string(delReq)
@@ -424,8 +419,7 @@ func (s *Server) handleDelete(conn *protocol.Connection, msg *message.LDAPMessag
 }
 
 // handleModify handles modify operations
-func (s *Server) handleModify(conn *protocol.Connection, msg *message.LDAPMessage) error {
-	ctx := context.Background()
+func (s *Server) handleModify(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
 	modReq := msg.ProtocolOp().(message.ModifyRequest)
 
 	dn := string(modReq.Object())
@@ -588,13 +582,13 @@ func (s *Server) handleSchema(conn *protocol.Connection, msg *message.LDAPMessag
 }
 
 // handleCompare handles compare operations
-func (s *Server) handleCompare(conn *protocol.Connection, msg *message.LDAPMessage) error {
+func (s *Server) handleCompare(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
 	slog.Debug("Compare request")
 	return conn.WriteResponse(msg.MessageID(), protocol.NewCompareResponse(message.ResultCodeCompareFalse))
 }
 
 // handleExtended handles extended operations
-func (s *Server) handleExtended(conn *protocol.Connection, msg *message.LDAPMessage) error {
+func (s *Server) handleExtended(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
 	extReq := msg.ProtocolOp().(message.ExtendedRequest)
 	reqOID := string(extReq.RequestName())
 
@@ -630,7 +624,7 @@ func (s *Server) handleExtended(conn *protocol.Connection, msg *message.LDAPMess
 }
 
 // handleUnbind handles unbind operations
-func (s *Server) handleUnbind(conn *protocol.Connection, msg *message.LDAPMessage) error {
+func (s *Server) handleUnbind(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
 	slog.Debug("Unbind request")
 	conn.ClearBoundDN()
 	return nil // Connection will be closed by handler

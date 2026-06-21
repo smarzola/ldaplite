@@ -22,14 +22,14 @@ type Connection struct {
 
 // OperationHandlers defines callbacks for LDAP operations
 type OperationHandlers struct {
-	OnBind     func(*Connection, *message.LDAPMessage) error
-	OnSearch   func(*Connection, *message.LDAPMessage) error
-	OnAdd      func(*Connection, *message.LDAPMessage) error
-	OnModify   func(*Connection, *message.LDAPMessage) error
-	OnDelete   func(*Connection, *message.LDAPMessage) error
-	OnCompare  func(*Connection, *message.LDAPMessage) error
-	OnExtended func(*Connection, *message.LDAPMessage) error
-	OnUnbind   func(*Connection, *message.LDAPMessage) error
+	OnBind     func(context.Context, *Connection, *message.LDAPMessage) error
+	OnSearch   func(context.Context, *Connection, *message.LDAPMessage) error
+	OnAdd      func(context.Context, *Connection, *message.LDAPMessage) error
+	OnModify   func(context.Context, *Connection, *message.LDAPMessage) error
+	OnDelete   func(context.Context, *Connection, *message.LDAPMessage) error
+	OnCompare  func(context.Context, *Connection, *message.LDAPMessage) error
+	OnExtended func(context.Context, *Connection, *message.LDAPMessage) error
+	OnUnbind   func(context.Context, *Connection, *message.LDAPMessage) error
 }
 
 // NewConnection creates a new LDAP connection wrapper
@@ -64,7 +64,7 @@ func (c *Connection) Handle(ctx context.Context) error {
 		}
 
 		// Dispatch to appropriate handler based on operation type
-		if err := c.dispatch(msg); err != nil {
+		if err := c.dispatch(ctx, msg); err != nil {
 			slog.Error("Failed to handle LDAP operation", "error", err, "operation", msg.ProtocolOpName())
 			// Continue processing other messages even if one fails
 		}
@@ -72,46 +72,46 @@ func (c *Connection) Handle(ctx context.Context) error {
 }
 
 // dispatch routes the message to the appropriate handler
-func (c *Connection) dispatch(msg *message.LDAPMessage) error {
+func (c *Connection) dispatch(ctx context.Context, msg *message.LDAPMessage) error {
 	switch msg.ProtocolOp().(type) {
 	case message.BindRequest:
 		if c.handlers.OnBind != nil {
-			return c.handlers.OnBind(c, msg)
+			return c.handlers.OnBind(ctx, c, msg)
 		}
 
 	case message.SearchRequest:
 		if c.handlers.OnSearch != nil {
-			return c.handlers.OnSearch(c, msg)
+			return c.handlers.OnSearch(ctx, c, msg)
 		}
 
 	case message.AddRequest:
 		if c.handlers.OnAdd != nil {
-			return c.handlers.OnAdd(c, msg)
+			return c.handlers.OnAdd(ctx, c, msg)
 		}
 
 	case message.ModifyRequest:
 		if c.handlers.OnModify != nil {
-			return c.handlers.OnModify(c, msg)
+			return c.handlers.OnModify(ctx, c, msg)
 		}
 
 	case message.DelRequest:
 		if c.handlers.OnDelete != nil {
-			return c.handlers.OnDelete(c, msg)
+			return c.handlers.OnDelete(ctx, c, msg)
 		}
 
 	case message.CompareRequest:
 		if c.handlers.OnCompare != nil {
-			return c.handlers.OnCompare(c, msg)
+			return c.handlers.OnCompare(ctx, c, msg)
 		}
 
 	case message.ExtendedRequest:
 		if c.handlers.OnExtended != nil {
-			return c.handlers.OnExtended(c, msg)
+			return c.handlers.OnExtended(ctx, c, msg)
 		}
 
 	case message.UnbindRequest:
 		if c.handlers.OnUnbind != nil {
-			return c.handlers.OnUnbind(c, msg)
+			return c.handlers.OnUnbind(ctx, c, msg)
 		}
 		return c.Close()
 
