@@ -104,13 +104,12 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 
 	entry.ID = entryID
 
-	// Step 2: Insert generic attributes into attributes table (EAV pattern)
-	// This provides flexible, schema-free storage for all LDAP attributes
-	// SECURITY EXCEPTION: userPassword is excluded and stored only in users.password_hash
+	// Step 2: Insert generic attributes into attributes table (EAV pattern).
+	// Server-managed attributes are excluded because entries, users, and
+	// group_members own those values.
 	attrQuery := `INSERT INTO attributes (entry_id, name, value) VALUES (?, ?, ?)`
 	for name, values := range entry.Attributes {
-		// Skip userPassword - stored securely in users.password_hash only (never exposed in searches)
-		if strings.EqualFold(name, "userPassword") {
+		if !isGenericStoredAttribute(name) {
 			continue
 		}
 		for _, value := range values {
@@ -216,11 +215,11 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 		return fmt.Errorf("failed to delete attributes: %w", err)
 	}
 
-	// Insert updated attributes (excluding security-sensitive attributes)
+	// Insert updated generic attributes. Server-managed attributes are excluded
+	// because entries, users, and group_members own those values.
 	insertAttrQuery := `INSERT INTO attributes (entry_id, name, value) VALUES ((SELECT id FROM entries WHERE dn = ?), ?, ?)`
 	for name, values := range entry.Attributes {
-		// Skip userPassword - stored securely in users.password_hash only (never in attributes)
-		if strings.EqualFold(name, "userPassword") {
+		if !isGenericStoredAttribute(name) {
 			continue
 		}
 		for _, value := range values {
@@ -258,6 +257,15 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 	}
 
 	return tx.Commit()
+}
+
+func isGenericStoredAttribute(name string) bool {
+	switch strings.ToLower(name) {
+	case "userpassword", "objectclass", "createtimestamp", "modifytimestamp", "memberof":
+		return false
+	default:
+		return true
+	}
 }
 
 func (s *SQLiteStore) validateEntryPlacement(ctx context.Context, tx *sql.Tx, entry *models.Entry) error {

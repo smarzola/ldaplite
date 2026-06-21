@@ -47,6 +47,7 @@ func NewServer(cfg *config.Config, st store.Store, version string) *Server {
 // protected from later Modify operations.
 var addProtectedAttributes = []string{
 	"createtimestamp",
+	"memberof",
 	"modifytimestamp",
 }
 
@@ -54,6 +55,7 @@ var addProtectedAttributes = []string{
 // cannot be changed after entry creation.
 var modifyProtectedAttributes = []string{
 	"createtimestamp",
+	"memberof",
 	"modifytimestamp",
 	"objectclass",
 }

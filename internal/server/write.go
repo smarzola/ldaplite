@@ -207,6 +207,7 @@ func (s *Server) newAddEntry(dn string, attrs map[string][]string) (*models.Entr
 		objectClass = allClasses[0]
 	}
 	entry.ObjectClass = objectClass
+	delete(entry.Attributes, "objectclass")
 
 	return entry, message.ResultCodeSuccess, nil
 }

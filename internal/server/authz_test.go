@@ -146,7 +146,7 @@ func TestProtectedAttributePolicy(t *testing.T) {
 		t.Fatal("objectClass must be protected from Modify after entry creation")
 	}
 
-	for _, attr := range []string{"createTimestamp", "modifyTimestamp"} {
+	for _, attr := range []string{"createTimestamp", "modifyTimestamp", "memberOf"} {
 		t.Run(attr, func(t *testing.T) {
 			if !isAddProtectedAttribute(attr) {
 				t.Fatalf("%s must be protected during Add", attr)

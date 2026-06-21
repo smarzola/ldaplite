@@ -277,3 +277,47 @@ func TestMigrationCleansUpExistingPasswords(t *testing.T) {
 
 	t.Log("✓ Migration verified: no userPassword entries in attributes table")
 }
+
+func TestServerManagedAttributesNotStoredInGenericAttributes(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	entry := models.NewEntry("uid=managedattrs,ou=users,dc=test,dc=com", "inetOrgPerson")
+	entry.SetAttribute("uid", "managedattrs")
+	entry.SetAttribute("cn", "Managed Attrs")
+	entry.SetAttribute("sn", "Attrs")
+	entry.SetAttribute("userPassword", "secret")
+	entry.SetAttribute("objectClass", "inetOrgPerson")
+	entry.SetAttribute("createTimestamp", "20260102030405Z")
+	entry.SetAttribute("modifyTimestamp", "20260102030405Z")
+	entry.SetAttribute("memberOf", "cn=admins,ou=groups,dc=test,dc=com")
+
+	if err := store.CreateEntry(ctx, entry); err != nil {
+		t.Fatalf("CreateEntry() error = %v", err)
+	}
+
+	var count int
+	err := store.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM attributes
+		WHERE entry_id = ?
+		  AND LOWER(name) IN ('userpassword', 'objectclass', 'createtimestamp', 'modifytimestamp', 'memberof')
+	`, entry.ID).Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to query attributes table: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("server-managed attributes stored in generic attributes table: %d", count)
+	}
+
+	loaded, err := store.GetEntry(ctx, entry.DN)
+	if err != nil {
+		t.Fatalf("GetEntry() error = %v", err)
+	}
+	for _, attr := range []string{"userPassword", "objectClass", "createTimestamp", "modifyTimestamp", "memberOf"} {
+		if loaded.HasAttribute(attr) {
+			t.Fatalf("GetEntry() returned server-managed attribute %s in generic attributes", attr)
+		}
+	}
+}

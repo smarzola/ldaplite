@@ -1,0 +1,2 @@
+-- No down migration: removed server-managed generic attributes are redundant
+-- or security-sensitive and cannot be safely reconstructed.

@@ -54,6 +54,9 @@ func TestNewAddEntryBuildsEntryFromAttributes(t *testing.T) {
 	if got := entry.GetAttributes("mail"); len(got) != 2 {
 		t.Fatalf("mail values = %#v, want 2 values", got)
 	}
+	if entry.HasAttribute("objectClass") {
+		t.Fatalf("objectClass should be structural metadata, not a generic add attribute")
+	}
 }
 
 func TestNewAddEntryRejectsProtectedAttributes(t *testing.T) {
