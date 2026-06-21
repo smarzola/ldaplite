@@ -18,6 +18,9 @@ type OUHandler struct {
 	templates TemplateGetter
 }
 
+var ouFormAttributes = []string{"ou", "description"}
+var ouFormExcludeAttributes = []string{"ou", "description", "objectClass", "createTimestamp", "modifyTimestamp", "memberOf"}
+
 func NewOUHandler(st store.Store, cfg *config.Config, getter TemplateGetter) *OUHandler {
 	return &OUHandler{
 		store:     st,
@@ -135,7 +138,6 @@ func (h *OUHandler) Edit(w http.ResponseWriter, r *http.Request) {
 		ous = []*models.Entry{}
 	}
 
-	exclude := []string{"ou", "description", "objectClass", "createTimestamp", "modifyTimestamp"}
 	data := struct {
 		BaseData
 		OU              *models.Entry
@@ -144,7 +146,7 @@ func (h *OUHandler) Edit(w http.ResponseWriter, r *http.Request) {
 	}{
 		BaseData:        NewBaseData(h.cfg, r, "ous"),
 		OU:              entry,
-		ExtraAttributes: FormatExtraAttributes(entry, exclude),
+		ExtraAttributes: FormatExtraAttributes(entry, ouFormExcludeAttributes),
 		OUs:             ous,
 	}
 
@@ -165,16 +167,11 @@ func (h *OUHandler) update(w http.ResponseWriter, r *http.Request, dn string) {
 		return
 	}
 
-	description := strings.TrimSpace(r.FormValue("description"))
-	if description != "" {
-		entry.SetAttribute("description", description)
-	}
+	setOptionalAttribute(entry, "description", r.FormValue("description"))
 
 	// Update extra attributes
 	extraAttrs := ParseAttributes(r.FormValue("attributes"))
-	for name, values := range extraAttrs {
-		entry.Attributes[name] = values
-	}
+	ReplaceExtraAttributes(entry, ouFormAttributes, extraAttrs)
 
 	entry.UpdatedAt = time.Now()
 
@@ -217,10 +214,9 @@ func (h *OUHandler) showError(w http.ResponseWriter, r *http.Request, errMsg str
 		ous = []*models.Entry{}
 	}
 
-	exclude := []string{"ou", "description", "objectClass", "createTimestamp", "modifyTimestamp"}
 	extraAttrs := ""
 	if ou != nil {
-		extraAttrs = FormatExtraAttributes(ou, exclude)
+		extraAttrs = FormatExtraAttributes(ou, ouFormExcludeAttributes)
 	}
 
 	data := struct {

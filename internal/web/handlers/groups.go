@@ -18,6 +18,9 @@ type GroupHandler struct {
 	templates TemplateGetter
 }
 
+var groupFormAttributes = []string{"cn", "description", "member"}
+var groupFormExcludeAttributes = []string{"cn", "description", "member", "objectClass", "createTimestamp", "modifyTimestamp", "memberOf"}
+
 func NewGroupHandler(st store.Store, cfg *config.Config, getter TemplateGetter) *GroupHandler {
 	return &GroupHandler{
 		store:     st,
@@ -154,7 +157,6 @@ func (h *GroupHandler) Edit(w http.ResponseWriter, r *http.Request) {
 		ous = []*models.Entry{}
 	}
 
-	exclude := []string{"cn", "description", "member", "objectClass", "createTimestamp", "modifyTimestamp"}
 	data := struct {
 		BaseData
 		Group           *models.Entry
@@ -163,7 +165,7 @@ func (h *GroupHandler) Edit(w http.ResponseWriter, r *http.Request) {
 	}{
 		BaseData:        NewBaseData(h.cfg, r, "groups"),
 		Group:           entry,
-		ExtraAttributes: FormatExtraAttributes(entry, exclude),
+		ExtraAttributes: FormatExtraAttributes(entry, groupFormExcludeAttributes),
 		OUs:             ous,
 	}
 
@@ -184,10 +186,7 @@ func (h *GroupHandler) update(w http.ResponseWriter, r *http.Request, dn string)
 		return
 	}
 
-	description := strings.TrimSpace(r.FormValue("description"))
-	if description != "" {
-		entry.SetAttribute("description", description)
-	}
+	setOptionalAttribute(entry, "description", r.FormValue("description"))
 
 	// Update members
 	membersInput := r.FormValue("member")
@@ -199,15 +198,11 @@ func (h *GroupHandler) update(w http.ResponseWriter, r *http.Request, dn string)
 		}
 	}
 
-	if len(members) > 0 {
-		entry.Attributes["member"] = members
-	}
+	entry.Attributes["member"] = members
 
 	// Update extra attributes
 	extraAttrs := ParseAttributes(r.FormValue("attributes"))
-	for name, values := range extraAttrs {
-		entry.Attributes[name] = values
-	}
+	ReplaceExtraAttributes(entry, groupFormAttributes, extraAttrs)
 
 	entry.UpdatedAt = time.Now()
 
@@ -250,10 +245,9 @@ func (h *GroupHandler) showError(w http.ResponseWriter, r *http.Request, errMsg 
 		ous = []*models.Entry{}
 	}
 
-	exclude := []string{"cn", "description", "member", "objectClass", "createTimestamp", "modifyTimestamp"}
 	extraAttrs := ""
 	if group != nil {
-		extraAttrs = FormatExtraAttributes(group, exclude)
+		extraAttrs = FormatExtraAttributes(group, groupFormExcludeAttributes)
 	}
 
 	data := struct {

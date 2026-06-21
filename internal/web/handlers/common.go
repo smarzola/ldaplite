@@ -87,6 +87,32 @@ func FormatExtraAttributes(entry *models.Entry, exclude []string) string {
 	return strings.Join(lines, "\n")
 }
 
+func ReplaceExtraAttributes(entry *models.Entry, preserve []string, extras map[string][]string) {
+	preserveMap := make(map[string]bool)
+	for _, name := range preserve {
+		preserveMap[strings.ToLower(name)] = true
+	}
+
+	for name := range entry.Attributes {
+		if !preserveMap[strings.ToLower(name)] {
+			delete(entry.Attributes, name)
+		}
+	}
+
+	for name, values := range extras {
+		entry.Attributes[strings.ToLower(name)] = values
+	}
+}
+
+func setOptionalAttribute(entry *models.Entry, name, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		entry.RemoveAttribute(name)
+		return
+	}
+	entry.SetAttribute(name, value)
+}
+
 // GetBaseDN returns the base DN string for templates
 func GetBaseDN(cfg *config.Config) string {
 	return cfg.LDAP.BaseDN

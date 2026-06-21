@@ -20,6 +20,9 @@ type UserHandler struct {
 	hasher    *crypto.PasswordHasher
 }
 
+var userFormAttributes = []string{"uid", "cn", "sn", "givenName", "mail"}
+var userFormExcludeAttributes = []string{"uid", "cn", "sn", "givenName", "mail", "objectClass", "userPassword", "createTimestamp", "modifyTimestamp", "memberOf"}
+
 func NewUserHandler(st store.Store, cfg *config.Config, getter TemplateGetter) *UserHandler {
 	return &UserHandler{
 		store:     st,
@@ -155,7 +158,6 @@ func (h *UserHandler) Edit(w http.ResponseWriter, r *http.Request) {
 		ous = []*models.Entry{}
 	}
 
-	exclude := []string{"uid", "cn", "sn", "givenName", "mail", "objectClass", "userPassword", "createTimestamp", "modifyTimestamp"}
 	data := struct {
 		BaseData
 		User            *models.Entry
@@ -164,7 +166,7 @@ func (h *UserHandler) Edit(w http.ResponseWriter, r *http.Request) {
 	}{
 		BaseData:        NewBaseData(h.cfg, r, "users"),
 		User:            entry,
-		ExtraAttributes: FormatExtraAttributes(entry, exclude),
+		ExtraAttributes: FormatExtraAttributes(entry, userFormExcludeAttributes),
 		OUs:             ous,
 	}
 
@@ -189,15 +191,12 @@ func (h *UserHandler) update(w http.ResponseWriter, r *http.Request, dn string) 
 	entry.SetAttribute("cn", strings.TrimSpace(r.FormValue("cn")))
 	entry.SetAttribute("sn", strings.TrimSpace(r.FormValue("sn")))
 
-	givenName := strings.TrimSpace(r.FormValue("givenName"))
-	if givenName != "" {
-		entry.SetAttribute("givenName", givenName)
-	}
+	setOptionalAttribute(entry, "givenName", r.FormValue("givenName"))
+	setOptionalAttribute(entry, "mail", r.FormValue("mail"))
 
-	mail := strings.TrimSpace(r.FormValue("mail"))
-	if mail != "" {
-		entry.SetAttribute("mail", mail)
-	}
+	// Parse and add new custom attributes
+	extraAttrs := ParseAttributes(r.FormValue("attributes"))
+	ReplaceExtraAttributes(entry, userFormAttributes, extraAttrs)
 
 	// Update password if provided
 	password := r.FormValue("userPassword")
@@ -208,15 +207,6 @@ func (h *UserHandler) update(w http.ResponseWriter, r *http.Request, dn string) 
 			return
 		}
 		entry.SetAttribute("userPassword", hashedPassword)
-	}
-
-	// Update extra attributes (excluded fields are kept as-is in the entry)
-	_ = []string{"uid", "cn", "sn", "givenName", "mail", "objectClass", "userPassword", "createTimestamp", "modifyTimestamp"}
-
-	// Parse and add new custom attributes
-	extraAttrs := ParseAttributes(r.FormValue("attributes"))
-	for name, values := range extraAttrs {
-		entry.Attributes[name] = values
 	}
 
 	entry.UpdatedAt = time.Now()
@@ -260,10 +250,9 @@ func (h *UserHandler) showError(w http.ResponseWriter, r *http.Request, errMsg s
 		ous = []*models.Entry{}
 	}
 
-	exclude := []string{"uid", "cn", "sn", "givenName", "mail", "objectClass", "userPassword", "createTimestamp", "modifyTimestamp"}
 	extraAttrs := ""
 	if user != nil {
-		extraAttrs = FormatExtraAttributes(user, exclude)
+		extraAttrs = FormatExtraAttributes(user, userFormExcludeAttributes)
 	}
 
 	data := struct {
