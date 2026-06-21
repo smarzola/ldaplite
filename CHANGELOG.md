@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.8.2 - 2026-06-21
+
+This release fixes Windows compatibility issues found by the expanded cross-platform CI matrix.
+
+### Compatibility
+
+- Fixed SQLite migrations with Windows drive-letter database paths.
+- Ran Go CI commands under Bash on Windows to avoid PowerShell argument parsing issues.
+- Added Git attributes to keep Go source files LF-normalized on Windows checkouts.
+
 ## v0.8.1 - 2026-06-21
 
 This release expands native platform compatibility for CI and release artifacts.
