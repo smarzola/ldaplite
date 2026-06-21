@@ -166,12 +166,9 @@ func (fc *FilterCompiler) compileSubstring(attr, value string) (string, []interf
 		return "", nil, fmt.Errorf("substring filter not supported for objectClass")
 	}
 
-	// Convert LDAP wildcard (*) to SQL LIKE wildcard (%)
-	// LDAP: (cn=John*) or (cn=*Doe) or (cn=*oh*oe*)
-	likePattern := strings.ReplaceAll(value, "*", "%")
-
-	// Escape SQL LIKE special characters (underscore)
-	likePattern = strings.ReplaceAll(likePattern, "_", "\\_")
+	// Convert LDAP wildcard (*) to SQL LIKE wildcard (%), escaping SQL LIKE
+	// wildcards that came from the client value.
+	likePattern := ldapSubstringToSQLLike(value)
 
 	// LDAP attributes are case-insensitive, so use LOWER() for both sides
 	clause := `EXISTS (
@@ -182,6 +179,22 @@ func (fc *FilterCompiler) compileSubstring(attr, value string) (string, []interf
 	)`
 
 	return clause, []interface{}{attr, likePattern}, nil
+}
+
+func ldapSubstringToSQLLike(value string) string {
+	var pattern strings.Builder
+	for _, r := range value {
+		switch r {
+		case '*':
+			pattern.WriteRune('%')
+		case '%', '_', '\\':
+			pattern.WriteRune('\\')
+			pattern.WriteRune(r)
+		default:
+			pattern.WriteRune(r)
+		}
+	}
+	return pattern.String()
 }
 
 // compileAnd compiles an AND filter: (&(filter1)(filter2)...)

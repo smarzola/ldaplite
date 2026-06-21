@@ -162,6 +162,15 @@ func TestCompileSubstring(t *testing.T) {
 			wantPattern: "J%oh%oe",
 		},
 		{
+			name: "literal SQL wildcards",
+			filter: &Filter{
+				Type:      FilterTypeSubstrings,
+				Attribute: "cn",
+				Value:     "100% Real_User*",
+			},
+			wantPattern: `100\% Real\_User%`,
+		},
+		{
 			name: "objectClass substring should fail",
 			filter: &Filter{
 				Type:      FilterTypeSubstrings,

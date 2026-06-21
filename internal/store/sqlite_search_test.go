@@ -462,6 +462,24 @@ func TestSearchEntriesWithSubstringFilter(t *testing.T) {
 	defer store.Close()
 	ctx := context.Background()
 
+	literalWildcardUser := models.NewEntry("uid=literalwildcard,ou=users,dc=test,dc=com", "inetOrgPerson")
+	literalWildcardUser.ParentDN = "ou=users,dc=test,dc=com"
+	literalWildcardUser.SetAttribute("uid", "literalwildcard")
+	literalWildcardUser.SetAttribute("cn", "100% Real_User")
+	literalWildcardUser.SetAttribute("sn", "Wildcard")
+	if err := store.CreateEntry(ctx, literalWildcardUser); err != nil {
+		t.Fatalf("CreateEntry() literal wildcard user error = %v", err)
+	}
+
+	wildcardNearMiss := models.NewEntry("uid=wildcardnearmiss,ou=users,dc=test,dc=com", "inetOrgPerson")
+	wildcardNearMiss.ParentDN = "ou=users,dc=test,dc=com"
+	wildcardNearMiss.SetAttribute("uid", "wildcardnearmiss")
+	wildcardNearMiss.SetAttribute("cn", "100X RealZUser")
+	wildcardNearMiss.SetAttribute("sn", "NearMiss")
+	if err := store.CreateEntry(ctx, wildcardNearMiss); err != nil {
+		t.Fatalf("CreateEntry() wildcard near-miss user error = %v", err)
+	}
+
 	tests := []struct {
 		name        string
 		baseDN      string
@@ -510,6 +528,13 @@ func TestSearchEntriesWithSubstringFilter(t *testing.T) {
 			filter:      "(uid=a*)",
 			wantCount:   2, // admin and alice
 			wantContain: []string{"uid=admin,ou=users,dc=test,dc=com", "uid=alice,ou=users,dc=test,dc=com"},
+		},
+		{
+			name:        "literal percent and underscore",
+			baseDN:      "dc=test,dc=com",
+			filter:      "(cn=100% Real_User*)",
+			wantCount:   1,
+			wantContain: []string{"uid=literalwildcard,ou=users,dc=test,dc=com"},
 		},
 	}
 
