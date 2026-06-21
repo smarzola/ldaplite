@@ -118,7 +118,7 @@ func (h *UserHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/users?success=User created successfully", http.StatusFound)
+	redirectWithMessage(w, r, "/users", "success", "User created successfully")
 }
 
 func (h *UserHandler) Edit(w http.ResponseWriter, r *http.Request) {
@@ -200,7 +200,7 @@ func (h *UserHandler) update(w http.ResponseWriter, r *http.Request, dn string) 
 		return
 	}
 
-	http.Redirect(w, r, "/users?success=User updated successfully", http.StatusFound)
+	redirectWithMessage(w, r, "/users", "success", "User updated successfully")
 }
 
 func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {

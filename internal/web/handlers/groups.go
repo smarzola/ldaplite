@@ -108,7 +108,7 @@ func (h *GroupHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/groups?success=Group created successfully", http.StatusFound)
+	redirectWithMessage(w, r, "/groups", "success", "Group created successfully")
 }
 
 func (h *GroupHandler) Edit(w http.ResponseWriter, r *http.Request) {
@@ -177,7 +177,7 @@ func (h *GroupHandler) update(w http.ResponseWriter, r *http.Request, dn string)
 		return
 	}
 
-	http.Redirect(w, r, "/groups?success=Group updated successfully", http.StatusFound)
+	redirectWithMessage(w, r, "/groups", "success", "Group updated successfully")
 }
 
 func (h *GroupHandler) Delete(w http.ResponseWriter, r *http.Request) {

@@ -98,7 +98,7 @@ func (h *OUHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/ous?success=OU created successfully", http.StatusFound)
+	redirectWithMessage(w, r, "/ous", "success", "OU created successfully")
 }
 
 func (h *OUHandler) Edit(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +164,7 @@ func (h *OUHandler) update(w http.ResponseWriter, r *http.Request, dn string) {
 		return
 	}
 
-	http.Redirect(w, r, "/ous?success=OU updated successfully", http.StatusFound)
+	redirectWithMessage(w, r, "/ous", "success", "OU updated successfully")
 }
 
 func (h *OUHandler) Delete(w http.ResponseWriter, r *http.Request) {
