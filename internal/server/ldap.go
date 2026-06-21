@@ -263,6 +263,9 @@ func (s *Server) handleSearch(conn *protocol.Connection, msg *message.LDAPMessag
 
 		// Add all other attributes
 		for attrName, attrValues := range entry.Attributes {
+			if strings.EqualFold(attrName, "objectClass") {
+				continue
+			}
 			protocol.AddAttribute(&result, attrName, attrValues...)
 		}
 

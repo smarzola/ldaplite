@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"strings"
+
 	"github.com/lor00x/goldap/message"
 )
 
@@ -26,7 +28,42 @@ func AddAttribute(entry *message.SearchResultEntry, name string, values ...strin
 	for i, v := range values {
 		attrValues[i] = message.AttributeValue(v)
 	}
-	entry.AddAttribute(message.AttributeDescription(name), attrValues...)
+	entry.AddAttribute(message.AttributeDescription(CanonicalAttributeName(name)), attrValues...)
+}
+
+// CanonicalAttributeName returns the preferred display casing for known LDAP
+// attributes while keeping unknown/custom attributes unchanged.
+func CanonicalAttributeName(name string) string {
+	switch strings.ToLower(name) {
+	case "objectclass":
+		return "objectClass"
+	case "createtimestamp":
+		return "createTimestamp"
+	case "modifytimestamp":
+		return "modifyTimestamp"
+	case "memberof":
+		return "memberOf"
+	case "givenname":
+		return "givenName"
+	case "displayname":
+		return "displayName"
+	case "telephonenumber":
+		return "telephoneNumber"
+	case "userpassword":
+		return "userPassword"
+	case "namingcontexts":
+		return "namingContexts"
+	case "subschemasubentry":
+		return "subschemaSubentry"
+	case "supportedldapversion":
+		return "supportedLDAPVersion"
+	case "vendorname":
+		return "vendorName"
+	case "vendorversion":
+		return "vendorVersion"
+	default:
+		return name
+	}
 }
 
 // NewSearchResultDone creates a search done response
