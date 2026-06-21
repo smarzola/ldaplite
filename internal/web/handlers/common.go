@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/web/middleware"
 	"github.com/smarzola/ldaplite/pkg/config"
@@ -120,26 +121,7 @@ func GetBaseDN(cfg *config.Config) string {
 
 // ExtractUIDFromDN extracts the uid from a DN like "uid=admin,ou=users,dc=example,dc=com"
 func ExtractUIDFromDN(dn string) string {
-	if dn == "" {
-		return ""
-	}
-	// Split by comma to get RDN components
-	parts := strings.Split(dn, ",")
-	if len(parts) == 0 {
-		return ""
-	}
-	// Get the first component (uid=...)
-	firstPart := strings.TrimSpace(parts[0])
-	// Split by = to get the value
-	kvPair := strings.SplitN(firstPart, "=", 2)
-	if len(kvPair) != 2 {
-		return ""
-	}
-	// Check if it's a uid attribute
-	if strings.EqualFold(kvPair[0], "uid") {
-		return kvPair[1]
-	}
-	return ""
+	return ldapdn.FirstRDNValue(dn, "uid")
 }
 
 // NewBaseData creates a BaseData struct with common fields populated

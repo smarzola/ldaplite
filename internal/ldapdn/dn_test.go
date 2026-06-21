@@ -95,3 +95,57 @@ func TestWithinBase(t *testing.T) {
 		})
 	}
 }
+
+func TestFirstRDNValue(t *testing.T) {
+	tests := []struct {
+		name string
+		dn   string
+		attr string
+		want string
+	}{
+		{
+			name: "matching uid",
+			dn:   "uid=jane,ou=users,dc=example,dc=com",
+			attr: "uid",
+			want: "jane",
+		},
+		{
+			name: "case-insensitive attribute",
+			dn:   "UID=jane,ou=users,dc=example,dc=com",
+			attr: "uid",
+			want: "jane",
+		},
+		{
+			name: "escaped comma in value",
+			dn:   `uid=jane\,doe,ou=users,dc=example,dc=com`,
+			attr: "uid",
+			want: `jane\,doe`,
+		},
+		{
+			name: "escaped equals in value",
+			dn:   `uid=jane\=doe,ou=users,dc=example,dc=com`,
+			attr: "uid",
+			want: `jane\=doe`,
+		},
+		{
+			name: "non-matching attribute",
+			dn:   "cn=Jane Doe,ou=users,dc=example,dc=com",
+			attr: "uid",
+			want: "",
+		},
+		{
+			name: "malformed RDN",
+			dn:   "jane,ou=users,dc=example,dc=com",
+			attr: "uid",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FirstRDNValue(tt.dn, tt.attr); got != tt.want {
+				t.Fatalf("FirstRDNValue() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

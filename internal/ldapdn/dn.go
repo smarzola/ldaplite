@@ -23,6 +23,29 @@ func Parent(dn string) string {
 	return parent
 }
 
+// FirstRDNValue returns the first RDN value when its attribute name matches attr.
+func FirstRDNValue(dn, attr string) string {
+	name, value, ok := SplitRDN(RDN(dn))
+	if !ok || !strings.EqualFold(name, attr) {
+		return ""
+	}
+	return value
+}
+
+// SplitRDN splits an RDN into attribute name and value.
+func SplitRDN(rdn string) (string, string, bool) {
+	idx := firstUnescapedEqual(rdn)
+	if idx < 0 {
+		return "", "", false
+	}
+	name := strings.TrimSpace(rdn[:idx])
+	value := strings.TrimSpace(rdn[idx+1:])
+	if name == "" {
+		return "", "", false
+	}
+	return name, value, true
+}
+
 // Equal compares DNs using the repository's current case-insensitive matching.
 func Equal(a, b string) bool {
 	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
@@ -47,14 +70,22 @@ func WithinBase(dn, baseDN string) bool {
 }
 
 func firstUnescapedComma(dn string) int {
+	return firstUnescaped(dn, ',')
+}
+
+func firstUnescapedEqual(rdn string) int {
+	return firstUnescaped(rdn, '=')
+}
+
+func firstUnescaped(s string, target byte) int {
 	escaped := false
-	for i := 0; i < len(dn); i++ {
+	for i := 0; i < len(s); i++ {
 		switch {
 		case escaped:
 			escaped = false
-		case dn[i] == '\\':
+		case s[i] == '\\':
 			escaped = true
-		case dn[i] == ',':
+		case s[i] == target:
 			return i
 		}
 	}

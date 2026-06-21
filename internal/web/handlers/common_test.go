@@ -51,3 +51,45 @@ func TestSetOptionalAttributeRemovesBlankValues(t *testing.T) {
 		t.Fatal("blank optional value should remove the attribute")
 	}
 }
+
+func TestExtractUIDFromDNUsesFirstRDN(t *testing.T) {
+	tests := []struct {
+		name string
+		dn   string
+		want string
+	}{
+		{
+			name: "uid RDN",
+			dn:   "uid=admin,ou=users,dc=example,dc=com",
+			want: "admin",
+		},
+		{
+			name: "case-insensitive uid attribute",
+			dn:   "UID=admin,ou=users,dc=example,dc=com",
+			want: "admin",
+		},
+		{
+			name: "escaped comma in uid value",
+			dn:   `uid=Doe\, Jane,ou=users,dc=example,dc=com`,
+			want: `Doe\, Jane`,
+		},
+		{
+			name: "non uid first RDN",
+			dn:   "cn=admin,ou=users,dc=example,dc=com",
+			want: "",
+		},
+		{
+			name: "empty DN",
+			dn:   "",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ExtractUIDFromDN(tt.dn); got != tt.want {
+				t.Fatalf("ExtractUIDFromDN() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
