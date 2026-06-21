@@ -387,38 +387,3 @@ func (s *SQLiteStore) GetChildren(ctx context.Context, dn string) ([]*models.Ent
 
 	return s.queryEntriesWithAttributes(ctx, "get children", query, dn)
 }
-
-// GetUserPasswordHash retrieves the password hash for a user by UID.
-//
-// SECURITY: This method provides controlled access to password hashes for authentication only.
-// Password hashes are stored exclusively in users.password_hash and are NEVER:
-// - Stored in the attributes table
-// - Returned in LDAP search operations
-// - Accessible through generic GetEntry/SearchEntries methods
-//
-// This isolation ensures passwords cannot be accidentally exposed via LDAP queries.
-// Only bind (authentication) operations should call this method.
-//
-// Phase 3: Uses optimized index (idx_attributes_uid_lookup) for fast uid lookup,
-// then joins to users table for password retrieval.
-func (s *SQLiteStore) GetUserPasswordHash(ctx context.Context, uid string) (string, string, error) {
-	// Join entries, attributes, and users tables to get both password_hash and DN
-	// The WHERE clause uses idx_attributes_uid_lookup index for fast uid lookup
-	query := `
-		SELECT u.password_hash, e.dn
-		FROM users u
-		INNER JOIN entries e ON u.entry_id = e.id
-		INNER JOIN attributes a ON u.entry_id = a.entry_id
-		WHERE a.name = 'uid' AND a.value = ?
-		LIMIT 1
-	`
-	var passwordHash, dn string
-	err := s.db.QueryRowContext(ctx, query, uid).Scan(&passwordHash, &dn)
-	if err == sql.ErrNoRows {
-		return "", "", nil // User not found - return empty strings, not an error
-	}
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get user password hash: %w", err)
-	}
-	return passwordHash, dn, nil
-}

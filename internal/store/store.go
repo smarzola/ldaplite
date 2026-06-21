@@ -44,5 +44,6 @@ type Store interface {
 
 	// Authentication and Authorization
 	GetUserPasswordHash(ctx context.Context, uid string) (passwordHash string, dn string, err error)
+	GetUserPasswordHashByDN(ctx context.Context, dn string) (passwordHash string, canonicalDN string, err error)
 	IsUserInGroup(ctx context.Context, userDN, groupDN string) (bool, error)
 }

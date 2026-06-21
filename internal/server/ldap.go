@@ -182,28 +182,15 @@ func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg 
 		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
-	// Extract UID from the bind DN
-	uid := extractUID(bindDN)
-	if uid == "" {
-		slog.Debug("Failed to extract UID from DN", "dn", bindDN)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
-	}
-
-	// Look up user by UID to get password hash and DN from database
-	passwordHash, dn, err := s.store.GetUserPasswordHash(ctx, uid)
+	// Look up user by bind DN to get password hash and canonical DN from database
+	passwordHash, dn, err := s.store.GetUserPasswordHashByDN(ctx, bindDN)
 	if err != nil {
-		slog.Debug("Error retrieving user", "uid", uid, "error", err)
+		slog.Debug("Error retrieving user", "dn", bindDN, "error", err)
 		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
 	if passwordHash == "" || dn == "" {
-		slog.Debug("User not found", "uid", uid)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
-	}
-
-	// Validate that client's bind DN matches the DN in database
-	if !dnEqual(bindDN, dn) {
-		slog.Debug("Bind DN does not match database DN", "bind_dn", bindDN, "db_dn", dn)
+		slog.Debug("User not found", "dn", bindDN)
 		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
 	}
 
@@ -767,24 +754,6 @@ func entryWriteResultCode(err error) int {
 	}
 
 	return message.ResultCodeOperationsError
-}
-
-// extractUID extracts UID from a DN
-func extractUID(dn string) string {
-	if len(dn) > 4 && dn[:4] == "uid=" {
-		for i, c := range dn[4:] {
-			if c == ',' {
-				return dn[4 : 4+i]
-			}
-		}
-		return dn[4:]
-	}
-	return ""
-}
-
-// dnEqual compares two DNs for equality (case-insensitive)
-func dnEqual(dn1, dn2 string) bool {
-	return strings.EqualFold(strings.TrimSpace(dn1), strings.TrimSpace(dn2))
 }
 
 // serializeFilter converts a goldap Filter to LDAP filter string

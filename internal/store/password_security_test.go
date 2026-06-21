@@ -111,6 +111,17 @@ func TestPasswordNotStoredInAttributes(t *testing.T) {
 		t.Errorf("SearchEntries returned userPassword in Attributes! Value: %s", passwd)
 	}
 
+	passwordHash, canonicalDN, err := store.GetUserPasswordHashByDN(ctx, "UID=TESTUSER,DC=TEST,DC=COM")
+	if err != nil {
+		t.Fatalf("GetUserPasswordHashByDN failed: %v", err)
+	}
+	if passwordHash != hashedPassword {
+		t.Fatalf("GetUserPasswordHashByDN hash = %q, want %q", passwordHash, hashedPassword)
+	}
+	if canonicalDN != user.DN {
+		t.Fatalf("GetUserPasswordHashByDN DN = %q, want %q", canonicalDN, user.DN)
+	}
+
 	t.Log("✓ Password security verified: userPassword not stored in or returned from attributes table")
 }
 

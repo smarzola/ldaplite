@@ -101,6 +101,10 @@ func TestCaseInsensitiveSearchPredicatesUseExpressionIndexes(t *testing.T) {
 		`SELECT e.id FROM entries e WHERE LOWER(e.object_class) = LOWER(?)`,
 		"inetOrgPerson",
 	)
+	assertQueryPlanUsesIndex(t, store, "idx_entries_lower_dn",
+		`SELECT e.id FROM entries e WHERE LOWER(e.dn) = LOWER(?)`,
+		"UID=JDOE,OU=USERS,DC=TEST,DC=COM",
+	)
 	assertQueryPlanUsesIndex(t, store, "idx_attributes_entry_lower_name_value",
 		`SELECT 1 FROM attributes a
 		 WHERE a.entry_id = ?
