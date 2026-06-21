@@ -26,9 +26,9 @@ func TestPasswordNotStoredInAttributes(t *testing.T) {
 		},
 		Security: config.SecurityConfig{
 			Argon2Config: config.Argon2Config{
-				Memory:      65536,
-				Iterations:  3,
-				Parallelism: 2,
+				Memory:      64,
+				Iterations:  1,
+				Parallelism: 1,
 				SaltLength:  16,
 				KeyLength:   32,
 			},
@@ -141,9 +141,9 @@ func TestPasswordUpdateNotStoredInAttributes(t *testing.T) {
 		},
 		Security: config.SecurityConfig{
 			Argon2Config: config.Argon2Config{
-				Memory:      65536,
-				Iterations:  3,
-				Parallelism: 2,
+				Memory:      64,
+				Iterations:  1,
+				Parallelism: 1,
 				SaltLength:  16,
 				KeyLength:   32,
 			},
@@ -245,9 +245,9 @@ func TestMigrationCleansUpExistingPasswords(t *testing.T) {
 		},
 		Security: config.SecurityConfig{
 			Argon2Config: config.Argon2Config{
-				Memory:      65536,
-				Iterations:  3,
-				Parallelism: 2,
+				Memory:      64,
+				Iterations:  1,
+				Parallelism: 1,
 				SaltLength:  16,
 				KeyLength:   32,
 			},

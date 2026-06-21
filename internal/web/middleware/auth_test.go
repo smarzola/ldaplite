@@ -47,9 +47,9 @@ func setupTestAuth(t *testing.T) (*Auth, store.Store) {
 		Security: config.SecurityConfig{
 			AllowAnonymousBind: false,
 			Argon2Config: config.Argon2Config{
-				Memory:      64 * 1024,
-				Iterations:  3,
-				Parallelism: 2,
+				Memory:      64,
+				Iterations:  1,
+				Parallelism: 1,
 				SaltLength:  16,
 				KeyLength:   32,
 			},
