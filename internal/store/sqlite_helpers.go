@@ -4,8 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/smarzola/ldaplite/internal/models"
 )
@@ -78,6 +82,11 @@ func scanEntriesWithAttributes(rows *sql.Rows) ([]*models.Entry, error) {
 		return nil, fmt.Errorf("failed to scan entries: %w", err)
 	}
 	return entries, nil
+}
+
+func isSQLiteUniqueConstraint(err error) bool {
+	var sqliteErr *sqlite.Error
+	return errors.As(err, &sqliteErr) && sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE
 }
 
 func (s *SQLiteStore) queryEntriesWithAttributes(ctx context.Context, operation string, query string, args ...interface{}) ([]*models.Entry, error) {
