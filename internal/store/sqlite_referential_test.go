@@ -179,6 +179,25 @@ func TestCreateGroupRejectsMissingMemberDN(t *testing.T) {
 	}
 }
 
+func TestCreateGroupRejectsMissingMemberAttribute(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	group := models.NewGroup("ou=groups,dc=test,dc=com", "emptygroup", "Empty group")
+
+	err := store.CreateEntry(ctx, group.Entry)
+	if err == nil {
+		t.Fatal("CreateEntry() expected missing-member-attribute error, got nil")
+	}
+	if !errors.Is(err, ErrObjectClassViolation) {
+		t.Fatalf("CreateEntry() error = %v, want ErrObjectClassViolation", err)
+	}
+	if !strings.Contains(err.Error(), "required attribute member is missing") {
+		t.Fatalf("CreateEntry() error = %v, want required attribute member is missing", err)
+	}
+}
+
 func TestCreateGroupAcceptsCaseVariantMemberDN(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()

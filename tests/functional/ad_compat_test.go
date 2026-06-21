@@ -207,6 +207,11 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 		invalidUser.Attribute("cn", []string{"Invalid User"})
 		invalidUser.Attribute("userPassword", []string{"Password123!"})
 		assertLDAPResultCode(t, conn.Add(invalidUser), ldap.LDAPResultObjectClassViolation)
+
+		invalidGroup := ldap.NewAddRequest("cn=invalid-group,"+groupsOUDN, nil)
+		invalidGroup.Attribute("objectClass", []string{"groupOfNames"})
+		invalidGroup.Attribute("cn", []string{"Invalid Group"})
+		assertLDAPResultCode(t, conn.Add(invalidGroup), ldap.LDAPResultObjectClassViolation)
 	})
 
 	t.Run("delete compatibility", func(t *testing.T) {

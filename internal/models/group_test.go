@@ -55,6 +55,7 @@ func TestGroupMultipleMembers(t *testing.T) {
 
 func TestValidateGroup(t *testing.T) {
 	group := NewGroup("ou=groups,dc=example,dc=com", "developers", "")
+	group.AddMember("uid=john,ou=users,dc=example,dc=com")
 
 	err := group.ValidateGroup()
 	assert.NoError(t, err)
@@ -67,5 +68,14 @@ func TestValidateGroupMissingCN(t *testing.T) {
 	err := group.ValidateGroup()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cn")
+	assert.ErrorIs(t, err, ErrRequiredAttributeEmpty)
+}
+
+func TestValidateGroupMissingMember(t *testing.T) {
+	group := NewGroup("ou=groups,dc=example,dc=com", "developers", "")
+
+	err := group.ValidateGroup()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "member")
 	assert.ErrorIs(t, err, ErrRequiredAttributeEmpty)
 }
