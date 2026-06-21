@@ -128,6 +128,14 @@ func parseNonEmptyLines(input string) []string {
 	return lines
 }
 
+func addExtraAttributes(entry *models.Entry, attrs map[string][]string) {
+	for name, values := range attrs {
+		for _, value := range values {
+			entry.AddAttribute(name, value)
+		}
+	}
+}
+
 func loadOrganizationalUnits(ctx context.Context, st store.Store, baseDN string) []*models.Entry {
 	ous, err := st.SearchEntries(ctx, baseDN, "(objectClass=organizationalUnit)")
 	if err != nil {

@@ -91,12 +91,7 @@ func (h *OUHandler) create(w http.ResponseWriter, r *http.Request) {
 	ouEntry := models.NewOrganizationalUnit(parentDN, ou, description)
 
 	// Add extra attributes
-	extraAttrs := ParseAttributes(r.FormValue("attributes"))
-	for name, values := range extraAttrs {
-		for _, value := range values {
-			ouEntry.AddAttribute(name, value)
-		}
-	}
+	addExtraAttributes(ouEntry.Entry, ParseAttributes(r.FormValue("attributes")))
 
 	if err := h.store.CreateEntry(ctx, ouEntry.Entry); err != nil {
 		h.showError(w, r, fmt.Sprintf("Failed to create OU: %v", err), nil)

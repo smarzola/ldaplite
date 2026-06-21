@@ -111,12 +111,7 @@ func (h *UserHandler) create(w http.ResponseWriter, r *http.Request) {
 	user.SetPassword(hashedPassword)
 
 	// Add extra attributes
-	extraAttrs := ParseAttributes(r.FormValue("attributes"))
-	for name, values := range extraAttrs {
-		for _, value := range values {
-			user.AddAttribute(name, value)
-		}
-	}
+	addExtraAttributes(user.Entry, ParseAttributes(r.FormValue("attributes")))
 
 	if err := h.store.CreateEntry(ctx, user.Entry); err != nil {
 		h.showError(w, r, fmt.Sprintf("Failed to create user: %v", err), nil)

@@ -66,6 +66,22 @@ func TestParseNonEmptyLinesTrimsAndDropsBlanks(t *testing.T) {
 	}
 }
 
+func TestAddExtraAttributesPreservesMultiValues(t *testing.T) {
+	entry := models.NewEntry("uid=jdoe,ou=users,dc=test,dc=com", "inetOrgPerson")
+
+	addExtraAttributes(entry, map[string][]string{
+		"mail":  {"jdoe@test.com", "john@test.com"},
+		"title": {"Engineer"},
+	})
+
+	if got := entry.GetAttributes("mail"); len(got) != 2 || got[0] != "jdoe@test.com" || got[1] != "john@test.com" {
+		t.Fatalf("mail values = %#v", got)
+	}
+	if got := entry.GetAttribute("title"); got != "Engineer" {
+		t.Fatalf("title = %q, want Engineer", got)
+	}
+}
+
 func TestExtractUIDFromDNUsesFirstRDN(t *testing.T) {
 	tests := []struct {
 		name string

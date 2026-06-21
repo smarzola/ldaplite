@@ -101,12 +101,7 @@ func (h *GroupHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add extra attributes
-	extraAttrs := ParseAttributes(r.FormValue("attributes"))
-	for name, values := range extraAttrs {
-		for _, value := range values {
-			group.AddAttribute(name, value)
-		}
-	}
+	addExtraAttributes(group.Entry, ParseAttributes(r.FormValue("attributes")))
 
 	if err := h.store.CreateEntry(ctx, group.Entry); err != nil {
 		h.showError(w, r, fmt.Sprintf("Failed to create group: %v", err), nil)
