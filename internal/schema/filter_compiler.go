@@ -187,6 +187,8 @@ func ldapSubstringToSQLLike(value string) string {
 		switch r {
 		case '*':
 			pattern.WriteRune('%')
+		case escapedFilterAsterisk:
+			pattern.WriteRune('*')
 		case '%', '_', '\\':
 			pattern.WriteRune('\\')
 			pattern.WriteRune(r)

@@ -119,6 +119,40 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 				}
 			})
 		}
+
+		literalStarDN := "uid=literalstar," + usersOUDN
+		literalStarUser := ldap.NewAddRequest(literalStarDN, nil)
+		literalStarUser.Attribute("objectClass", []string{"inetOrgPerson"})
+		literalStarUser.Attribute("uid", []string{"literalstar"})
+		literalStarUser.Attribute("cn", []string{"Literal * User"})
+		literalStarUser.Attribute("sn", []string{"User"})
+		literalStarUser.Attribute("userPassword", []string{"Password123!"})
+		if err := conn.Add(literalStarUser); err != nil {
+			t.Fatalf("add literal star user: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = conn.Del(ldap.NewDelRequest(literalStarDN, nil))
+		})
+
+		literalWildcardDN := "uid=literalwildcard," + usersOUDN
+		literalWildcardUser := ldap.NewAddRequest(literalWildcardDN, nil)
+		literalWildcardUser.Attribute("objectClass", []string{"inetOrgPerson"})
+		literalWildcardUser.Attribute("uid", []string{"literalwildcard"})
+		literalWildcardUser.Attribute("cn", []string{"Literal X User"})
+		literalWildcardUser.Attribute("sn", []string{"User"})
+		literalWildcardUser.Attribute("userPassword", []string{"Password123!"})
+		if err := conn.Add(literalWildcardUser); err != nil {
+			t.Fatalf("add literal wildcard comparison user: %v", err)
+		}
+		t.Cleanup(func() {
+			_ = conn.Del(ldap.NewDelRequest(literalWildcardDN, nil))
+		})
+
+		res := search(t, conn, `(cn=Literal \2a User)`, []string{"cn"})
+		assertDNs(t, res, []string{literalStarDN})
+
+		res = search(t, conn, "(cn=Literal * User)", []string{"cn"})
+		assertDNs(t, res, []string{literalStarDN, literalWildcardDN})
 	})
 
 	t.Run("attribute behavior", func(t *testing.T) {

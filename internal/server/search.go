@@ -229,7 +229,7 @@ func serializeFilter(f interface{}) string {
 
 	switch filter := f.(type) {
 	case message.FilterEqualityMatch:
-		return fmt.Sprintf("(%s=%s)", filter.AttributeDesc(), filter.AssertionValue())
+		return fmt.Sprintf("(%s=%s)", filter.AttributeDesc(), escapeLDAPFilterAssertionValue(string(filter.AssertionValue())))
 
 	case message.FilterPresent:
 		return fmt.Sprintf("(%s=*)", string(filter))
@@ -258,13 +258,13 @@ func serializeFilter(f interface{}) string {
 		return "(!" + serializeFilter(filter.Filter) + ")"
 
 	case message.FilterGreaterOrEqual:
-		return fmt.Sprintf("(%s>=%s)", filter.AttributeDesc(), filter.AssertionValue())
+		return fmt.Sprintf("(%s>=%s)", filter.AttributeDesc(), escapeLDAPFilterAssertionValue(string(filter.AssertionValue())))
 
 	case message.FilterLessOrEqual:
-		return fmt.Sprintf("(%s<=%s)", filter.AttributeDesc(), filter.AssertionValue())
+		return fmt.Sprintf("(%s<=%s)", filter.AttributeDesc(), escapeLDAPFilterAssertionValue(string(filter.AssertionValue())))
 
 	case message.FilterApproxMatch:
-		return fmt.Sprintf("(%s~=%s)", filter.AttributeDesc(), filter.AssertionValue())
+		return fmt.Sprintf("(%s~=%s)", filter.AttributeDesc(), escapeLDAPFilterAssertionValue(string(filter.AssertionValue())))
 
 	case message.FilterSubstrings:
 		attr := string(filter.Type_())
@@ -276,13 +276,13 @@ func serializeFilter(f interface{}) string {
 		for _, sub := range filter.Substrings() {
 			switch s := sub.(type) {
 			case message.SubstringInitial:
-				sb.WriteString(string(s))
+				sb.WriteString(escapeLDAPFilterAssertionValue(string(s)))
 				sb.WriteString("*")
 			case message.SubstringAny:
-				sb.WriteString(string(s))
+				sb.WriteString(escapeLDAPFilterAssertionValue(string(s)))
 				sb.WriteString("*")
 			case message.SubstringFinal:
-				sb.WriteString(string(s))
+				sb.WriteString(escapeLDAPFilterAssertionValue(string(s)))
 			}
 		}
 		sb.WriteString(")")
@@ -295,4 +295,25 @@ func serializeFilter(f interface{}) string {
 		}
 		return "(objectClass=*)"
 	}
+}
+
+func escapeLDAPFilterAssertionValue(value string) string {
+	var escaped strings.Builder
+	for _, r := range value {
+		switch r {
+		case '*':
+			escaped.WriteString(`\2a`)
+		case '(':
+			escaped.WriteString(`\28`)
+		case ')':
+			escaped.WriteString(`\29`)
+		case '\\':
+			escaped.WriteString(`\5c`)
+		case 0:
+			escaped.WriteString(`\00`)
+		default:
+			escaped.WriteRune(r)
+		}
+	}
+	return escaped.String()
 }

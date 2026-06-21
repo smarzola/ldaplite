@@ -25,6 +25,29 @@ func TestParsePresent(t *testing.T) {
 	assert.Equal(t, "objectClass", filter.Attribute)
 }
 
+func TestParseEscapedAssertionValue(t *testing.T) {
+	filter, err := ParseFilter(`(cn=Literal \2a User\28test\29)`)
+	assert.NoError(t, err)
+	assert.NotNil(t, filter)
+	assert.Equal(t, FilterTypeEquality, filter.Type)
+	assert.Equal(t, "cn", filter.Attribute)
+	assert.Equal(t, "Literal * User(test)", filter.Value)
+}
+
+func TestParseEscapedAsteriskInSubstring(t *testing.T) {
+	filter, err := ParseFilter(`(cn=Literal \2a*)`)
+	assert.NoError(t, err)
+	assert.NotNil(t, filter)
+	assert.Equal(t, FilterTypeSubstrings, filter.Type)
+
+	entry := models.NewEntry("uid=literal,ou=users,dc=example,dc=com", "inetOrgPerson")
+	entry.SetAttribute("cn", "Literal * User")
+	assert.True(t, filter.Matches(entry))
+
+	entry.SetAttribute("cn", "Literal anything User")
+	assert.False(t, filter.Matches(entry))
+}
+
 func TestParseAnd(t *testing.T) {
 	filter, err := ParseFilter("(&(uid=john)(cn=John Doe))")
 	assert.NoError(t, err)

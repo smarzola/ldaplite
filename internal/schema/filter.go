@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/smarzola/ldaplite/internal/models"
@@ -29,6 +30,8 @@ type Filter struct {
 	Value     string
 	Filters   []*Filter
 }
+
+const escapedFilterAsterisk = '\ue000'
 
 // ParseFilter parses an LDAP filter string
 // Supports basic filter syntax: (&(objectClass=*)), (uid=john), etc.
@@ -151,17 +154,17 @@ func parseFilterRecursive(filterStr string, pos int) (*Filter, int, error) {
 	if idx := strings.Index(filterPart, ">="); idx != -1 {
 		// Greater or equal filter: (attr>=value)
 		attribute = strings.TrimSpace(filterPart[:idx])
-		value = strings.TrimSpace(filterPart[idx+2:])
+		value = decodeLDAPFilterValue(strings.TrimSpace(filterPart[idx+2:]), false)
 		filterType = FilterTypeGreaterOrEqual
 	} else if idx := strings.Index(filterPart, "<="); idx != -1 {
 		// Less or equal filter: (attr<=value)
 		attribute = strings.TrimSpace(filterPart[:idx])
-		value = strings.TrimSpace(filterPart[idx+2:])
+		value = decodeLDAPFilterValue(strings.TrimSpace(filterPart[idx+2:]), false)
 		filterType = FilterTypeLessOrEqual
 	} else if idx := strings.Index(filterPart, "~="); idx != -1 {
 		// Approximate match filter: (attr~=value)
 		attribute = strings.TrimSpace(filterPart[:idx])
-		value = strings.TrimSpace(filterPart[idx+2:])
+		value = decodeLDAPFilterValue(strings.TrimSpace(filterPart[idx+2:]), false)
 		filterType = FilterTypeApproxMatch
 	} else {
 		// Parse attribute=value, attribute=*, etc.
@@ -171,17 +174,20 @@ func parseFilterRecursive(filterStr string, pos int) (*Filter, int, error) {
 		}
 
 		attribute = strings.TrimSpace(parts[0])
-		value = strings.TrimSpace(parts[1])
+		rawValue := strings.TrimSpace(parts[1])
 
-		if value == "*" {
+		if rawValue == "*" {
 			// Presence filter: (attr=*)
 			filterType = FilterTypePresent
-		} else if strings.Contains(value, "*") {
+			value = "*"
+		} else if containsUnescapedWildcard(rawValue) {
 			// Substring filter: (attr=*value*), (attr=value*), (attr=*value)
 			filterType = FilterTypeSubstrings
+			value = decodeLDAPFilterValue(rawValue, true)
 		} else {
 			// Equality filter: (attr=value)
 			filterType = FilterTypeEquality
+			value = decodeLDAPFilterValue(rawValue, false)
 		}
 	}
 
@@ -192,6 +198,48 @@ func parseFilterRecursive(filterStr string, pos int) (*Filter, int, error) {
 	}
 
 	return filter, pos + endPos + 1, nil
+}
+
+func containsUnescapedWildcard(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] == '\\' && i+2 < len(value) && isHexPair(value[i+1], value[i+2]) {
+			i += 2
+			continue
+		}
+		if value[i] == '*' {
+			return true
+		}
+	}
+	return false
+}
+
+func decodeLDAPFilterValue(value string, preserveEscapedAsterisk bool) string {
+	var decoded strings.Builder
+	for i := 0; i < len(value); i++ {
+		if value[i] == '\\' && i+2 < len(value) && isHexPair(value[i+1], value[i+2]) {
+			hexValue := value[i+1 : i+3]
+			n, err := strconv.ParseUint(hexValue, 16, 8)
+			if err == nil {
+				if preserveEscapedAsterisk && byte(n) == '*' {
+					decoded.WriteRune(escapedFilterAsterisk)
+				} else {
+					decoded.WriteByte(byte(n))
+				}
+				i += 2
+				continue
+			}
+		}
+		decoded.WriteByte(value[i])
+	}
+	return decoded.String()
+}
+
+func isHexPair(a, b byte) bool {
+	return isHexByte(a) && isHexByte(b)
+}
+
+func isHexByte(b byte) bool {
+	return ('0' <= b && b <= '9') || ('a' <= b && b <= 'f') || ('A' <= b && b <= 'F')
 }
 
 // matchSubstring checks if a value matches an LDAP substring pattern
@@ -211,34 +259,41 @@ func matchSubstring(value, pattern string) bool {
 	}
 
 	// Check first part (if not empty, must be at start)
-	if parts[0] != "" {
-		if !strings.HasPrefix(value, parts[0]) {
+	firstPart := substringLiteral(parts[0])
+	if firstPart != "" {
+		if !strings.HasPrefix(value, firstPart) {
 			return false
 		}
-		value = value[len(parts[0]):]
+		value = value[len(firstPart):]
 	}
 
 	// Check last part (if not empty, must be at end)
-	if parts[len(parts)-1] != "" {
-		if !strings.HasSuffix(value, parts[len(parts)-1]) {
+	lastPart := substringLiteral(parts[len(parts)-1])
+	if lastPart != "" {
+		if !strings.HasSuffix(value, lastPart) {
 			return false
 		}
-		value = value[:len(value)-len(parts[len(parts)-1])]
+		value = value[:len(value)-len(lastPart)]
 	}
 
 	// Check middle parts (must appear in order)
 	for i := 1; i < len(parts)-1; i++ {
-		if parts[i] == "" {
+		part := substringLiteral(parts[i])
+		if part == "" {
 			continue
 		}
-		idx := strings.Index(value, parts[i])
+		idx := strings.Index(value, part)
 		if idx == -1 {
 			return false
 		}
-		value = value[idx+len(parts[i]):]
+		value = value[idx+len(part):]
 	}
 
 	return true
+}
+
+func substringLiteral(value string) string {
+	return strings.ReplaceAll(value, string(escapedFilterAsterisk), "*")
 }
 
 // Matches checks if an entry matches this filter

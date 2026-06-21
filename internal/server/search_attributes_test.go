@@ -140,3 +140,11 @@ func TestSearchResponseAttributesProjectsOperationalTimestamps(t *testing.T) {
 		t.Fatalf("modifyTimestamp should be projected from Entry.UpdatedAt, got %v", got["modifytimestamp"])
 	}
 }
+
+func TestEscapeLDAPFilterAssertionValue(t *testing.T) {
+	got := escapeLDAPFilterAssertionValue(`A*B(C)\` + string(rune(0)))
+	want := `A\2aB\28C\29\5c\00`
+	if got != want {
+		t.Fatalf("escapeLDAPFilterAssertionValue() = %q, want %q", got, want)
+	}
+}

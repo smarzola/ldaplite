@@ -171,6 +171,15 @@ func TestCompileSubstring(t *testing.T) {
 			wantPattern: `100\% Real\_User%`,
 		},
 		{
+			name: "escaped LDAP wildcard stays literal",
+			filter: &Filter{
+				Type:      FilterTypeSubstrings,
+				Attribute: "cn",
+				Value:     "Literal " + string(escapedFilterAsterisk) + "*",
+			},
+			wantPattern: `Literal *%`,
+		},
+		{
 			name: "objectClass substring should fail",
 			filter: &Filter{
 				Type:      FilterTypeSubstrings,
