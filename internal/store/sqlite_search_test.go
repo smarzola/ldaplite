@@ -11,7 +11,9 @@ import (
 )
 
 // setupTestStore creates an in-memory SQLite store with test data
-func setupTestStore(t *testing.T) *SQLiteStore {
+func setupTestStore(t testing.TB) *SQLiteStore {
+	t.Helper()
+
 	// Use a temporary file instead of :memory: because migrations don't work well with :memory:
 	tmpfile := t.TempDir() + "/test.db"
 
@@ -82,6 +84,64 @@ func setupTestStore(t *testing.T) *SQLiteStore {
 	}
 
 	return store
+}
+
+func BenchmarkSearchEntriesEqualityFilter(b *testing.B) {
+	store := setupTestStore(b)
+	defer store.Close()
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		entries, err := store.SearchEntries(ctx, "dc=test,dc=com", "(uid=jdoe)")
+		if err != nil {
+			b.Fatalf("SearchEntries() error = %v", err)
+		}
+		if len(entries) != 1 {
+			b.Fatalf("SearchEntries() got %d entries, want 1", len(entries))
+		}
+	}
+}
+
+func BenchmarkSearchEntriesSingleLevelScope(b *testing.B) {
+	store := setupTestStore(b)
+	defer store.Close()
+	ctx := context.Background()
+
+	options := SearchOptions{
+		BaseDN:          "ou=users,dc=test,dc=com",
+		Filter:          "(objectClass=inetOrgPerson)",
+		Scope:           SearchScopeSingleLevel,
+		IncludeMemberOf: false,
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		entries, err := store.SearchEntriesWithOptions(ctx, options)
+		if err != nil {
+			b.Fatalf("SearchEntriesWithOptions() error = %v", err)
+		}
+		if len(entries) != 5 {
+			b.Fatalf("SearchEntriesWithOptions() got %d entries, want 5", len(entries))
+		}
+	}
+}
+
+func BenchmarkSearchEntriesMemberOfFilter(b *testing.B) {
+	store := setupTestStore(b)
+	defer store.Close()
+	ctx := context.Background()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		entries, err := store.SearchEntries(ctx, "dc=test,dc=com", "(memberOf=cn=admins,ou=groups,dc=test,dc=com)")
+		if err != nil {
+			b.Fatalf("SearchEntries() error = %v", err)
+		}
+		if len(entries) != 1 {
+			b.Fatalf("SearchEntries() got %d entries, want 1", len(entries))
+		}
+	}
 }
 
 func TestCaseInsensitiveSearchPredicatesUseExpressionIndexes(t *testing.T) {
