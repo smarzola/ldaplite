@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -37,6 +38,9 @@ func TestCreateEntryRejectsMissingParentDN(t *testing.T) {
 	if err == nil {
 		t.Fatal("CreateEntry() expected missing-parent error, got nil")
 	}
+	if !errors.Is(err, ErrNoSuchObject) {
+		t.Fatalf("CreateEntry() error = %v, want ErrNoSuchObject", err)
+	}
 	if !strings.Contains(err.Error(), "parent DN does not exist") {
 		t.Fatalf("CreateEntry() error = %v, want parent DN does not exist", err)
 	}
@@ -53,6 +57,9 @@ func TestCreateGroupRejectsMissingMemberDN(t *testing.T) {
 	err := store.CreateEntry(ctx, group.Entry)
 	if err == nil {
 		t.Fatal("CreateEntry() expected missing-member error, got nil")
+	}
+	if !errors.Is(err, ErrConstraintViolation) {
+		t.Fatalf("CreateEntry() error = %v, want ErrConstraintViolation", err)
 	}
 	if !strings.Contains(err.Error(), "group member does not exist") {
 		t.Fatalf("CreateEntry() error = %v, want group member does not exist", err)
@@ -81,6 +88,9 @@ func TestUpdateGroupRejectsMissingMemberDNAndRollsBack(t *testing.T) {
 	err = store.UpdateEntry(ctx, developers)
 	if err == nil {
 		t.Fatal("UpdateEntry() expected missing-member error, got nil")
+	}
+	if !errors.Is(err, ErrConstraintViolation) {
+		t.Fatalf("UpdateEntry() error = %v, want ErrConstraintViolation", err)
 	}
 	if !strings.Contains(err.Error(), "group member does not exist") {
 		t.Fatalf("UpdateEntry() error = %v, want group member does not exist", err)

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -765,11 +766,17 @@ func entryWriteResultCode(err error) int {
 		return message.ResultCodeSuccess
 	}
 
-	errMsg := strings.ToLower(err.Error())
-	if strings.Contains(errMsg, "required attribute") ||
-		strings.Contains(errMsg, "objectclass is required") ||
-		strings.Contains(errMsg, "objectclass is missing") {
+	if errors.Is(err, store.ErrEntryAlreadyExists) {
+		return message.ResultCodeEntryAlreadyExists
+	}
+	if errors.Is(err, store.ErrNoSuchObject) {
+		return message.ResultCodeNoSuchObject
+	}
+	if errors.Is(err, store.ErrObjectClassViolation) {
 		return message.ResultCodeObjectClassViolation
+	}
+	if errors.Is(err, store.ErrConstraintViolation) {
+		return message.ResultCodeConstraintViolation
 	}
 
 	return message.ResultCodeOperationsError

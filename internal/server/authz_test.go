@@ -1,9 +1,13 @@
 package server
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/lor00x/goldap/message"
+
 	"github.com/smarzola/ldaplite/internal/protocol"
+	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/config"
 )
 
@@ -149,6 +153,48 @@ func TestProtectedAttributePolicy(t *testing.T) {
 			}
 			if !isModifyProtectedAttribute(attr) {
 				t.Fatalf("%s must be protected during Modify", attr)
+			}
+		})
+	}
+}
+
+func TestEntryWriteResultCodeUsesTypedStoreErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{
+			name: "entry already exists",
+			err:  fmt.Errorf("wrapped: %w", store.ErrEntryAlreadyExists),
+			want: message.ResultCodeEntryAlreadyExists,
+		},
+		{
+			name: "no such object",
+			err:  fmt.Errorf("wrapped: %w", store.ErrNoSuchObject),
+			want: message.ResultCodeNoSuchObject,
+		},
+		{
+			name: "object class violation",
+			err:  fmt.Errorf("wrapped: %w", store.ErrObjectClassViolation),
+			want: message.ResultCodeObjectClassViolation,
+		},
+		{
+			name: "constraint violation",
+			err:  fmt.Errorf("wrapped: %w", store.ErrConstraintViolation),
+			want: message.ResultCodeConstraintViolation,
+		},
+		{
+			name: "unknown error",
+			err:  fmt.Errorf("unknown"),
+			want: message.ResultCodeOperationsError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := entryWriteResultCode(tt.err); got != tt.want {
+				t.Fatalf("entryWriteResultCode() = %d, want %d", got, tt.want)
 			}
 		})
 	}

@@ -255,7 +255,7 @@ func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, e
 // CONSISTENCY: Attributes like uid, cn, ou are duplicated in specialized tables for query performance
 func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) error {
 	if err := entry.Validate(); err != nil {
-		return err
+		return classifyModelValidationError(err)
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -285,6 +285,9 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 	)
 
 	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return fmt.Errorf("%w: %s", ErrEntryAlreadyExists, entry.DN)
+		}
 		return fmt.Errorf("failed to create entry: %w", err)
 	}
 
@@ -327,7 +330,7 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 		// Validate user-specific requirements
 		user := &models.User{Entry: entry, UID: entry.GetAttribute("uid")}
 		if err := user.ValidateUser(); err != nil {
-			return err
+			return classifyModelValidationError(err)
 		}
 		// Users table stores only password_hash (security-sensitive data)
 		passwordHash := entry.GetAttribute("userPassword")
@@ -339,7 +342,7 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 		// Validate group-specific requirements
 		group := &models.Group{Entry: entry, CN: entry.GetAttribute("cn")}
 		if err := group.ValidateGroup(); err != nil {
-			return err
+			return classifyModelValidationError(err)
 		}
 		// Groups table stores only entry_id (needed for group_members FK)
 		groupQuery := `INSERT INTO groups (entry_id) VALUES (?)`
@@ -365,7 +368,7 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 					return fmt.Errorf("failed to verify group member %s: %w", memberDN, err)
 				}
 				if rowsAffected == 0 {
-					return fmt.Errorf("group member does not exist: %s", memberDN)
+					return fmt.Errorf("%w: group member does not exist: %s", ErrConstraintViolation, memberDN)
 				}
 			}
 		}
@@ -373,7 +376,7 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 		// Validate OU-specific requirements
 		ouModel := &models.OrganizationalUnit{Entry: entry, OU: entry.GetAttribute("ou")}
 		if err := ouModel.ValidateOU(); err != nil {
-			return err
+			return classifyModelValidationError(err)
 		}
 		// OUs table stores only entry_id (referential integrity marker)
 		ouQuery := `INSERT INTO organizational_units (entry_id) VALUES (?)`
@@ -395,7 +398,7 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 // CONSISTENCY: Specialized table data (uid, cn, ou) remains in sync via initial CreateEntry
 func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) error {
 	if err := entry.Validate(); err != nil {
-		return err
+		return classifyModelValidationError(err)
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -415,7 +418,7 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 		return fmt.Errorf("failed to verify entry update: %w", err)
 	}
 	if rowsAffected == 0 {
-		return fmt.Errorf("entry not found: %s", entry.DN)
+		return fmt.Errorf("%w: entry not found: %s", ErrNoSuchObject, entry.DN)
 	}
 
 	// Step 2: Replace attributes in attributes table (delete-then-insert pattern)
@@ -484,7 +487,7 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 					return fmt.Errorf("failed to verify group member %s: %w", memberDN, err)
 				}
 				if rowsAffected == 0 {
-					return fmt.Errorf("group member does not exist: %s", memberDN)
+					return fmt.Errorf("%w: group member does not exist: %s", ErrConstraintViolation, memberDN)
 				}
 			}
 		}
@@ -510,7 +513,7 @@ func (s *SQLiteStore) validateEntryPlacement(ctx context.Context, tx *sql.Tx, en
 	}
 
 	if entry.ParentDN == "" {
-		return fmt.Errorf("parent DN is required for entry: %s", entry.DN)
+		return fmt.Errorf("%w: parent DN is required for entry: %s", ErrNoSuchObject, entry.DN)
 	}
 
 	exists, err := entryExistsTx(ctx, tx, entry.ParentDN)
@@ -518,7 +521,7 @@ func (s *SQLiteStore) validateEntryPlacement(ctx context.Context, tx *sql.Tx, en
 		return fmt.Errorf("failed to verify parent DN: %w", err)
 	}
 	if !exists {
-		return fmt.Errorf("parent DN does not exist: %s", entry.ParentDN)
+		return fmt.Errorf("%w: parent DN does not exist: %s", ErrNoSuchObject, entry.ParentDN)
 	}
 
 	return nil
@@ -553,7 +556,7 @@ func (s *SQLiteStore) DeleteEntry(ctx context.Context, dn string) error {
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("entry not found: %s", dn)
+		return fmt.Errorf("%w: entry not found: %s", ErrNoSuchObject, dn)
 	}
 
 	return nil
