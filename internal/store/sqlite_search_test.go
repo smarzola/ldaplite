@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/smarzola/ldaplite/internal/models"
@@ -80,6 +81,66 @@ func setupTestStore(t *testing.T) *SQLiteStore {
 	}
 
 	return store
+}
+
+func TestCaseInsensitiveSearchPredicatesUseExpressionIndexes(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	jdoe, err := store.GetEntry(ctx, "uid=jdoe,ou=users,dc=test,dc=com")
+	if err != nil {
+		t.Fatalf("GetEntry() failed: %v", err)
+	}
+	if jdoe == nil {
+		t.Fatal("expected jdoe fixture to exist")
+	}
+
+	assertQueryPlanUsesIndex(t, store, "idx_entries_lower_object_class",
+		`SELECT e.id FROM entries e WHERE LOWER(e.object_class) = LOWER(?)`,
+		"inetOrgPerson",
+	)
+	assertQueryPlanUsesIndex(t, store, "idx_attributes_entry_lower_name_value",
+		`SELECT 1 FROM attributes a
+		 WHERE a.entry_id = ?
+		   AND LOWER(a.name) = LOWER(?)
+		   AND LOWER(a.value) = LOWER(?)`,
+		jdoe.ID, "uid", "JDOE",
+	)
+	assertQueryPlanUsesIndex(t, store, "idx_attributes_entry_lower_name",
+		`SELECT 1 FROM attributes a
+		 WHERE a.entry_id = ?
+		   AND LOWER(a.name) = LOWER(?)`,
+		jdoe.ID, "mail",
+	)
+}
+
+func assertQueryPlanUsesIndex(t *testing.T, store *SQLiteStore, indexName string, query string, args ...interface{}) {
+	t.Helper()
+
+	rows, err := store.db.Query("EXPLAIN QUERY PLAN "+query, args...)
+	if err != nil {
+		t.Fatalf("EXPLAIN QUERY PLAN failed: %v", err)
+	}
+	defer rows.Close()
+
+	var details []string
+	for rows.Next() {
+		var id, parent, notUsed int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notUsed, &detail); err != nil {
+			t.Fatalf("failed to scan query plan: %v", err)
+		}
+		details = append(details, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("query plan rows failed: %v", err)
+	}
+
+	plan := strings.Join(details, "\n")
+	if !strings.Contains(plan, indexName) {
+		t.Fatalf("query plan did not use %s:\n%s", indexName, plan)
+	}
 }
 
 func TestSearchEntriesWithEqualityFilter(t *testing.T) {

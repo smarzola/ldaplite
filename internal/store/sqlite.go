@@ -320,10 +320,9 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 	// - groups: entry_id (needed for group_members foreign key relationships)
 	// - organizational_units: entry_id (referential integrity marker)
 	//
-	// All other attributes (uid, cn, ou) are in attributes table with optimized indexes:
-	// - idx_attributes_uid_lookup on (name, value) WHERE name = 'uid'
-	// - idx_attributes_cn_lookup on (name, value) WHERE name = 'cn'
-	// - idx_attributes_ou_lookup on (name, value) WHERE name = 'ou'
+	// All other attributes (uid, cn, ou) are in attributes table with indexes for:
+	// - exact lookup by stored name/value
+	// - per-entry case-insensitive lookup via expression indexes on LOWER(name/value)
 	//
 	// Result: Zero storage redundancy while maintaining query performance
 	if entry.IsUser() {
