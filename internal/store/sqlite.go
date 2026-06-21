@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/smarzola/ldaplite/pkg/crypto"
@@ -264,11 +265,11 @@ func (s *SQLiteStore) validateEntryPlacement(ctx context.Context, tx *sql.Tx, en
 	if baseDN == "" {
 		return fmt.Errorf("base DN is not configured")
 	}
-	if !dnWithinBase(entry.DN, baseDN) {
+	if !ldapdn.WithinBase(entry.DN, baseDN) {
 		return fmt.Errorf("entry DN %s is outside base DN %s", entry.DN, baseDN)
 	}
 
-	if strings.EqualFold(entry.DN, baseDN) {
+	if ldapdn.Equal(entry.DN, baseDN) {
 		if entry.ParentDN != "" {
 			return fmt.Errorf("base DN entry must not have parent DN: %s", entry.ParentDN)
 		}
@@ -297,12 +298,6 @@ func entryExistsTx(ctx context.Context, tx *sql.Tx, dn string) (bool, error) {
 		return false, err
 	}
 	return exists, nil
-}
-
-func dnWithinBase(dn, baseDN string) bool {
-	dn = strings.TrimSpace(dn)
-	baseDN = strings.TrimSpace(baseDN)
-	return strings.EqualFold(dn, baseDN) || strings.HasSuffix(strings.ToLower(dn), ","+strings.ToLower(baseDN))
 }
 
 // DeleteEntry deletes an entry

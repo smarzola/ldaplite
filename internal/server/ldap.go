@@ -12,6 +12,7 @@ import (
 
 	"github.com/lor00x/goldap/message"
 
+	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/protocol"
 	"github.com/smarzola/ldaplite/internal/store"
@@ -305,16 +306,10 @@ func (s *Server) handleAdd(ctx context.Context, conn *protocol.Connection, msg *
 		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeEntryAlreadyExists))
 	}
 
-	// Extract parent DN
-	parentDN := ""
-	if idx := findFirstComma(dn); idx >= 0 && idx+1 < len(dn) {
-		parentDN = dn[idx+1:]
-	}
-
 	// Create new entry
 	entry := &models.Entry{
 		DN:         dn,
-		ParentDN:   parentDN,
+		ParentDN:   ldapdn.Parent(dn),
 		Attributes: make(map[string][]string),
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
@@ -830,17 +825,4 @@ func serializeFilter(f interface{}) string {
 		}
 		return "(objectClass=*)"
 	}
-}
-
-// findFirstComma finds the first unescaped comma in a DN string
-func findFirstComma(dn string) int {
-	for i := 0; i < len(dn); i++ {
-		if dn[i] == ',' {
-			if i > 0 && dn[i-1] == '\\' {
-				continue
-			}
-			return i
-		}
-	}
-	return -1
 }

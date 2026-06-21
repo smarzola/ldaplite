@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/smarzola/ldaplite/internal/ldapdn"
 )
 
 // ObjectClass represents LDAP object classes we support
@@ -29,10 +31,9 @@ type Entry struct {
 
 // NewEntry creates a new LDAP entry
 func NewEntry(dn string, objectClass string) *Entry {
-	parentDN := extractParentDN(dn)
 	return &Entry{
 		DN:          dn,
-		ParentDN:    parentDN,
+		ParentDN:    ldapdn.Parent(dn),
 		ObjectClass: objectClass,
 		Attributes:  make(map[string][]string),
 		CreatedAt:   time.Now(),
@@ -118,27 +119,10 @@ func (e *Entry) IsGroup() bool {
 	return e.ObjectClass == string(ObjectClassGroupOfNames)
 }
 
-// extractParentDN extracts the parent DN from a DN
-// e.g., "cn=admin,ou=users,dc=example,dc=com" -> "ou=users,dc=example,dc=com"
-func extractParentDN(dn string) string {
-	if !strings.Contains(dn, ",") {
-		return ""
-	}
-	parts := strings.SplitN(dn, ",", 2)
-	if len(parts) > 1 {
-		return parts[1]
-	}
-	return ""
-}
-
 // GetRDN returns the Relative Distinguished Name (first component)
 // e.g., "cn=admin" from "cn=admin,ou=users,dc=example,dc=com"
 func (e *Entry) GetRDN() string {
-	parts := strings.SplitN(e.DN, ",", 2)
-	if len(parts) > 0 {
-		return parts[0]
-	}
-	return ""
+	return ldapdn.RDN(e.DN)
 }
 
 // Validate checks if the entry has required attributes
