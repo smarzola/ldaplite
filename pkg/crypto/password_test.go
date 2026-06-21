@@ -8,27 +8,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewPasswordHasher(t *testing.T) {
-	cfg := config.Argon2Config{
+func testArgon2Config() config.Argon2Config {
+	return config.Argon2Config{
+		Memory:      64,
+		Iterations:  1,
+		Parallelism: 1,
+		SaltLength:  16,
+		KeyLength:   32,
+	}
+}
+
+func productionArgon2Config() config.Argon2Config {
+	return config.Argon2Config{
 		Memory:      65536,
 		Iterations:  3,
 		Parallelism: 2,
 		SaltLength:  16,
 		KeyLength:   32,
 	}
+}
+
+func TestNewPasswordHasher(t *testing.T) {
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 	assert.NotNil(t, hasher)
 }
 
 func TestHash(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := productionArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 	password := "test-password-123"
@@ -46,13 +54,7 @@ func TestHash(t *testing.T) {
 }
 
 func TestHashDifferent(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 	password := "test-password"
@@ -68,13 +70,7 @@ func TestHashDifferent(t *testing.T) {
 }
 
 func TestVerify(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 	password := "correct-password"
@@ -89,13 +85,7 @@ func TestVerify(t *testing.T) {
 }
 
 func TestVerifyWrongPassword(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 	password := "correct-password"
@@ -110,13 +100,7 @@ func TestVerifyWrongPassword(t *testing.T) {
 }
 
 func TestVerifyInvalidHash(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 
@@ -127,13 +111,7 @@ func TestVerifyInvalidHash(t *testing.T) {
 }
 
 func TestVerifyEmptyPassword(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 	password := "test-password"
@@ -148,13 +126,7 @@ func TestVerifyEmptyPassword(t *testing.T) {
 }
 
 func TestHashEmpty(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 
@@ -170,13 +142,7 @@ func TestHashEmpty(t *testing.T) {
 }
 
 func TestVerifyMultipleTimes(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 	password := "test-password"
@@ -195,13 +161,7 @@ func TestVerifyMultipleTimes(t *testing.T) {
 // New tests for ProcessPassword
 
 func TestProcessPassword_PlainText(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 	password := "plain-text-password"
@@ -220,13 +180,7 @@ func TestProcessPassword_PlainText(t *testing.T) {
 }
 
 func TestProcessPassword_PreHashed(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 	password := "test-password"
@@ -249,13 +203,7 @@ func TestProcessPassword_PreHashed(t *testing.T) {
 }
 
 func TestProcessPassword_UnsupportedScheme(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 
@@ -269,13 +217,7 @@ func TestProcessPassword_UnsupportedScheme(t *testing.T) {
 }
 
 func TestProcessPassword_MalformedScheme(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 
@@ -288,13 +230,7 @@ func TestProcessPassword_MalformedScheme(t *testing.T) {
 }
 
 func TestProcessPassword_InvalidHashStructure(t *testing.T) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := testArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 
@@ -360,13 +296,7 @@ func TestExtractScheme(t *testing.T) {
 }
 
 func BenchmarkHash(b *testing.B) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := productionArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 	password := "benchmark-password"
@@ -378,13 +308,7 @@ func BenchmarkHash(b *testing.B) {
 }
 
 func BenchmarkVerify(b *testing.B) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := productionArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 	password := "benchmark-password"
@@ -397,13 +321,7 @@ func BenchmarkVerify(b *testing.B) {
 }
 
 func BenchmarkProcessPassword(b *testing.B) {
-	cfg := config.Argon2Config{
-		Memory:      65536,
-		Iterations:  3,
-		Parallelism: 2,
-		SaltLength:  16,
-		KeyLength:   32,
-	}
+	cfg := productionArgon2Config()
 
 	hasher := NewPasswordHasher(cfg)
 	password := "benchmark-password"
