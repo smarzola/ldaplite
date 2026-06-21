@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"strconv"
@@ -59,7 +60,7 @@ type WebUIConfig struct {
 	BindAddress string
 }
 
-func Load() *Config {
+func LoadFromEnv() (*Config, error) {
 	cfg := &Config{
 		Server: ServerConfig{
 			Port:         getEnvInt("LDAP_PORT", 3389),
@@ -98,13 +99,29 @@ func Load() *Config {
 		},
 	}
 
-	// Validate required fields
-	if cfg.LDAP.BaseDN == "" {
-		slog.Error("LDAP_BASE_DN is required")
-		os.Exit(1)
+	if err := cfg.Validate(); err != nil {
+		return cfg, err
 	}
 
+	return cfg, nil
+}
+
+func Load() *Config {
+	cfg, err := LoadFromEnv()
+	if err != nil {
+		return cfg
+	}
 	return cfg
+}
+
+func (c *Config) Validate() error {
+	if c == nil {
+		return fmt.Errorf("config is nil")
+	}
+	if strings.TrimSpace(c.LDAP.BaseDN) == "" {
+		return fmt.Errorf("LDAP_BASE_DN is required")
+	}
+	return nil
 }
 
 func (c *Config) Print() {

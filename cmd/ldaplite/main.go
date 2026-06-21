@@ -55,7 +55,10 @@ func init() {
 
 func startServer() error {
 	// Load configuration
-	cfg := config.Load()
+	cfg, err := config.LoadFromEnv()
+	if err != nil {
+		return err
+	}
 	cfg.Print()
 
 	// Initialize structured logging (slog only, no unstructured logs)
@@ -167,7 +170,10 @@ var healthcheckCmd = &cobra.Command{
 	Use:   "healthcheck",
 	Short: "Perform a health check",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg := config.Load()
+		cfg, err := config.LoadFromEnv()
+		if err != nil {
+			return err
+		}
 		if err := runHealthcheck(cmd.Context(), cfg); err != nil {
 			return err
 		}

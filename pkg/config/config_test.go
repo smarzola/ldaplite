@@ -32,6 +32,24 @@ func TestLoadDefaults(t *testing.T) {
 	assert.False(t, cfg.WebUI.Enabled)
 }
 
+func TestLoadFromEnvReturnsValidationError(t *testing.T) {
+	t.Setenv("LDAP_BASE_DN", "   ")
+
+	cfg, err := LoadFromEnv()
+
+	assert.ErrorContains(t, err, "LDAP_BASE_DN is required")
+	assert.NotNil(t, cfg)
+	assert.Equal(t, "   ", cfg.LDAP.BaseDN)
+}
+
+func TestValidateRequiresBaseDN(t *testing.T) {
+	cfg := &Config{}
+
+	err := cfg.Validate()
+
+	assert.ErrorContains(t, err, "LDAP_BASE_DN is required")
+}
+
 func TestLoadCustomPort(t *testing.T) {
 	t.Cleanup(func() {
 		os.Unsetenv("LDAP_BASE_DN")
