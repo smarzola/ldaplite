@@ -107,18 +107,8 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 	entry.ID = entryID
 
 	// Step 2: Insert generic attributes into attributes table (EAV pattern).
-	// Server-managed attributes are excluded because entries, users, and
-	// group_members own those values.
-	attrQuery := `INSERT INTO attributes (entry_id, name, value) VALUES (?, ?, ?)`
-	for name, values := range entry.Attributes {
-		if !isGenericStoredAttribute(name) {
-			continue
-		}
-		for _, value := range values {
-			if _, err := tx.ExecContext(ctx, attrQuery, entryID, name, value); err != nil {
-				return fmt.Errorf("failed to insert attribute: %w", err)
-			}
-		}
+	if err := insertGenericAttributes(ctx, tx, entryID, entry.Attributes); err != nil {
+		return err
 	}
 
 	// Step 3: Insert type-specific data into specialized tables:
@@ -206,25 +196,22 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 		return fmt.Errorf("%w: entry not found: %s", ErrNoSuchObject, entry.DN)
 	}
 
+	entryID, err := entryIDTx(ctx, tx, entry.DN)
+	if err != nil {
+		return fmt.Errorf("failed to get entry ID: %w", err)
+	}
+	entry.ID = entryID
+
 	// Step 2: Replace attributes in attributes table (delete-then-insert pattern)
 	// This is simpler than diffing changes and ensures consistency
-	delAttrQuery := `DELETE FROM attributes WHERE entry_id = (SELECT id FROM entries WHERE LOWER(dn) = LOWER(?))`
-	if _, err := tx.ExecContext(ctx, delAttrQuery, entry.DN); err != nil {
+	delAttrQuery := `DELETE FROM attributes WHERE entry_id = ?`
+	if _, err := tx.ExecContext(ctx, delAttrQuery, entryID); err != nil {
 		return fmt.Errorf("failed to delete attributes: %w", err)
 	}
 
-	// Insert updated generic attributes. Server-managed attributes are excluded
-	// because entries, users, and group_members own those values.
-	insertAttrQuery := `INSERT INTO attributes (entry_id, name, value) VALUES ((SELECT id FROM entries WHERE LOWER(dn) = LOWER(?)), ?, ?)`
-	for name, values := range entry.Attributes {
-		if !isGenericStoredAttribute(name) {
-			continue
-		}
-		for _, value := range values {
-			if _, err := tx.ExecContext(ctx, insertAttrQuery, entry.DN, name, value); err != nil {
-				return fmt.Errorf("failed to insert attribute: %w", err)
-			}
-		}
+	// Insert updated generic attributes.
+	if err := insertGenericAttributes(ctx, tx, entryID, entry.Attributes); err != nil {
+		return err
 	}
 
 	// Step 3: Update password in specialized users table if changed
@@ -242,19 +229,29 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) erro
 	// Step 4: Sync group_members table if this is a group
 	// This keeps the junction table in sync with member attributes for efficient queries
 	if entry.IsGroup() {
-		// Get the entry ID
-		var entryID int64
-		getIDQuery := `SELECT id FROM entries WHERE LOWER(dn) = LOWER(?)`
-		if err := tx.QueryRowContext(ctx, getIDQuery, entry.DN).Scan(&entryID); err != nil {
-			return fmt.Errorf("failed to get entry ID: %w", err)
-		}
-
 		if err := syncGroupMembers(ctx, tx, entryID, entry.DN, entry.GetAttributes("member"), true); err != nil {
 			return err
 		}
 	}
 
 	return tx.Commit()
+}
+
+func insertGenericAttributes(ctx context.Context, tx *sql.Tx, entryID int64, attrs map[string][]string) error {
+	// Server-managed attributes are excluded because entries, users, and
+	// group_members own those values.
+	const query = `INSERT INTO attributes (entry_id, name, value) VALUES (?, ?, ?)`
+	for name, values := range attrs {
+		if !isGenericStoredAttribute(name) {
+			continue
+		}
+		for _, value := range values {
+			if _, err := tx.ExecContext(ctx, query, entryID, name, value); err != nil {
+				return fmt.Errorf("failed to insert attribute: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 func isGenericStoredAttribute(name string) bool {
@@ -295,6 +292,15 @@ func (s *SQLiteStore) validateEntryPlacement(ctx context.Context, tx *sql.Tx, en
 	}
 
 	return nil
+}
+
+func entryIDTx(ctx context.Context, tx *sql.Tx, dn string) (int64, error) {
+	query := `SELECT id FROM entries WHERE LOWER(dn) = LOWER(?)`
+	var entryID int64
+	if err := tx.QueryRowContext(ctx, query, dn).Scan(&entryID); err != nil {
+		return 0, err
+	}
+	return entryID, nil
 }
 
 func entryExistsTx(ctx context.Context, tx *sql.Tx, dn string) (bool, error) {
