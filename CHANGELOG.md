@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+
+- Added store benchmarks for `memberOf` projection, `memberOf` filters, and narrow indexed searches at 1k/10k-entry scale.
+- Added indexed exact attribute lookup paths for searches such as `(uid=user-000000)`.
+- Added a SQL fast path for direct and nested `memberOf=<groupDN>` filters with cycle protection.
+- Made `memberOf` projection optional across search and Web UI read paths so callers that do not need operational attributes avoid the extra work.
+- Batched group member resolution and reused entry IDs for password updates to reduce storage-layer work.
+
+### LDAP Interoperability And Correctness
+
+- Projected `memberOf` as a computed, read-only operational attribute derived from `group_members` instead of generic stored attributes.
+- Kept server-managed attributes such as `objectClass`, `createTimestamp`, `modifyTimestamp`, and `memberOf` out of generic attribute storage.
+- Added case-insensitive DN lookup and uniqueness enforcement.
+- Matched group membership DNs case-insensitively.
+- Required group entries to contain valid existing members.
+- Escaped serialized LDAP filter values and SQL wildcard characters in substring filters.
+- Accepted non-canonical BER boolean `TRUE` values for LDAP `typesOnly` searches.
+- Returned typed validation and placement errors for better LDAP result-code mapping.
+
+### Internal Design And Testability
+
+- Split the LDAP server handlers into discovery, search, and write modules.
+- Split the SQLite store into focused initialization, entry, search, auth, helper, and membership modules.
+- Centralized DN helpers, web form helpers, generic attribute writes, web delete handling, and redirect-message encoding.
+- Added store context-cancellation coverage, query-plan coverage, escaped-DN functional coverage, and fail-fast functional server startup checks.
+- Refreshed the codebase simplification audit documentation and memberOf performance goal prompt.
+
+### Documentation
+
+- Reframed the README around self-hosted identity and performance-focused small-directory operation.
+- Removed the stale LLM-assisted-coding experiment positioning.
+- Added README benchmark results and instructions for running the benchmark matrix locally.
+
+### Dependencies
+
+- Updated the vulnerable `github.com/Azure/go-ntlmssp` dependency.
+
 ## v0.8.2 - 2026-06-21
 
 This release fixes Windows compatibility issues found by the expanded cross-platform CI matrix.

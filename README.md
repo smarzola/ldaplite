@@ -1,6 +1,8 @@
 # LDAPLite
 
-A lightweight, RFC-compliant LDAP server written in Go with SQLite backend. Built for simplicity and modern workflows.
+A lightweight LDAP v3 server written in Go with a SQLite backend. Built for
+self-hosted identity, development environments, and small-to-medium deployments
+that need predictable LDAP behavior without running a full directory stack.
 
 ## Why LDAPLite?
 
@@ -9,11 +11,14 @@ A lightweight, RFC-compliant LDAP server written in Go with SQLite backend. Buil
 - **Just a binary** - Download and run. No complex installation, no external dependencies.
 - **Opinionated** - Sensible defaults that work out of the box. Configure only what you need.
 - **SQLite storage** - Single-file database. Easy backups, no complex datastores required.
-- **Modern tooling** - Docker-ready, structured logging (JSON), built with Go.
+- **Self-hosting friendly** - Docker-ready, structured logging, environment-variable configuration, and an embedded Web UI when you want one.
+- **Performance-minded** - Indexed search paths, computed attributes, and benchmark coverage for the LDAP operations most likely to matter in daily use.
 
-Perfect for homelabs, development environments, and single-instance deployments where you need LDAP without the operational overhead.
-
-**Also:** This project serves as an experiment in building complex, performant software with AI assistance (Claude Code) for educational purposes. The entire codebase, from the recursive SQL CTEs to RFC-compliant timestamp handling, was developed collaboratively with an LLM.
+Self-hosting is getting interesting again as AI-assisted tooling makes it easier
+for small teams and individuals to operate useful infrastructure. LDAPLite is
+for that world: a small directory server you can understand, back up, run in a
+container, and connect to ordinary LDAP clients without adopting enterprise
+directory operations as a hobby.
 
 ## Features
 
@@ -44,6 +49,7 @@ Perfect for homelabs, development environments, and single-instance deployments 
 - **Nested Groups**: Groups can contain users and other groups with circular reference detection
 - **memberOf Attribute**: Users can request a computed, read-only `memberOf` attribute with DNs of all groups they belong to
 - **SQL Filter Compilation**: LDAP filters compiled to indexed SQL queries for performance
+- **Fast memberOf Filters**: Direct and nested `memberOf=<groupDN>` filters use recursive SQL over membership indexes
 - **Hybrid Filtering**: Falls back to in-memory filtering for complex queries
 - **Argon2id Password Hashing**: OWASP-recommended parameters (64MB memory, 3 iterations)
 - **Recursive Hierarchy Traversal**: Efficient SQL CTEs for searching deep directory trees
@@ -410,9 +416,42 @@ LDAPLite supports comprehensive LDAP filter syntax:
 ### Performance Optimizations
 
 - **Indexed Hierarchy**: Uses recursive CTEs with indexed `parent_dn` lookups
-- **SQL Filter Compilation**: Converts LDAP filters to indexed SQL WHERE clauses
+- **Indexed Attribute Equality**: Exact searches such as `(uid=john)` use indexed attribute lookups before loading full entries
+- **SQL Filter Compilation**: Converts LDAP filters to indexed SQL WHERE clauses where possible
+- **memberOf Fast Path**: `memberOf=<groupDN>` filters anchor from the group and recursively walk `group_members`
+- **Optional Operational Projection**: Computed attributes such as `memberOf` are skipped when clients do not request them
 - **Hybrid Approach**: Falls back to in-memory filtering for unsupported filters
 - **Connection Pooling**: Configurable connection limits for concurrent operations
+
+### Benchmarks
+
+LDAPLite includes store-level benchmarks for common `memberOf` and narrow search
+paths. Current results from an Apple M1 development machine, using the checked-in
+10k-entry scale probes:
+
+| Benchmark | Result |
+|-----------|--------|
+| Exact lookup, no `memberOf` projection, 10k users | `0.46 ms/op`, `12 KB/op`, `257 allocs/op` |
+| Exact lookup with one-result `memberOf` projection, 10k users | `0.72 ms/op`, `26 KB/op`, `395 allocs/op` |
+| All-users `memberOf` projection, 10k users | `128 ms/op`, `25.2 MB/op`, `516k allocs/op` |
+| Direct `memberOf=<groupDN>` filter, 10k users | `1.91 ms/op`, `79 KB/op`, `2.8k allocs/op` |
+| Nested `memberOf=<groupDN>` filter, depth 50 | `1.01 ms/op`, `79 KB/op`, `2.9k allocs/op` |
+
+Run the benchmark matrix locally with:
+
+```bash
+GOCACHE=/private/tmp/ldaplite-gocache go test \
+  -run '^$' \
+  -bench='BenchmarkMemberOf' \
+  -benchmem \
+  -benchtime=1x \
+  ./internal/store
+```
+
+`-benchtime=1x` is intentional for this matrix: the large fixtures are explicit
+scale probes, and rebuilding them repeatedly during benchmark calibration adds
+noise. These benchmarks are not a CI timing gate; normal `go test` still
+compiles them, while local runs are better for comparing before/after changes.
 
 ### Password Security
 
