@@ -17,6 +17,7 @@ This roadmap tracks current project direction after the security and interoperab
 - Recursive nested group membership with cycle/depth protection.
 - LDAP search response attribute selection, including `1.1`, `*`, and `+`.
 - Meaningful database and LDAP listener healthcheck used by the Docker image.
+- Audit-grade LDAP/Web UI logging, optional OpenTelemetry metrics/tracing, and Prometheus-compatible scraping (#9).
 
 ## Near-Term Hardening
 
@@ -31,7 +32,6 @@ This roadmap tracks current project direction after the security and interoperab
 - SCIM 2.0 or REST provisioning API after the service layer is in place (#7).
 - User and group templates in the Web UI as structured presets over the attribute system (#8).
 - Web UI password reset/change flow (#10).
-- OpenTelemetry metrics and tracing for LDAP operations, Web UI requests, and health/readiness states (#9).
 - LDIF/CSV import and export tools.
 
 ## GitHub Issue Cleanup
@@ -40,6 +40,5 @@ Issue `#2 Future development` was closed on 2026-06-21 after the completed Web U
 
 - #7 SCIM 2.0 / REST provisioning API.
 - #8 User and group templates.
-- #9 OpenTelemetry metrics and tracing.
 - #10 Web UI password change and reset flows.
 - #11 LDAP client compatibility test matrix.

@@ -54,6 +54,7 @@ directory operations as a hobby.
 - **Argon2id Password Hashing**: OWASP-recommended parameters (64MB memory, 3 iterations)
 - **Recursive Hierarchy Traversal**: Efficient SQL CTEs for searching deep directory trees
 - **Structured Logging**: JSON or text format with configurable levels
+- **Telemetry**: Audit-grade structured logs plus optional OpenTelemetry metrics/tracing and Prometheus-compatible scraping
 
 ### Storage & Deployment
 
@@ -238,6 +239,20 @@ All configuration via environment variables. No config files needed.
 |----------|---------|-------------|
 | `LDAP_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `LDAP_LOG_FORMAT` | `json` | Log format: `json` or `text` |
+
+### Telemetry Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LDAP_TELEMETRY_ENABLED` | `false` | Enable OpenTelemetry tracing setup |
+| `LDAP_OTEL_SERVICE_NAME` | `ldaplite` | OpenTelemetry service name |
+| `LDAP_OTEL_EXPORTER_OTLP_ENDPOINT` | empty | OTLP HTTP trace endpoint |
+| `LDAP_METRICS_ENABLED` | `false` | Enable Prometheus-compatible metrics endpoint |
+| `LDAP_METRICS_BIND_ADDRESS` | `0.0.0.0` | Metrics HTTP bind address |
+| `LDAP_METRICS_PORT` | `9090` | Metrics HTTP port |
+| `LDAP_METRICS_PATH` | `/metrics` | Metrics scrape path |
+
+See [Telemetry](docs/TELEMETRY.md) for audit fields, metric names, tracing behavior, and sensitive-data handling.
 
 ### Web UI Configuration
 

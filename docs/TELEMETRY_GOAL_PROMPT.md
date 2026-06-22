@@ -155,7 +155,7 @@ Update this checklist as the goal loop progresses. When a milestone is complete:
 - [x] Milestone 3: OpenTelemetry metrics foundation and Prometheus scrape path.
 - [x] Milestone 4: LDAP and Web UI metrics coverage.
 - [x] Milestone 5: Tracing and store-call spans.
-- [ ] Milestone 6: Documentation, final tests, and issue-ready summary.
+- [x] Milestone 6: Documentation, final tests, and issue-ready summary.
 
 ## Milestone 1: Audit Event Model And LDAP Observation
 
