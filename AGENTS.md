@@ -9,7 +9,7 @@ LDAPLite is a lightweight LDAP v3 server written in Go with a SQLite backend.
 Key stack:
 - Go 1.25.3
 - SQLite via `modernc.org/sqlite`
-- LDAP BER encoding/decoding via `github.com/lor00x/goldap`
+- Repo-owned LDAP BER encoding/decoding in `internal/protocol/`
 - CLI via Cobra
 - Password hashing with Argon2id
 - Web UI assets built with npm/Tailwind/DaisyUI

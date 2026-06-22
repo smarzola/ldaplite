@@ -5,7 +5,6 @@ go 1.25.3
 require (
 	github.com/go-ldap/ldap/v3 v3.4.13
 	github.com/golang-migrate/migrate/v4 v4.19.0
-	github.com/lor00x/goldap v0.0.0-20180618054307-a546dffdd1a3
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/crypto v0.48.0

@@ -61,7 +61,7 @@ directory operations as a hobby.
 - **SQLite Backend**: Single-file database, ideal for backups and migrations
 - **Docker Support**: Distroless image, non-root user, health checks
 - **Simple Configuration**: Environment variables only, no config files required
-- **Direct Protocol Implementation**: Uses goldap for ASN.1 BER encoding, no high-level framework overhead
+- **Direct Protocol Implementation**: Repo-owned LDAP BER encoding/decoding, no high-level framework overhead
 - **Reverse Proxy Friendly**: No TLS support by design - meant to run behind nginx/traefik
 
 ### Web UI

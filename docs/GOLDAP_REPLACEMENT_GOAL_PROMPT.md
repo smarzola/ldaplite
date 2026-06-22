@@ -385,7 +385,7 @@ Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
 
-### [ ] 6. Remove goldap Dependency
+### [x] 6. Remove goldap Dependency
 
 Delete the temporary adapter and remove `goldap` from the module.
 
@@ -407,7 +407,27 @@ GOCACHE=/private/tmp/ldaplite-gocache go test -tags=functional -v ./tests/functi
 
 Status note:
 
-- Pending.
+- Done on 2026-06-22.
+- Deleted the temporary `internal/protocol/goldap_adapter.go` and its tests.
+- Removed `github.com/lor00x/goldap` from `go.mod` and `go.sum`.
+- Ran:
+  ```bash
+  GOCACHE=/private/tmp/ldaplite-gocache go mod tidy -e
+  ```
+- Updated stale docs in `AGENTS.md`, `README.md`, `CLAUDE.md`, and
+  `docs/SQLITE_IMPROVEMENT_PLAN.md` to describe repo-owned BER/protocol
+  handling.
+- Dependency grep run:
+  ```bash
+  rg -n "github.com/lor00x/goldap|goldap" .
+  ```
+  returned only this replacement prompt and the historical protocol inventory.
+- Verification commands run:
+  ```bash
+  GOCACHE=/private/tmp/ldaplite-gocache go test ./internal/protocol ./internal/server
+  GOCACHE=/private/tmp/ldaplite-gocache go test -tags=functional -v ./tests/functional/...
+  ```
+- Commit hash: pending until this milestone commit is created.
 
 Commit requirement:
 
