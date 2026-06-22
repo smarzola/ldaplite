@@ -102,7 +102,7 @@ Known starting problems:
 
 ## Milestones
 
-### [ ] 1. Baseline And Protocol Inventory
+### [x] 1. Baseline And Protocol Inventory
 
 Map every current `goldap` use and record the exact protocol surface LDAPLite
 needs to preserve.
@@ -134,7 +134,22 @@ GOCACHE=/private/tmp/ldaplite-gocache go test -tags=functional -v ./tests/functi
 
 Status note:
 
-- Pending.
+- Done on 2026-06-22.
+- Added `docs/GOLDAP_PROTOCOL_INVENTORY.md` with the current `goldap` import
+  boundary, decoded request operations, encoded response operations, server-used
+  request fields, and filter forms.
+- Added `internal/protocol/fixture_test.go` with representative request decode
+  fixtures and exact response BER fixtures for the current protocol boundary.
+- Verification commands run:
+  ```bash
+  GOCACHE=/private/tmp/ldaplite-gocache go test ./internal/protocol
+  GOCACHE=/private/tmp/ldaplite-gocache go test ./internal/protocol ./internal/server
+  GOCACHE=/private/tmp/ldaplite-gocache go test -tags=functional -v ./tests/functional/...
+  ```
+- The first sandboxed functional-suite attempt failed to bind
+  `127.0.0.1:0`; the same command passed when rerun with permission to open the
+  local test listener.
+- Commit hash: pending until this milestone commit is created.
 
 Commit requirement:
 
