@@ -26,8 +26,11 @@ func AuditHTTP(next http.Handler) http.Handler {
 		recorder.Header().Set("X-Request-ID", info.RequestID)
 
 		start := time.Now()
+		ctx, span := telemetry.StartHTTPSpan(r.Context(), r.Method, info.Route)
+		r = r.WithContext(ctx)
 		next.ServeHTTP(recorder, r)
 		duration := time.Since(start)
+		telemetry.EndHTTPSpan(span, recorder.status)
 
 		audit.LogWeb(r.Context(), audit.WebEvent{
 			Event:      audit.EventHTTPRequest,

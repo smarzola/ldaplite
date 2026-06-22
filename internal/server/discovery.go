@@ -8,6 +8,7 @@ import (
 	"github.com/smarzola/ldaplite/internal/audit"
 	"github.com/smarzola/ldaplite/internal/protocol"
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 )
 
 func (s *Server) handleRootDSE(conn *protocol.Connection, msg *ldapmsg.Message) error {
@@ -62,6 +63,10 @@ func (s *Server) handleExtended(ctx context.Context, conn *protocol.Connection, 
 	extReq := msg.Op.(ldapmsg.ExtendedRequest)
 	reqOID := extReq.RequestName
 	resultCode := ldapmsg.ResultCodeOperationsError
+	ctx, span := telemetry.StartLDAPSpan(ctx, "extended")
+	defer func() {
+		telemetry.EndLDAPSpan(span, int(resultCode))
+	}()
 	defer func() {
 		s.auditLDAPOperation(ctx, conn, msg, "extended", audit.LDAPEvent{
 			ActorDN:    conn.GetBoundDN(),

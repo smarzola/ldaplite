@@ -11,6 +11,7 @@ import (
 	"github.com/smarzola/ldaplite/internal/protocol"
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 	"github.com/smarzola/ldaplite/internal/store"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 )
 
 // handleAdd handles add operations
@@ -20,6 +21,10 @@ func (s *Server) handleAdd(ctx context.Context, conn *protocol.Connection, msg *
 
 	dn := addReq.Entry
 	resultCode := ldapmsg.ResultCodeOperationsError
+	ctx, span := telemetry.StartLDAPSpan(ctx, "add")
+	defer func() {
+		telemetry.EndLDAPSpan(span, int(resultCode))
+	}()
 	defer func() {
 		s.auditLDAPOperation(ctx, conn, msg, "add", audit.LDAPEvent{
 			ActorDN:    conn.GetBoundDN(),
@@ -83,6 +88,10 @@ func (s *Server) handleDelete(ctx context.Context, conn *protocol.Connection, ms
 	delReq := msg.Op.(ldapmsg.DeleteRequest)
 	dn := delReq.DN
 	resultCode := ldapmsg.ResultCodeOperationsError
+	ctx, span := telemetry.StartLDAPSpan(ctx, "delete")
+	defer func() {
+		telemetry.EndLDAPSpan(span, int(resultCode))
+	}()
 	defer func() {
 		s.auditLDAPOperation(ctx, conn, msg, "delete", audit.LDAPEvent{
 			ActorDN:    conn.GetBoundDN(),
@@ -132,6 +141,10 @@ func (s *Server) handleModify(ctx context.Context, conn *protocol.Connection, ms
 
 	dn := modReq.Object
 	resultCode := ldapmsg.ResultCodeOperationsError
+	ctx, span := telemetry.StartLDAPSpan(ctx, "modify")
+	defer func() {
+		telemetry.EndLDAPSpan(span, int(resultCode))
+	}()
 	defer func() {
 		s.auditLDAPOperation(ctx, conn, msg, "modify", audit.LDAPEvent{
 			ActorDN:    conn.GetBoundDN(),

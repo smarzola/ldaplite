@@ -8,6 +8,7 @@ import (
 
 	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 )
 
 // GetEntry retrieves an entry by DN
@@ -16,7 +17,12 @@ func (s *SQLiteStore) GetEntry(ctx context.Context, dn string) (*models.Entry, e
 }
 
 // GetEntryWithOptions retrieves an entry by DN with optional computed attributes.
-func (s *SQLiteStore) GetEntryWithOptions(ctx context.Context, dn string, options EntryOptions) (*models.Entry, error) {
+func (s *SQLiteStore) GetEntryWithOptions(ctx context.Context, dn string, options EntryOptions) (entry *models.Entry, err error) {
+	ctx, span := telemetry.StartStoreSpan(ctx, "GetEntryWithOptions")
+	defer func() {
+		telemetry.EndStoreSpan(span, err)
+	}()
+
 	// Use JSON aggregation to fetch entry with attributes in a single query
 	query := `
 		SELECT
@@ -54,7 +60,12 @@ func (s *SQLiteStore) GetEntryWithOptions(ctx context.Context, dn string, option
 // 3. Type-specific data -> specialized tables for security and relationships
 //
 // SECURITY: userPassword is NEVER stored in attributes table, only in users.password_hash
-func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) error {
+func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) (err error) {
+	ctx, span := telemetry.StartStoreSpan(ctx, "CreateEntry")
+	defer func() {
+		telemetry.EndStoreSpan(span, err)
+	}()
+
 	if err := entry.Validate(); err != nil {
 		return classifyModelValidationError(err)
 	}
@@ -171,7 +182,12 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) erro
 // 3. Update password in users.password_hash if changed (security isolation)
 //
 // SECURITY: userPassword is NEVER written to attributes table, only to users.password_hash
-func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) error {
+func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) (err error) {
+	ctx, span := telemetry.StartStoreSpan(ctx, "UpdateEntry")
+	defer func() {
+		telemetry.EndStoreSpan(span, err)
+	}()
+
 	if err := entry.Validate(); err != nil {
 		return classifyModelValidationError(err)
 	}
@@ -313,7 +329,12 @@ func entryExistsTx(ctx context.Context, tx *sql.Tx, dn string) (bool, error) {
 }
 
 // DeleteEntry deletes an entry
-func (s *SQLiteStore) DeleteEntry(ctx context.Context, dn string) error {
+func (s *SQLiteStore) DeleteEntry(ctx context.Context, dn string) (err error) {
+	ctx, span := telemetry.StartStoreSpan(ctx, "DeleteEntry")
+	defer func() {
+		telemetry.EndStoreSpan(span, err)
+	}()
+
 	query := `DELETE FROM entries WHERE LOWER(dn) = LOWER(?)`
 	result, err := s.db.ExecContext(ctx, query, dn)
 	if err != nil {
@@ -333,10 +354,15 @@ func (s *SQLiteStore) DeleteEntry(ctx context.Context, dn string) error {
 }
 
 // EntryExists checks if an entry exists
-func (s *SQLiteStore) EntryExists(ctx context.Context, dn string) (bool, error) {
+func (s *SQLiteStore) EntryExists(ctx context.Context, dn string) (exists bool, err error) {
+	ctx, span := telemetry.StartStoreSpan(ctx, "EntryExists")
+	defer func() {
+		telemetry.EndStoreSpan(span, err)
+	}()
+
 	query := `SELECT 1 FROM entries WHERE LOWER(dn) = LOWER(?) LIMIT 1`
-	var exists int
-	err := s.db.QueryRowContext(ctx, query, dn).Scan(&exists)
+	var found int
+	err = s.db.QueryRowContext(ctx, query, dn).Scan(&found)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}

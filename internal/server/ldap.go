@@ -182,6 +182,10 @@ func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg 
 	start := time.Now()
 	resultCode := ldapmsg.ResultCodeOperationsError
 	targetDN := ""
+	ctx, span := telemetry.StartLDAPSpan(ctx, "bind")
+	defer func() {
+		telemetry.EndLDAPSpan(span, int(resultCode))
+	}()
 	defer func() {
 		actorDN := ""
 		if resultCode == ldapmsg.ResultCodeSuccess {
@@ -254,6 +258,10 @@ func (s *Server) handleCompare(ctx context.Context, conn *protocol.Connection, m
 	start := time.Now()
 	compareReq := msg.Op.(ldapmsg.CompareRequest)
 	resultCode := ldapmsg.ResultCodeCompareFalse
+	ctx, span := telemetry.StartLDAPSpan(ctx, "compare")
+	defer func() {
+		telemetry.EndLDAPSpan(span, int(resultCode))
+	}()
 	defer func() {
 		s.auditLDAPOperation(ctx, conn, msg, "compare", audit.LDAPEvent{
 			ActorDN:    conn.GetBoundDN(),
@@ -271,6 +279,10 @@ func (s *Server) handleCompare(ctx context.Context, conn *protocol.Connection, m
 func (s *Server) handleUnbind(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
 	start := time.Now()
 	actorDN := conn.GetBoundDN()
+	ctx, span := telemetry.StartLDAPSpan(ctx, "unbind")
+	defer func() {
+		telemetry.EndLDAPSpan(span, int(ldapmsg.ResultCodeSuccess))
+	}()
 	defer func() {
 		s.auditLDAPOperation(ctx, conn, msg, "unbind", audit.LDAPEvent{
 			ActorDN:    actorDN,

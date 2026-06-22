@@ -12,6 +12,7 @@ import (
 	"github.com/smarzola/ldaplite/internal/protocol"
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 	"github.com/smarzola/ldaplite/internal/store"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 )
 
 // handleSearch handles search operations
@@ -23,6 +24,10 @@ func (s *Server) handleSearch(ctx context.Context, conn *protocol.Connection, ms
 	selection := newSearchAttributeSelection(searchReq.Attributes)
 	resultCode := ldapmsg.ResultCodeOperationsError
 	var resultCount *int
+	ctx, span := telemetry.StartLDAPSpan(ctx, "search")
+	defer func() {
+		telemetry.EndLDAPSpan(span, int(resultCode))
+	}()
 	defer func() {
 		s.auditLDAPOperation(ctx, conn, msg, "search", audit.LDAPEvent{
 			ActorDN:     conn.GetBoundDN(),

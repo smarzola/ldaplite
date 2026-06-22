@@ -9,6 +9,7 @@ import (
 	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/schema"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 )
 
 // SearchEntries searches for entries matching a filter
@@ -22,7 +23,12 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, baseDN string, filterSt
 }
 
 // SearchEntriesWithOptions searches for entries matching a filter and LDAP scope.
-func (s *SQLiteStore) SearchEntriesWithOptions(ctx context.Context, options SearchOptions) ([]*models.Entry, error) {
+func (s *SQLiteStore) SearchEntriesWithOptions(ctx context.Context, options SearchOptions) (entries []*models.Entry, err error) {
+	ctx, span := telemetry.StartStoreSpan(ctx, "SearchEntriesWithOptions")
+	defer func() {
+		telemetry.EndStoreSpan(span, err)
+	}()
+
 	filterStr := options.Filter
 	if filterStr == "" {
 		filterStr = "(objectClass=*)"
@@ -34,8 +40,8 @@ func (s *SQLiteStore) SearchEntriesWithOptions(ctx context.Context, options Sear
 		return nil, fmt.Errorf("failed to parse filter: %w", err)
 	}
 
-	if entries, handled, err := s.searchEntriesFastPath(ctx, options, parsedFilter); handled {
-		return entries, err
+	if fastEntries, handled, fastErr := s.searchEntriesFastPath(ctx, options, parsedFilter); handled {
+		return fastEntries, fastErr
 	}
 
 	// Try to compile filter to SQL (hybrid approach)
@@ -80,8 +86,6 @@ func (s *SQLiteStore) SearchEntriesWithOptions(ctx context.Context, options Sear
 	// - If filter uses computed attributes (memberOf): populate first, then filter
 	// - If filter doesn't use computed attributes: filter first, then populate
 	// This reduces work when non-memberOf filters significantly reduce the result set
-	var entries []*models.Entry
-
 	filterUsesComputed := schema.FilterUsesComputedAttributes(parsedFilter)
 
 	if useInMemoryFilter {

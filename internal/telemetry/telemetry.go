@@ -13,16 +13,19 @@ import (
 	"github.com/smarzola/ldaplite/pkg/config"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 type Runtime struct {
-	cfg           config.TelemetryConfig
-	meterProvider *sdkmetric.MeterProvider
-	server        *http.Server
-	listener      net.Listener
+	cfg            config.TelemetryConfig
+	meterProvider  *sdkmetric.MeterProvider
+	tracerProvider *sdktrace.TracerProvider
+	server         *http.Server
+	listener       net.Listener
 }
 
 func Start(ctx context.Context, cfg *config.Config) (*Runtime, error) {
@@ -38,6 +41,11 @@ func Start(ctx context.Context, cfg *config.Config) (*Runtime, error) {
 
 func NewRuntime(cfg config.TelemetryConfig) (*Runtime, error) {
 	runtime := &Runtime{cfg: cfg}
+	if cfg.Enabled {
+		if err := runtime.initTracing(context.Background(), nil); err != nil {
+			return nil, err
+		}
+	}
 	if !cfg.MetricsEnabled {
 		return runtime, nil
 	}
@@ -74,6 +82,47 @@ func NewRuntime(cfg config.TelemetryConfig) (*Runtime, error) {
 	runtime.server = &http.Server{Handler: mux}
 
 	return runtime, nil
+}
+
+func newRuntimeWithTraceExporter(cfg config.TelemetryConfig, exporter sdktrace.SpanExporter) (*Runtime, error) {
+	runtime := &Runtime{cfg: cfg}
+	if err := runtime.initTracing(context.Background(), exporter); err != nil {
+		return nil, err
+	}
+	return runtime, nil
+}
+
+func (r *Runtime) initTracing(ctx context.Context, exporter sdktrace.SpanExporter) error {
+	injectedExporter := exporter != nil
+	serviceName := r.cfg.OTelServiceName
+	if serviceName == "" {
+		serviceName = "ldaplite"
+	}
+
+	options := []sdktrace.TracerProviderOption{
+		sdktrace.WithResource(resource.NewWithAttributes(
+			"",
+			attribute.String("service.name", serviceName),
+		)),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	}
+
+	if exporter == nil && r.cfg.OTelExporterOTLPEndpoint != "" {
+		var err error
+		exporter, err = otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(r.cfg.OTelExporterOTLPEndpoint))
+		if err != nil {
+			return fmt.Errorf("create OTLP trace exporter: %w", err)
+		}
+	}
+	if injectedExporter {
+		options = append(options, sdktrace.WithSyncer(exporter))
+	} else if exporter != nil {
+		options = append(options, sdktrace.WithBatcher(exporter))
+	}
+
+	r.tracerProvider = sdktrace.NewTracerProvider(options...)
+	otel.SetTracerProvider(r.tracerProvider)
+	return nil
 }
 
 func (r *Runtime) Start(ctx context.Context) error {
@@ -114,6 +163,11 @@ func (r *Runtime) Stop(ctx context.Context) error {
 	if r.meterProvider != nil {
 		if err := r.meterProvider.Shutdown(ctx); err != nil && stopErr == nil {
 			stopErr = fmt.Errorf("meter provider shutdown failed: %w", err)
+		}
+	}
+	if r.tracerProvider != nil {
+		if err := r.tracerProvider.Shutdown(ctx); err != nil && stopErr == nil {
+			stopErr = fmt.Errorf("tracer provider shutdown failed: %w", err)
 		}
 	}
 	return stopErr
