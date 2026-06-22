@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.11.0 - 2026-06-22
+
+### Telemetry
+
+- Added audit-grade LDAP and Web UI logging with stable event names, request and connection correlation, and sensitive-value redaction.
+- Added OpenTelemetry metrics for LDAP operations, Web UI requests, store calls, authentication outcomes, and audit events.
+- Added optional Prometheus metrics exposure.
+- Added optional OpenTelemetry tracing with OTLP HTTP export and spans across LDAP, HTTP, and store paths.
+
+### Documentation
+
+- Added telemetry configuration documentation and the completed telemetry goal prompt with milestone history.
+
 ## v0.10.0 - 2026-06-22
 
 ### Protocol
