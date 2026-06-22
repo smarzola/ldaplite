@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_attributes_lower_name_value_entry;

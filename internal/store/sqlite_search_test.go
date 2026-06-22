@@ -165,7 +165,13 @@ func TestCaseInsensitiveSearchPredicatesUseExpressionIndexes(t *testing.T) {
 		`SELECT e.id FROM entries e WHERE LOWER(e.dn) = LOWER(?)`,
 		"UID=JDOE,OU=USERS,DC=TEST,DC=COM",
 	)
-	assertQueryPlanUsesIndex(t, store, "idx_attributes_entry_lower_name_value",
+	assertQueryPlanUsesIndex(t, store, "idx_attributes_lower_name_value_entry",
+		`SELECT entry_id FROM attributes
+		 WHERE LOWER(name) = LOWER(?)
+		   AND LOWER(value) = LOWER(?)`,
+		"uid", "JDOE",
+	)
+	assertQueryPlanUsesIndex(t, store, "idx_attributes_lower_name_value_entry",
 		`SELECT 1 FROM attributes a
 		 WHERE a.entry_id = ?
 		   AND LOWER(a.name) = LOWER(?)
@@ -1209,6 +1215,78 @@ func TestSearchEntriesWithOptionsMemberOfFilterDoesNotForceProjection(t *testing
 	}
 	if entries[0].HasAttribute("memberOf") {
 		t.Fatalf("memberOf filter should not force memberOf projection when IncludeMemberOf is false: %v", entries[0].GetAttributes("memberOf"))
+	}
+}
+
+func TestSearchEntriesWithOptionsMemberOfFastPathSupportsConjunction(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	entries, err := store.SearchEntriesWithOptions(ctx, SearchOptions{
+		BaseDN:          "dc=test,dc=com",
+		Filter:          "(&(objectClass=inetOrgPerson)(memberOf=cn=developers,ou=groups,dc=test,dc=com))",
+		Scope:           SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		t.Fatalf("SearchEntriesWithOptions() failed: %v", err)
+	}
+
+	gotDNs := entryDNSet(entries)
+	for _, wantDN := range []string{
+		"uid=jsmith,ou=users,dc=test,dc=com",
+		"uid=bob,ou=users,dc=test,dc=com",
+	} {
+		if !gotDNs[wantDN] {
+			t.Fatalf("SearchEntriesWithOptions() missing %s from %v", wantDN, entryDNs(entries))
+		}
+	}
+	if len(entries) != 2 {
+		t.Fatalf("SearchEntriesWithOptions() got %d entries, want 2: %v", len(entries), entryDNs(entries))
+	}
+	for _, entry := range entries {
+		if entry.HasAttribute("memberOf") {
+			t.Fatalf("memberOf filter should not force memberOf projection when IncludeMemberOf is false: %v", entry.GetAttributes("memberOf"))
+		}
+	}
+}
+
+func TestSearchEntriesWithOptionsMemberOfFastPathHonorsScope(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	entries, err := store.SearchEntriesWithOptions(ctx, SearchOptions{
+		BaseDN:          "ou=groups,dc=test,dc=com",
+		Filter:          "(memberOf=cn=developers,ou=groups,dc=test,dc=com)",
+		Scope:           SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		t.Fatalf("SearchEntriesWithOptions() failed: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("SearchEntriesWithOptions() got %d entries outside user subtree: %v", len(entries), entryDNs(entries))
+	}
+}
+
+func TestSearchEntriesWithOptionsMemberOfFastPathMissingGroup(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	entries, err := store.SearchEntriesWithOptions(ctx, SearchOptions{
+		BaseDN:          "dc=test,dc=com",
+		Filter:          "(memberOf=cn=missing,ou=groups,dc=test,dc=com)",
+		Scope:           SearchScopeWholeSubtree,
+		IncludeMemberOf: true,
+	})
+	if err != nil {
+		t.Fatalf("SearchEntriesWithOptions() failed: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("SearchEntriesWithOptions() got %d entries for missing group: %v", len(entries), entryDNs(entries))
 	}
 }
 

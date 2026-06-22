@@ -26,11 +26,9 @@ type attrPair struct {
 // Input format: [{"name":"cn","value":"John Doe"},{"name":"mail","value":"john@example.com"}]
 // Output format: map[string][]string{"cn": {"John Doe"}, "mail": {"john@example.com"}}
 func decodeAttributesJSON(jsonStr string) (map[string][]string, error) {
-	attrs := make(map[string][]string)
-
 	// Handle empty, null, or [null] cases
 	if jsonStr == "" || jsonStr == "null" || jsonStr == "[null]" {
-		return attrs, nil
+		return map[string][]string{}, nil
 	}
 
 	var pairs []attrPair
@@ -38,6 +36,7 @@ func decodeAttributesJSON(jsonStr string) (map[string][]string, error) {
 		return nil, fmt.Errorf("failed to unmarshal attributes JSON: %w", err)
 	}
 
+	attrs := make(map[string][]string, len(pairs))
 	// Convert pairs to map, grouping multi-valued attributes
 	for _, p := range pairs {
 		// Skip null/empty entries (from LEFT JOIN with no attributes)
@@ -53,7 +52,7 @@ func decodeAttributesJSON(jsonStr string) (map[string][]string, error) {
 }
 
 func scanEntriesWithAttributes(rows *sql.Rows) ([]*models.Entry, error) {
-	var entries []*models.Entry
+	entries := make([]*models.Entry, 0, 64)
 	for rows.Next() {
 		entry := &models.Entry{}
 		var attrsJSON string

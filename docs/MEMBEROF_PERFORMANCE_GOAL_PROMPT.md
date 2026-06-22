@@ -56,6 +56,34 @@ Interpretation:
 - Broad projections are allocation-heavy and should be treated separately from
   narrow lookup work.
 
+## Latest Result
+
+After the first optimization pass on 2026-06-22, the same command produced:
+
+```text
+BenchmarkMemberOfSkipProjection/users=1000              0.40 ms/op, 12 KB/op, 257 allocs/op
+BenchmarkMemberOfSkipProjection/users=10000             0.46 ms/op, 12 KB/op, 257 allocs/op
+BenchmarkMemberOfSingleResultProjection/users=1000      0.73 ms/op, 27 KB/op, 405 allocs/op
+BenchmarkMemberOfSingleResultProjection/users=10000     0.72 ms/op, 26 KB/op, 395 allocs/op
+BenchmarkMemberOfAllUsersProjection/users=1000          15.1 ms/op, 3.2 MB/op, 70k allocs/op
+BenchmarkMemberOfAllUsersProjection/users=10000          128 ms/op, 25.2 MB/op, 516k allocs/op
+BenchmarkMemberOfDirectFilter/users=1000                0.85 ms/op, 79 KB/op, 2.8k allocs/op
+BenchmarkMemberOfDirectFilter/users=10000               1.91 ms/op, 79 KB/op, 2.8k allocs/op
+BenchmarkMemberOfNestedProjection/depth=50              0.83 ms/op, 32 KB/op, 657 allocs/op
+BenchmarkMemberOfNestedFilter/depth=50                  1.01 ms/op, 79 KB/op, 2.9k allocs/op
+```
+
+Interpretation:
+
+- Exact indexed attribute searches now avoid loading broad candidate sets before
+  finding the matching entry.
+- `memberOf=<groupDN>` filters now anchor from the target group and recursively
+  walk `group_members` to users, preserving the optional projection contract.
+- Broad projection is still dominated by JSON attribute hydration, but the 10k
+  path is slightly lower in both memory and allocation count.
+- The next meaningful broad-projection loop should challenge the JSON aggregate
+  scan itself rather than shaving more map/slice setup around it.
+
 ## Priority Work
 
 ### 1. Optimize Exact Attribute Searches

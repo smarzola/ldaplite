@@ -529,6 +529,97 @@ func TestCanCompileToSQL(t *testing.T) {
 	}
 }
 
+func TestMemberOfEqualityValue(t *testing.T) {
+	tests := []struct {
+		name   string
+		filter string
+		want   string
+		ok     bool
+	}{
+		{
+			name:   "simple memberOf equality",
+			filter: "(memberOf=cn=admins,ou=groups,dc=test,dc=com)",
+			want:   "cn=admins,ou=groups,dc=test,dc=com",
+			ok:     true,
+		},
+		{
+			name:   "supported objectClass conjunction",
+			filter: "(&(objectClass=inetOrgPerson)(memberOf=cn=admins,ou=groups,dc=test,dc=com))",
+			want:   "cn=admins,ou=groups,dc=test,dc=com",
+			ok:     true,
+		},
+		{
+			name:   "unsupported extra conjunct",
+			filter: "(&(uid=jdoe)(memberOf=cn=admins,ou=groups,dc=test,dc=com))",
+			ok:     false,
+		},
+		{
+			name:   "not memberOf",
+			filter: "(uid=jdoe)",
+			ok:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter, err := ParseFilter(tt.filter)
+			if err != nil {
+				t.Fatalf("ParseFilter() failed: %v", err)
+			}
+			got, ok := MemberOfEqualityValue(filter)
+			if ok != tt.ok || got != tt.want {
+				t.Fatalf("MemberOfEqualityValue() = %q, %v; want %q, %v", got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestSimpleAttributeEquality(t *testing.T) {
+	tests := []struct {
+		name     string
+		filter   string
+		wantAttr string
+		wantVal  string
+		ok       bool
+	}{
+		{
+			name:     "uid equality",
+			filter:   "(uid=jdoe)",
+			wantAttr: "uid",
+			wantVal:  "jdoe",
+			ok:       true,
+		},
+		{
+			name:   "objectClass stays on normal SQL compiler path",
+			filter: "(objectClass=inetOrgPerson)",
+			ok:     false,
+		},
+		{
+			name:   "computed memberOf rejected",
+			filter: "(memberOf=cn=admins,dc=test,dc=com)",
+			ok:     false,
+		},
+		{
+			name:   "substring rejected",
+			filter: "(cn=John*)",
+			ok:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter, err := ParseFilter(tt.filter)
+			if err != nil {
+				t.Fatalf("ParseFilter() failed: %v", err)
+			}
+			gotAttr, gotVal, ok := SimpleAttributeEquality(filter)
+			if ok != tt.ok || gotAttr != tt.wantAttr || gotVal != tt.wantVal {
+				t.Fatalf("SimpleAttributeEquality() = %q, %q, %v; want %q, %q, %v", gotAttr, gotVal, ok, tt.wantAttr, tt.wantVal, tt.ok)
+			}
+		})
+	}
+}
+
 func TestComplexFilters(t *testing.T) {
 	compiler := NewFilterCompiler()
 

@@ -148,8 +148,8 @@ func (s *SQLiteStore) populateMemberOf(ctx context.Context, entries []*models.En
 	}
 
 	// Collect user entry IDs
-	userEntryIDs := make([]int64, 0)
-	userEntriesByID := make(map[int64]*models.Entry)
+	userEntryIDs := make([]int64, 0, len(entries))
+	userEntriesByID := make(map[int64]*models.Entry, len(entries))
 	for _, entry := range entries {
 		if entry.IsUser() && entry.ID > 0 {
 			userEntryIDs = append(userEntryIDs, entry.ID)
@@ -162,10 +162,8 @@ func (s *SQLiteStore) populateMemberOf(ctx context.Context, entries []*models.En
 	}
 
 	// Build query with placeholders for user entry IDs
-	placeholders := make([]string, len(userEntryIDs))
 	args := make([]interface{}, len(userEntryIDs))
 	for i, id := range userEntryIDs {
-		placeholders[i] = "?"
 		args[i] = id
 	}
 
@@ -177,7 +175,7 @@ func (s *SQLiteStore) populateMemberOf(ctx context.Context, entries []*models.En
 			SELECT gm.member_entry_id, gm.group_entry_id, g_entry.dn, 0, printf(',%d,', gm.group_entry_id)
 			FROM group_members gm
 			INNER JOIN entries g_entry ON gm.group_entry_id = g_entry.id
-			WHERE gm.member_entry_id IN (` + strings.Join(placeholders, ",") + `)
+			WHERE gm.member_entry_id IN (` + queryPlaceholders(len(userEntryIDs)) + `)
 
 			UNION ALL
 
@@ -199,7 +197,7 @@ func (s *SQLiteStore) populateMemberOf(ctx context.Context, entries []*models.En
 	}
 	defer rows.Close()
 
-	memberOfByEntryID := make(map[int64][]string)
+	memberOfByEntryID := make(map[int64][]string, len(userEntriesByID))
 	for rows.Next() {
 		var memberEntryID int64
 		var groupDN string
@@ -221,4 +219,20 @@ func (s *SQLiteStore) populateMemberOf(ctx context.Context, entries []*models.En
 	}
 
 	return nil
+}
+
+func queryPlaceholders(count int) string {
+	if count <= 0 {
+		return ""
+	}
+
+	var builder strings.Builder
+	builder.Grow(count*2 - 1)
+	for i := 0; i < count; i++ {
+		if i > 0 {
+			builder.WriteByte(',')
+		}
+		builder.WriteByte('?')
+	}
+	return builder.String()
 }

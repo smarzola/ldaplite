@@ -104,6 +104,50 @@ func TestNestedGroupCycleDoesNotLoop(t *testing.T) {
 	}
 }
 
+func TestMemberOfFilterFastPathHandlesNestedGroupCycle(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	engineering := models.NewGroup("ou=groups,dc=test,dc=com", "engineering", "Engineering group")
+	engineering.AddMember("cn=developers,ou=groups,dc=test,dc=com")
+	if err := store.CreateEntry(ctx, engineering.Entry); err != nil {
+		t.Fatalf("CreateEntry(engineering) failed: %v", err)
+	}
+
+	developers, err := store.GetEntry(ctx, "cn=developers,ou=groups,dc=test,dc=com")
+	if err != nil {
+		t.Fatalf("GetEntry(developers) failed: %v", err)
+	}
+	developers.AddAttribute("member", "cn=engineering,ou=groups,dc=test,dc=com")
+	if err := store.UpdateEntry(ctx, developers); err != nil {
+		t.Fatalf("UpdateEntry(developers cycle) failed: %v", err)
+	}
+
+	entries, err := store.SearchEntriesWithOptions(ctx, SearchOptions{
+		BaseDN:          "dc=test,dc=com",
+		Filter:          "(memberOf=cn=engineering,ou=groups,dc=test,dc=com)",
+		Scope:           SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		t.Fatalf("SearchEntriesWithOptions() failed: %v", err)
+	}
+
+	gotDNs := entryDNSet(entries)
+	for _, wantDN := range []string{
+		"uid=jsmith,ou=users,dc=test,dc=com",
+		"uid=bob,ou=users,dc=test,dc=com",
+	} {
+		if !gotDNs[wantDN] {
+			t.Fatalf("SearchEntriesWithOptions() missing %s from %v", wantDN, entryDNs(entries))
+		}
+	}
+	if len(entries) != 2 {
+		t.Fatalf("SearchEntriesWithOptions() got %d entries, want 2: %v", len(entries), entryDNs(entries))
+	}
+}
+
 func countValue(values []string, want string) int {
 	count := 0
 	for _, value := range values {

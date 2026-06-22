@@ -82,6 +82,52 @@ func FilterUsesComputedAttributes(filter *Filter) bool {
 	}
 }
 
+// MemberOfEqualityValue returns the target group DN for filters that can be
+// answered by a memberOf equality fast path. It intentionally accepts only
+// simple memberOf equality and conjunctions with objectClass=inetOrgPerson.
+func MemberOfEqualityValue(filter *Filter) (string, bool) {
+	if filter == nil {
+		return "", false
+	}
+	if filter.Type == FilterTypeEquality && strings.EqualFold(filter.Attribute, "memberOf") {
+		return filter.Value, true
+	}
+	if filter.Type != FilterTypeAnd {
+		return "", false
+	}
+
+	var memberOfValue string
+	for _, sf := range filter.Filters {
+		if sf.Type != FilterTypeEquality {
+			return "", false
+		}
+		switch {
+		case strings.EqualFold(sf.Attribute, "memberOf"):
+			if memberOfValue != "" && !strings.EqualFold(memberOfValue, sf.Value) {
+				return "", false
+			}
+			memberOfValue = sf.Value
+		case strings.EqualFold(sf.Attribute, "objectClass") && strings.EqualFold(sf.Value, "inetOrgPerson"):
+			continue
+		default:
+			return "", false
+		}
+	}
+	return memberOfValue, memberOfValue != ""
+}
+
+// SimpleAttributeEquality returns a non-computed equality filter that can be
+// used as a narrow candidate lookup before loading full entry attributes.
+func SimpleAttributeEquality(filter *Filter) (attr string, value string, ok bool) {
+	if filter == nil || filter.Type != FilterTypeEquality {
+		return "", "", false
+	}
+	if isComputedAttribute(filter.Attribute) || strings.EqualFold(filter.Attribute, "objectClass") {
+		return "", "", false
+	}
+	return filter.Attribute, filter.Value, true
+}
+
 // CanCompileToSQL checks if a filter can be compiled to SQL
 func (fc *FilterCompiler) CanCompileToSQL(filter *Filter) bool {
 	if filter == nil {
