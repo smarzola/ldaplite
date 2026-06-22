@@ -3,8 +3,6 @@ package protocol
 import (
 	"bytes"
 	"testing"
-
-	"github.com/lor00x/goldap/message"
 )
 
 func TestCanonicalAttributeName(t *testing.T) {
@@ -53,13 +51,7 @@ func TestSearchResultEntryBERUsesCanonicalKnownAttributeNames(t *testing.T) {
 	AddAttribute(&entry, "vendorname", "LDAPLite")
 	AddAttribute(&entry, "vendorversion", "test")
 
-	msg := message.NewLDAPMessageWithProtocolOp(entry)
-	msg.SetMessageID(1)
-	encoded, err := msg.Write()
-	if err != nil {
-		t.Fatalf("failed to encode search result entry: %v", err)
-	}
-	ber := encoded.Bytes()
+	ber := encodeProtocolOpFixture(t, entry)
 
 	for _, attr := range []string{
 		"objectClass",
@@ -90,18 +82,8 @@ func TestSearchResultEntryBERUsesCanonicalKnownAttributeNames(t *testing.T) {
 func TestWhoAmIResponseBERIncludesOIDAndAuthzID(t *testing.T) {
 	const authzID = "dn:uid=admin,ou=users,dc=example,dc=com"
 
-	resp, err := NewWhoAmIResponse(authzID)
-	if err != nil {
-		t.Fatalf("NewWhoAmIResponse() failed: %v", err)
-	}
-
-	msg := message.NewLDAPMessageWithProtocolOp(resp)
-	msg.SetMessageID(1)
-	encoded, err := msg.Write()
-	if err != nil {
-		t.Fatalf("failed to encode extended response: %v", err)
-	}
-	ber := encoded.Bytes()
+	resp := NewWhoAmIResponse(authzID)
+	ber := encodeProtocolOpFixture(t, resp)
 
 	if !bytes.Contains(ber, []byte(WhoAmIOID)) {
 		t.Fatalf("encoded BER extended response is missing Who Am I OID %q: %x", WhoAmIOID, ber)

@@ -7,12 +7,12 @@ import (
 	"io"
 	"net"
 
-	"github.com/lor00x/goldap/message"
+	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 )
 
 // ReadLDAPMessage reads a single BER-encoded LDAP message from the connection
 // LDAP messages are ASN.1 BER encoded with a length prefix
-func ReadLDAPMessage(conn net.Conn) (*message.LDAPMessage, error) {
+func ReadLDAPMessage(conn net.Conn) (*ldapmsg.Message, error) {
 	// Read the BER tag and length
 	// BER format: [tag][length][value]
 	// For LDAP messages, the outer tag is SEQUENCE (0x30)
@@ -56,31 +56,12 @@ func ReadLDAPMessage(conn net.Conn) (*message.LDAPMessage, error) {
 
 	normalizeBERBooleans(data)
 
-	// Decode the LDAP message using goldap
-	bytes := message.NewBytes(0, data)
-	msg, err := message.ReadLDAPMessage(bytes)
+	msg, err := DecodeLDAPMessage(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode LDAP message: %w", err)
 	}
 
-	return &msg, nil
-}
-
-// WriteLDAPMessage writes a BER-encoded LDAP message to the connection
-func WriteLDAPMessage(conn net.Conn, msg *message.LDAPMessage) error {
-	// Encode the message using goldap
-	data, err := msg.Write()
-	if err != nil {
-		return fmt.Errorf("failed to encode LDAP message: %w", err)
-	}
-
-	// Write the encoded message to the connection
-	_, err = conn.Write(data.Bytes())
-	if err != nil {
-		return fmt.Errorf("failed to write to connection: %w", err)
-	}
-
-	return nil
+	return msg, nil
 }
 
 func normalizeBERBooleans(data []byte) {

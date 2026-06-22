@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lor00x/goldap/message"
 	"github.com/smarzola/ldaplite/internal/models"
 )
 
@@ -21,9 +20,7 @@ func TestSearchAttributeSelectionDefaultIncludesExistingBehavior(t *testing.T) {
 }
 
 func TestSearchAttributeSelectionExplicitSingleAttribute(t *testing.T) {
-	selection := newSearchAttributeSelection(message.AttributeSelection{
-		message.LDAPString("cn"),
-	})
+	selection := newSearchAttributeSelection([]string{"cn"})
 
 	if !selection.includes("cn") {
 		t.Fatal("explicit selection should include cn")
@@ -37,10 +34,7 @@ func TestSearchAttributeSelectionExplicitSingleAttribute(t *testing.T) {
 }
 
 func TestSearchAttributeSelectionIsCaseInsensitive(t *testing.T) {
-	selection := newSearchAttributeSelection(message.AttributeSelection{
-		message.LDAPString("MeMbErOf"),
-		message.LDAPString("GIVENNAME"),
-	})
+	selection := newSearchAttributeSelection([]string{"MeMbErOf", "GIVENNAME"})
 
 	if !selection.includes("memberOf") {
 		t.Fatal("mixed-case selector should include memberOf")
@@ -51,9 +45,7 @@ func TestSearchAttributeSelectionIsCaseInsensitive(t *testing.T) {
 }
 
 func TestSearchAttributeSelectionNoAttributes(t *testing.T) {
-	selection := newSearchAttributeSelection(message.AttributeSelection{
-		message.LDAPString("1.1"),
-	})
+	selection := newSearchAttributeSelection([]string{"1.1"})
 
 	for _, attr := range []string{"objectClass", "cn", "memberOf"} {
 		t.Run(attr, func(t *testing.T) {
@@ -65,9 +57,7 @@ func TestSearchAttributeSelectionNoAttributes(t *testing.T) {
 }
 
 func TestSearchAttributeSelectionWildcardAndOperational(t *testing.T) {
-	selection := newSearchAttributeSelection(message.AttributeSelection{
-		message.LDAPString("*"),
-	})
+	selection := newSearchAttributeSelection([]string{"*"})
 	if !selection.includes("cn") {
 		t.Fatal("* should include user attributes")
 	}
@@ -75,9 +65,7 @@ func TestSearchAttributeSelectionWildcardAndOperational(t *testing.T) {
 		t.Fatal("* should not include operational attributes")
 	}
 
-	selection = newSearchAttributeSelection(message.AttributeSelection{
-		message.LDAPString("+"),
-	})
+	selection = newSearchAttributeSelection([]string{"+"})
 	if !selection.includes("memberOf") {
 		t.Fatal("+ should include operational attributes")
 	}
@@ -85,10 +73,7 @@ func TestSearchAttributeSelectionWildcardAndOperational(t *testing.T) {
 		t.Fatal("+ should not include user attributes")
 	}
 
-	selection = newSearchAttributeSelection(message.AttributeSelection{
-		message.LDAPString("*"),
-		message.LDAPString("+"),
-	})
+	selection = newSearchAttributeSelection([]string{"*", "+"})
 	if !selection.includes("cn") || !selection.includes("memberOf") {
 		t.Fatal("* + should include both user and operational attributes")
 	}
@@ -121,9 +106,7 @@ func TestSearchResponseAttributesProjectsOperationalTimestamps(t *testing.T) {
 	entry.SetAttribute("createTimestamp", "stored-value-should-not-leak")
 	entry.SetAttribute("modifyTimestamp", "stored-value-should-not-leak")
 
-	attrs := searchResponseAttributes(entry, newSearchAttributeSelection(message.AttributeSelection{
-		message.LDAPString("+"),
-	}))
+	attrs := searchResponseAttributes(entry, newSearchAttributeSelection([]string{"+"}))
 
 	got := map[string][]string{}
 	for _, attr := range attrs {
@@ -146,9 +129,7 @@ func TestSearchResponseAttributesProjectsMemberOfOnce(t *testing.T) {
 	entry.SetAttribute("cn", "John Doe")
 	entry.SetAttributes("memberOf", []string{"cn=admins,ou=groups,dc=example,dc=com"})
 
-	attrs := searchResponseAttributes(entry, newSearchAttributeSelection(message.AttributeSelection{
-		message.LDAPString("+"),
-	}))
+	attrs := searchResponseAttributes(entry, newSearchAttributeSelection([]string{"+"}))
 
 	memberOfCount := 0
 	for _, attr := range attrs {

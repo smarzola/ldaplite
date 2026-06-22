@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/lor00x/goldap/message"
-
 	"github.com/smarzola/ldaplite/internal/protocol"
+	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/config"
 )
@@ -162,32 +161,32 @@ func TestEntryWriteResultCodeUsesTypedStoreErrors(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
-		want int
+		want ldapmsg.ResultCode
 	}{
 		{
 			name: "entry already exists",
 			err:  fmt.Errorf("wrapped: %w", store.ErrEntryAlreadyExists),
-			want: message.ResultCodeEntryAlreadyExists,
+			want: ldapmsg.ResultCodeEntryAlreadyExists,
 		},
 		{
 			name: "no such object",
 			err:  fmt.Errorf("wrapped: %w", store.ErrNoSuchObject),
-			want: message.ResultCodeNoSuchObject,
+			want: ldapmsg.ResultCodeNoSuchObject,
 		},
 		{
 			name: "object class violation",
 			err:  fmt.Errorf("wrapped: %w", store.ErrObjectClassViolation),
-			want: message.ResultCodeObjectClassViolation,
+			want: ldapmsg.ResultCodeObjectClassViolation,
 		},
 		{
 			name: "constraint violation",
 			err:  fmt.Errorf("wrapped: %w", store.ErrConstraintViolation),
-			want: message.ResultCodeConstraintViolation,
+			want: ldapmsg.ResultCodeConstraintViolation,
 		},
 		{
 			name: "unknown error",
 			err:  fmt.Errorf("unknown"),
-			want: message.ResultCodeOperationsError,
+			want: ldapmsg.ResultCodeOperationsError,
 		},
 	}
 
@@ -203,12 +202,12 @@ func TestEntryWriteResultCodeUsesTypedStoreErrors(t *testing.T) {
 func TestLDAPSearchScopeMapping(t *testing.T) {
 	tests := []struct {
 		name  string
-		scope message.ENUMERATED
+		scope ldapmsg.SearchScope
 		want  store.SearchScope
 	}{
-		{name: "base object", scope: 0, want: store.SearchScopeBaseObject},
-		{name: "single level", scope: 1, want: store.SearchScopeSingleLevel},
-		{name: "whole subtree", scope: 2, want: store.SearchScopeWholeSubtree},
+		{name: "base object", scope: ldapmsg.SearchScopeBaseObject, want: store.SearchScopeBaseObject},
+		{name: "single level", scope: ldapmsg.SearchScopeSingleLevel, want: store.SearchScopeSingleLevel},
+		{name: "whole subtree", scope: ldapmsg.SearchScopeWholeSubtree, want: store.SearchScopeWholeSubtree},
 		{name: "unknown defaults to subtree", scope: 99, want: store.SearchScopeWholeSubtree},
 	}
 

@@ -3,24 +3,23 @@ package server
 import (
 	"testing"
 
-	"github.com/lor00x/goldap/message"
-
 	"github.com/smarzola/ldaplite/internal/models"
+	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 )
 
-func TestAttributeValuesConvertsGoldapValues(t *testing.T) {
-	got := attributeValues([]message.AttributeValue{
-		message.AttributeValue("one"),
-		message.AttributeValue("two"),
+func TestAddRequestAttributesConvertsLDAPMessageAttributes(t *testing.T) {
+	got := addRequestAttributes([]ldapmsg.Attribute{
+		{Name: "cn", Values: []string{"one", "two"}},
 	})
 	want := []string{"one", "two"}
+	values := got["cn"]
 
-	if len(got) != len(want) {
-		t.Fatalf("attributeValues() = %#v, want %#v", got, want)
+	if len(values) != len(want) {
+		t.Fatalf("addRequestAttributes() = %#v, want %#v", got, map[string][]string{"cn": want})
 	}
 	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("attributeValues()[%d] = %q, want %q", i, got[i], want[i])
+		if values[i] != want[i] {
+			t.Fatalf("addRequestAttributes()[cn][%d] = %q, want %q", i, values[i], want[i])
 		}
 	}
 }
@@ -36,7 +35,7 @@ func TestNewAddEntryBuildsEntryFromAttributes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newAddEntry() failed: %v", err)
 	}
-	if resultCode != message.ResultCodeSuccess {
+	if resultCode != ldapmsg.ResultCodeSuccess {
 		t.Fatalf("resultCode = %d, want success", resultCode)
 	}
 	if entry.DN != "uid=jane,ou=users,dc=example,dc=com" {
@@ -72,7 +71,7 @@ func TestNewAddEntryRejectsProtectedAttributes(t *testing.T) {
 	if entry != nil {
 		t.Fatalf("entry = %#v, want nil", entry)
 	}
-	if resultCode != message.ResultCodeUnwillingToPerform {
+	if resultCode != ldapmsg.ResultCodeUnwillingToPerform {
 		t.Fatalf("resultCode = %d, want unwillingToPerform", resultCode)
 	}
 }
@@ -89,7 +88,7 @@ func TestNewAddEntryRequiresObjectClass(t *testing.T) {
 	if entry != nil {
 		t.Fatalf("entry = %#v, want nil", entry)
 	}
-	if resultCode != message.ResultCodeObjectClassViolation {
+	if resultCode != ldapmsg.ResultCodeObjectClassViolation {
 		t.Fatalf("resultCode = %d, want objectClassViolation", resultCode)
 	}
 }

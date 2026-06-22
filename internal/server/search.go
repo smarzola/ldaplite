@@ -6,19 +6,18 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/lor00x/goldap/message"
-
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/protocol"
+	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 	"github.com/smarzola/ldaplite/internal/store"
 )
 
 // handleSearch handles search operations
-func (s *Server) handleSearch(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
-	searchReq := msg.ProtocolOp().(message.SearchRequest)
-	baseDN := string(searchReq.BaseObject())
-	scope := ldapSearchScope(searchReq.Scope())
-	selection := newSearchAttributeSelection(searchReq.Attributes())
+func (s *Server) handleSearch(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
+	searchReq := msg.Op.(ldapmsg.SearchRequest)
+	baseDN := searchReq.BaseObject
+	scope := ldapSearchScope(searchReq.Scope)
+	selection := newSearchAttributeSelection(searchReq.Attributes)
 
 	// Handle RootDSE queries (empty base DN)
 	if baseDN == "" {
@@ -34,11 +33,11 @@ func (s *Server) handleSearch(ctx context.Context, conn *protocol.Connection, ms
 
 	if !s.canSearch(conn, baseDN) {
 		slog.Info("Search rejected - bind required", "baseDN", baseDN)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewSearchResultDone(message.ResultCodeInsufficientAccessRights))
+		return conn.WriteResponse(msg.ID, protocol.NewSearchResultDone(ldapmsg.ResultCodeInsufficientAccessRights))
 	}
 
 	// Get filter from request
-	filterStr := serializeFilter(searchReq.Filter())
+	filterStr := serializeFilter(searchReq.Filter)
 	if filterStr == "" {
 		filterStr = "(objectClass=*)"
 	}
@@ -53,7 +52,7 @@ func (s *Server) handleSearch(ctx context.Context, conn *protocol.Connection, ms
 	})
 	if err != nil {
 		slog.Error("Search error", "error", err)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewSearchResultDone(message.ResultCodeOperationsError))
+		return conn.WriteResponse(msg.ID, protocol.NewSearchResultDone(ldapmsg.ResultCodeOperationsError))
 	}
 
 	// Return matching entries
@@ -62,24 +61,24 @@ func (s *Server) handleSearch(ctx context.Context, conn *protocol.Connection, ms
 		result := protocol.NewSearchResultEntry(entry.DN)
 
 		for _, attr := range searchResponseAttributes(entry, selection) {
-			addSearchAttribute(&result, attr.name, attr.values, bool(searchReq.TypesOnly()))
+			addSearchAttribute(&result, attr.name, attr.values, searchReq.TypesOnly)
 		}
 
 		// Write entry
-		if err := conn.WriteResponse(msg.MessageID(), result); err != nil {
+		if err := conn.WriteResponse(msg.ID, result); err != nil {
 			return err
 		}
 	}
 
 	slog.Debug("Search completed", "baseDN", baseDN, "results", len(entries))
-	return conn.WriteResponse(msg.MessageID(), protocol.NewSearchResultDone(message.ResultCodeSuccess))
+	return conn.WriteResponse(msg.ID, protocol.NewSearchResultDone(ldapmsg.ResultCodeSuccess))
 }
 
-func ldapSearchScope(scope message.ENUMERATED) store.SearchScope {
-	switch int(scope) {
-	case 0:
+func ldapSearchScope(scope ldapmsg.SearchScope) store.SearchScope {
+	switch scope {
+	case ldapmsg.SearchScopeBaseObject:
 		return store.SearchScopeBaseObject
-	case 1:
+	case ldapmsg.SearchScopeSingleLevel:
 		return store.SearchScopeSingleLevel
 	default:
 		return store.SearchScopeWholeSubtree
@@ -115,14 +114,14 @@ type searchResponseAttribute struct {
 	values []string
 }
 
-func newSearchAttributeSelection(selection message.AttributeSelection) searchAttributeSelection {
+func newSearchAttributeSelection(selection []string) searchAttributeSelection {
 	if len(selection) == 0 {
 		return searchAttributeSelection{includeAll: true, includeOperational: true}
 	}
 
 	result := searchAttributeSelection{names: make(map[string]bool)}
 	for _, selector := range selection {
-		name := strings.TrimSpace(string(selector))
+		name := strings.TrimSpace(selector)
 		if name == "" {
 			continue
 		}
@@ -219,7 +218,7 @@ func isSearchProjectedAttribute(attrName string) bool {
 	}
 }
 
-func addSearchAttribute(result *message.SearchResultEntry, name string, values []string, typesOnly bool) {
+func addSearchAttribute(result *ldapmsg.SearchResultEntry, name string, values []string, typesOnly bool) {
 	if typesOnly {
 		protocol.AddAttribute(result, name)
 		return
@@ -227,78 +226,73 @@ func addSearchAttribute(result *message.SearchResultEntry, name string, values [
 	protocol.AddAttribute(result, name, values...)
 }
 
-// serializeFilter converts a goldap Filter to LDAP filter string
-func serializeFilter(f interface{}) string {
+func serializeFilter(f ldapmsg.Filter) string {
 	if f == nil {
 		return ""
 	}
 
 	switch filter := f.(type) {
-	case message.FilterEqualityMatch:
-		return fmt.Sprintf("(%s=%s)", filter.AttributeDesc(), escapeLDAPFilterAssertionValue(string(filter.AssertionValue())))
+	case ldapmsg.EqualityMatchFilter:
+		return fmt.Sprintf("(%s=%s)", filter.Attribute, escapeLDAPFilterAssertionValue(filter.Value))
 
-	case message.FilterPresent:
-		return fmt.Sprintf("(%s=*)", string(filter))
+	case ldapmsg.PresentFilter:
+		return fmt.Sprintf("(%s=*)", filter.Attribute)
 
-	case message.FilterAnd:
-		if len(filter) == 0 {
+	case ldapmsg.AndFilter:
+		if len(filter.Filters) == 0 {
 			return ""
 		}
 		var parts []string
-		for _, subFilter := range filter {
+		for _, subFilter := range filter.Filters {
 			parts = append(parts, serializeFilter(subFilter))
 		}
 		return "(&" + strings.Join(parts, "") + ")"
 
-	case message.FilterOr:
-		if len(filter) == 0 {
+	case ldapmsg.OrFilter:
+		if len(filter.Filters) == 0 {
 			return ""
 		}
 		var parts []string
-		for _, subFilter := range filter {
+		for _, subFilter := range filter.Filters {
 			parts = append(parts, serializeFilter(subFilter))
 		}
 		return "(|" + strings.Join(parts, "") + ")"
 
-	case message.FilterNot:
+	case ldapmsg.NotFilter:
 		return "(!" + serializeFilter(filter.Filter) + ")"
 
-	case message.FilterGreaterOrEqual:
-		return fmt.Sprintf("(%s>=%s)", filter.AttributeDesc(), escapeLDAPFilterAssertionValue(string(filter.AssertionValue())))
+	case ldapmsg.GreaterOrEqualFilter:
+		return fmt.Sprintf("(%s>=%s)", filter.Attribute, escapeLDAPFilterAssertionValue(filter.Value))
 
-	case message.FilterLessOrEqual:
-		return fmt.Sprintf("(%s<=%s)", filter.AttributeDesc(), escapeLDAPFilterAssertionValue(string(filter.AssertionValue())))
+	case ldapmsg.LessOrEqualFilter:
+		return fmt.Sprintf("(%s<=%s)", filter.Attribute, escapeLDAPFilterAssertionValue(filter.Value))
 
-	case message.FilterApproxMatch:
-		return fmt.Sprintf("(%s~=%s)", filter.AttributeDesc(), escapeLDAPFilterAssertionValue(string(filter.AssertionValue())))
+	case ldapmsg.ApproxMatchFilter:
+		return fmt.Sprintf("(%s~=%s)", filter.Attribute, escapeLDAPFilterAssertionValue(filter.Value))
 
-	case message.FilterSubstrings:
-		attr := string(filter.Type_())
+	case ldapmsg.SubstringsFilter:
+		attr := filter.Attribute
 		var sb strings.Builder
 		sb.WriteString("(")
 		sb.WriteString(attr)
 		sb.WriteString("=")
 
-		for _, sub := range filter.Substrings() {
-			switch s := sub.(type) {
-			case message.SubstringInitial:
-				sb.WriteString(escapeLDAPFilterAssertionValue(string(s)))
+		for _, sub := range filter.Substrings {
+			switch sub.Kind {
+			case ldapmsg.SubstringInitial:
+				sb.WriteString(escapeLDAPFilterAssertionValue(sub.Value))
 				sb.WriteString("*")
-			case message.SubstringAny:
-				sb.WriteString(escapeLDAPFilterAssertionValue(string(s)))
+			case ldapmsg.SubstringAny:
+				sb.WriteString(escapeLDAPFilterAssertionValue(sub.Value))
 				sb.WriteString("*")
-			case message.SubstringFinal:
-				sb.WriteString(escapeLDAPFilterAssertionValue(string(s)))
+			case ldapmsg.SubstringFinal:
+				sb.WriteString(escapeLDAPFilterAssertionValue(sub.Value))
 			}
 		}
 		sb.WriteString(")")
 		return sb.String()
 
 	default:
-		str := fmt.Sprintf("%v", f)
-		if str != "" && str[0] == '(' {
-			return str
-		}
 		return "(objectClass=*)"
 	}
 }

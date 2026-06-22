@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lor00x/goldap/message"
+	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 )
 
 func TestConnectionBoundState(t *testing.T) {
@@ -74,13 +74,13 @@ func TestDispatchPassesContextToHandler(t *testing.T) {
 
 	var got string
 	conn := NewConnection(nil, OperationHandlers{
-		OnBind: func(ctx context.Context, conn *Connection, msg *message.LDAPMessage) error {
+		OnBind: func(ctx context.Context, conn *Connection, msg *ldapmsg.Message) error {
 			got, _ = ctx.Value(key).(string)
 			return nil
 		},
 	})
 
-	msg := message.NewLDAPMessageWithProtocolOp(message.BindRequest{})
+	msg := &ldapmsg.Message{Op: ldapmsg.BindRequest{}}
 	if err := conn.dispatch(ctx, msg); err != nil {
 		t.Fatalf("dispatch() failed: %v", err)
 	}

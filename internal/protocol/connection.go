@@ -9,7 +9,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/lor00x/goldap/message"
+	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 )
 
 // Connection represents an LDAP client connection
@@ -24,14 +24,14 @@ type Connection struct {
 
 // OperationHandlers defines callbacks for LDAP operations
 type OperationHandlers struct {
-	OnBind     func(context.Context, *Connection, *message.LDAPMessage) error
-	OnSearch   func(context.Context, *Connection, *message.LDAPMessage) error
-	OnAdd      func(context.Context, *Connection, *message.LDAPMessage) error
-	OnModify   func(context.Context, *Connection, *message.LDAPMessage) error
-	OnDelete   func(context.Context, *Connection, *message.LDAPMessage) error
-	OnCompare  func(context.Context, *Connection, *message.LDAPMessage) error
-	OnExtended func(context.Context, *Connection, *message.LDAPMessage) error
-	OnUnbind   func(context.Context, *Connection, *message.LDAPMessage) error
+	OnBind     func(context.Context, *Connection, *ldapmsg.Message) error
+	OnSearch   func(context.Context, *Connection, *ldapmsg.Message) error
+	OnAdd      func(context.Context, *Connection, *ldapmsg.Message) error
+	OnModify   func(context.Context, *Connection, *ldapmsg.Message) error
+	OnDelete   func(context.Context, *Connection, *ldapmsg.Message) error
+	OnCompare  func(context.Context, *Connection, *ldapmsg.Message) error
+	OnExtended func(context.Context, *Connection, *ldapmsg.Message) error
+	OnUnbind   func(context.Context, *Connection, *ldapmsg.Message) error
 }
 
 // NewConnection creates a new LDAP connection wrapper
@@ -65,68 +65,67 @@ func (c *Connection) Handle(ctx context.Context) error {
 			return err
 		}
 
-		// Dispatch to appropriate handler based on operation type
 		if err := c.dispatch(ctx, msg); err != nil {
-			slog.Error("Failed to handle LDAP operation", "error", err, "operation", msg.ProtocolOpName())
+			slog.Error("Failed to handle LDAP operation", "error", err, "operation", fmt.Sprintf("%T", msg.Op))
 			// Continue processing other messages even if one fails
 		}
 	}
 }
 
 // dispatch routes the message to the appropriate handler
-func (c *Connection) dispatch(ctx context.Context, msg *message.LDAPMessage) error {
-	switch msg.ProtocolOp().(type) {
-	case message.BindRequest:
+func (c *Connection) dispatch(ctx context.Context, msg *ldapmsg.Message) error {
+	switch msg.Op.(type) {
+	case ldapmsg.BindRequest:
 		if c.handlers.OnBind != nil {
 			return c.handlers.OnBind(ctx, c, msg)
 		}
 
-	case message.SearchRequest:
+	case ldapmsg.SearchRequest:
 		if c.handlers.OnSearch != nil {
 			return c.handlers.OnSearch(ctx, c, msg)
 		}
 
-	case message.AddRequest:
+	case ldapmsg.AddRequest:
 		if c.handlers.OnAdd != nil {
 			return c.handlers.OnAdd(ctx, c, msg)
 		}
 
-	case message.ModifyRequest:
+	case ldapmsg.ModifyRequest:
 		if c.handlers.OnModify != nil {
 			return c.handlers.OnModify(ctx, c, msg)
 		}
 
-	case message.DelRequest:
+	case ldapmsg.DeleteRequest:
 		if c.handlers.OnDelete != nil {
 			return c.handlers.OnDelete(ctx, c, msg)
 		}
 
-	case message.CompareRequest:
+	case ldapmsg.CompareRequest:
 		if c.handlers.OnCompare != nil {
 			return c.handlers.OnCompare(ctx, c, msg)
 		}
 
-	case message.ExtendedRequest:
+	case ldapmsg.ExtendedRequest:
 		if c.handlers.OnExtended != nil {
 			return c.handlers.OnExtended(ctx, c, msg)
 		}
 
-	case message.UnbindRequest:
+	case ldapmsg.UnbindRequest:
 		if c.handlers.OnUnbind != nil {
 			return c.handlers.OnUnbind(ctx, c, msg)
 		}
 		return c.Close()
 
 	default:
-		slog.Warn("Unsupported LDAP operation", "operation", msg.ProtocolOpName())
-		return c.WriteError(msg.MessageID(), message.ResultCodeProtocolError, "Unsupported operation")
+		slog.Warn("Unsupported LDAP operation", "operation", fmt.Sprintf("%T", msg.Op))
+		return c.WriteError(msg.ID, ldapmsg.ResultCodeProtocolError, "Unsupported operation")
 	}
 
 	return nil
 }
 
 // WriteResponse writes an LDAP response message
-func (c *Connection) WriteResponse(messageID message.MessageID, response message.ProtocolOp) error {
+func (c *Connection) WriteResponse(messageID ldapmsg.MessageID, response ldapmsg.Operation) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -134,17 +133,14 @@ func (c *Connection) WriteResponse(messageID message.MessageID, response message
 		return fmt.Errorf("connection closed")
 	}
 
-	msg := message.NewLDAPMessageWithProtocolOp(response)
-	msg.SetMessageID(int(messageID))
-
-	return WriteLDAPMessage(c.conn, msg)
+	return WriteLDAPResponse(c.conn, messageID, response)
 }
 
 // WriteError writes an error response
-func (c *Connection) WriteError(messageID message.MessageID, resultCode int, diagnosticMessage string) error {
+func (c *Connection) WriteError(messageID ldapmsg.MessageID, resultCode ldapmsg.ResultCode, diagnosticMessage string) error {
 	// Create a generic error response using BindResponse structure
 	resp := NewBindResponse(resultCode)
-	resp.SetDiagnosticMessage(diagnosticMessage)
+	resp.DiagnosticMessage = diagnosticMessage
 	return c.WriteResponse(messageID, resp)
 }
 

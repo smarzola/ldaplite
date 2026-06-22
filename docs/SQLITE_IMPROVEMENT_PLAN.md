@@ -28,7 +28,7 @@ This document outlines a comprehensive plan to improve the SQLite data layer in 
 2. **N+1 query patterns** - Every multi-entry fetch triggers N+1 queries for attributes
 3. **In-memory filtering** - LDAP filters applied after fetching all entries
 4. **Inefficient LIKE patterns** - `parent_dn LIKE '%...'` forces full table scans
-5. **Filter marshalling overhead** - goldap→string→parsed→evaluated (unnecessary round-trips)
+5. **Filter marshalling overhead** - wire filter→string→parsed→evaluated (unnecessary round-trips)
 
 **Expected overall performance improvement:** 10-100x for typical workloads.
 
@@ -93,7 +93,7 @@ Search for users under ou=users,dc=example,dc=com with 100 results:
 
 **Flow:**
 ```
-1. goldap filter → serializeFilter() [ldap.go:156]
+1. Decoded LDAP filter → serializeFilter() [ldap.go:156]
 2. store.SearchEntries(baseDN, filterStr) [ldap.go:164]
    └─> SQL: WHERE (dn = ? OR parent_dn LIKE ?) -- filter parameter IGNORED
 3. Fetch ALL entries under baseDN (with N+1 pattern)
@@ -190,7 +190,7 @@ Total: 186 queries for one recursive expansion
 **Location:** `internal/server/ldap.go:156, 172`
 
 **Flow:**
-1. LDAP client sends goldap.Filter message
+1. LDAP client sends LDAP filter BER
 2. `serializeFilter()` converts to string: `"(&(uid=john)(mail=*))"` [line 156]
 3. String passed to `store.SearchEntries()` (unused)
 4. `schema.ParseFilter()` converts string back to Filter struct [line 172]
@@ -198,7 +198,7 @@ Total: 186 queries for one recursive expansion
 
 **Problem:**
 - Unnecessary serialization/deserialization
-- goldap format → string → custom Filter struct
+- decoded filter format → string → custom Filter struct
 - No benefit from string representation
 
 ### Issue 7: Incomplete Filter Implementation
@@ -826,7 +826,7 @@ go test -bench=BenchmarkSearchEntries -benchmem
 
 **Current flow:**
 ```
-1. goldap.Filter → serializeFilter() → string
+1. Decoded LDAP filter → serializeFilter() → string
 2. store.SearchEntries(baseDN, filterStr) -- filterStr IGNORED
 3. Fetch ALL entries under baseDN (1000 entries)
 4. schema.ParseFilter(filterStr) → Filter struct
@@ -838,7 +838,7 @@ Wasted: 995 entries fetched unnecessarily
 
 **Target flow:**
 ```
-1. goldap.Filter → serializeFilter() → string
+1. Decoded LDAP filter → serializeFilter() → string
 2. schema.ParseFilter(filterStr) → Filter struct
 3. schema.CompileToSQL(filter) → SQL WHERE clause
 4. store.SearchEntries executes:

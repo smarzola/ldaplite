@@ -9,7 +9,7 @@ LDAPLite is a lightweight, LDAP-compliant server written in Go with SQLite backe
 **Key Technologies:**
 - Go 1.25.3
 - SQLite database (modernc.org/sqlite)
-- LDAP protocol via lor00x/goldap (low-level ASN.1 BER encoding/decoding)
+- Repo-owned LDAP protocol and low-level ASN.1 BER encoding/decoding
 - Custom TCP server implementation (no high-level LDAP server framework)
 - Argon2id password hashing
 - Cobra for CLI commands
@@ -83,7 +83,7 @@ ldapwhoami -H ldap://localhost:3389 -D "cn=admin,dc=example,dc=com" -w ChangeMe1
 ### Core Components
 
 **Server Layer** (`internal/server/ldap.go`)
-- Custom LDAP protocol implementation using raw TCP and goldap for ASN.1 BER encoding
+- Custom LDAP protocol implementation using raw TCP and repo-owned BER encoding/decoding
 - Handles: Bind, Search, Add, Delete, Modify, Compare operations
 - **Routes all operations to generic store.Entry methods** - no type-specific code
 - Bind operation: Uses `GetUserPasswordHash(uid)` to retrieve password hash securely
@@ -92,10 +92,12 @@ ldapwhoami -H ldap://localhost:3389 -D "cn=admin,dc=example,dc=com" -w ChangeMe1
 - Connection management: Per-connection goroutines with graceful shutdown
 
 **Protocol Layer** (`internal/protocol/`)
-- `transport.go`: BER message reading/writing using goldap
+- `transport.go`: TCP BER message framing
+- `decoder.go`: LDAP request decoding into repo-owned protocol types
+- `encoder.go`: LDAP response encoding from repo-owned protocol types
 - `connection.go`: TCP connection lifecycle and request dispatching
 - `response.go`: Helper functions for constructing LDAP responses
-- Direct use of goldap message types (BindRequest, SearchRequest, etc.)
+- Repo-owned request/response/filter types in `internal/protocol/ldapmsg`
 - No dependency on high-level LDAP server frameworks
 
 **Store Layer** (`internal/store/`)
