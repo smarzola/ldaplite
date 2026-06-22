@@ -1,9 +1,7 @@
 package protocol
 
 import (
-	"net"
 	"testing"
-	"time"
 
 	"github.com/lor00x/goldap/message"
 
@@ -275,31 +273,11 @@ func TestFromGoldapMessageConvertsRequestFixtures(t *testing.T) {
 func readGoldapMessageFixture(t *testing.T, wire []byte) *message.LDAPMessage {
 	t.Helper()
 
-	serverConn, clientConn := net.Pipe()
-	defer serverConn.Close()
-
-	writeDone := make(chan error, 1)
-	go func() {
-		_, err := clientConn.Write(wire)
-		if closeErr := clientConn.Close(); err == nil {
-			err = closeErr
-		}
-		writeDone <- err
-	}()
-
-	msg, err := ReadLDAPMessage(serverConn)
+	bytes := message.NewBytes(0, wire)
+	msg, err := message.ReadLDAPMessage(bytes)
 	if err != nil {
-		t.Fatalf("ReadLDAPMessage() failed: %v", err)
+		t.Fatalf("goldap ReadLDAPMessage() failed: %v", err)
 	}
 
-	select {
-	case err := <-writeDone:
-		if err != nil {
-			t.Fatalf("client write fixture failed: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("fixture writer did not finish")
-	}
-
-	return msg
+	return &msg
 }

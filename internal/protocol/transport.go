@@ -7,12 +7,12 @@ import (
 	"io"
 	"net"
 
-	"github.com/lor00x/goldap/message"
+	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 )
 
 // ReadLDAPMessage reads a single BER-encoded LDAP message from the connection
 // LDAP messages are ASN.1 BER encoded with a length prefix
-func ReadLDAPMessage(conn net.Conn) (*message.LDAPMessage, error) {
+func ReadLDAPMessage(conn net.Conn) (*ldapmsg.Message, error) {
 	// Read the BER tag and length
 	// BER format: [tag][length][value]
 	// For LDAP messages, the outer tag is SEQUENCE (0x30)
@@ -56,14 +56,12 @@ func ReadLDAPMessage(conn net.Conn) (*message.LDAPMessage, error) {
 
 	normalizeBERBooleans(data)
 
-	// Decode the LDAP message using goldap
-	bytes := message.NewBytes(0, data)
-	msg, err := message.ReadLDAPMessage(bytes)
+	msg, err := DecodeLDAPMessage(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode LDAP message: %w", err)
 	}
 
-	return &msg, nil
+	return msg, nil
 }
 
 func normalizeBERBooleans(data []byte) {

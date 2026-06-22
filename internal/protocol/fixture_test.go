@@ -301,13 +301,9 @@ func readLDAPFixture(t *testing.T, wire []byte) *ldapmsg.Message {
 		writeDone <- err
 	}()
 
-	goldapMsg, err := ReadLDAPMessage(serverConn)
+	msg, err := ReadLDAPMessage(serverConn)
 	if err != nil {
 		t.Fatalf("ReadLDAPMessage() failed: %v", err)
-	}
-	msg, err := FromGoldapMessage(goldapMsg)
-	if err != nil {
-		t.Fatalf("FromGoldapMessage() failed: %v", err)
 	}
 
 	select {

@@ -316,7 +316,7 @@ Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
 
-### [ ] 5. Implement BER Reader And LDAP Request Decoder
+### [x] 5. Implement BER Reader And LDAP Request Decoder
 
 Decode LDAP requests without `goldap`.
 
@@ -360,7 +360,26 @@ GOCACHE=/private/tmp/ldaplite-gocache go test -tags=functional -v ./tests/functi
 
 Status note:
 
-- Pending.
+- Done on 2026-06-22.
+- Added `internal/protocol/ber/reader.go` with strict definite-length BER
+  packet parsing, malformed/truncated length errors, and boolean/integer value
+  helpers.
+- Added `internal/protocol/decoder.go` to decode LDAP bind, search, add,
+  modify, delete, compare, extended, and unbind requests into `ldapmsg` values.
+- Added decoding support for equality, present, and/or/not, greater-or-equal,
+  less-or-equal, approximate, and substring filters.
+- Routed `protocol.ReadLDAPMessage` through the LDAPLite-owned decoder instead
+  of `goldap`.
+- Added malformed BER and partial TCP read tests.
+- Existing functional coverage exercised real client bind, search, add, modify,
+  delete, compare/error-code, extended WhoAmI, escaped DN, and filter behavior
+  through the new request decoder.
+- Verification commands run:
+  ```bash
+  GOCACHE=/private/tmp/ldaplite-gocache go test ./internal/protocol ./internal/server
+  GOCACHE=/private/tmp/ldaplite-gocache go test -tags=functional -v ./tests/functional/...
+  ```
+- Commit hash: pending until this milestone commit is created.
 
 Commit requirement:
 

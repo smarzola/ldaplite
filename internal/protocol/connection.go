@@ -54,7 +54,7 @@ func (c *Connection) Handle(ctx context.Context) error {
 		}
 
 		// Read LDAP message from connection
-		goldapMsg, err := ReadLDAPMessage(c.conn)
+		msg, err := ReadLDAPMessage(c.conn)
 		if err != nil {
 			// EOF is normal when client disconnects
 			if errors.Is(err, io.EOF) {
@@ -62,13 +62,6 @@ func (c *Connection) Handle(ctx context.Context) error {
 				return nil
 			}
 			slog.Error("Failed to read LDAP message", "error", err, "remote", c.conn.RemoteAddr())
-			return err
-		}
-
-		// Dispatch to appropriate handler based on operation type
-		msg, err := FromGoldapMessage(goldapMsg)
-		if err != nil {
-			slog.Error("Failed to convert LDAP message", "error", err, "remote", c.conn.RemoteAddr())
 			return err
 		}
 
