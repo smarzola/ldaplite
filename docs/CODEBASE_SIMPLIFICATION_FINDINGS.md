@@ -13,10 +13,9 @@ what acceptance criteria should close or split issue #13.
 
 The remaining implementation goal is narrower than the original audit:
 
-> Finish the residual cleanup by deciding whether LDAP response projection
-> belongs in store queries or only at the protocol boundary, consolidating
-> remaining Web UI handler repetition where it reduces code without hiding
-> behavior, and adding targeted cancellation coverage.
+> Finish the residual cleanup by consolidating remaining Web UI handler
+> repetition where it reduces code without hiding behavior, and adding targeted
+> cancellation coverage.
 
 ## Current Status
 
@@ -69,36 +68,16 @@ to residual follow-up work:
 - Server lifecycle: startup uses signal-aware context handling.
 - Virtual attribute boundary: `memberOf` is projected through explicit computed
   attributes instead of being injected into persisted generic attributes.
+- LDAP response projection: attribute selection, `1.1`, `typesOnly`, selected
+  attributes, and operational attributes are covered at the functional LDAP
+  boundary without adding a store-level projection API; BER boolean decoding
+  now accepts non-canonical true values emitted by real clients.
 - Dependency health: the moderate `github.com/Azure/go-ntlmssp` alert is
   addressed by selecting the patched `v0.1.1` module version.
 
 ## Remaining Opportunities
 
-### 1. Decide how far LDAP response projection should move into storage
-
-Current state:
-
-- The server already uses explicit search options.
-- The store can avoid some unnecessary `memberOf` work.
-- Attribute selection, `typesOnly`, and `1.1` handling are still primarily
-  response-projection concerns rather than narrow SQL projection concerns.
-- Computed attributes are now separated from persisted generic attributes.
-
-Recommendation:
-
-- Measure before deepening the abstraction. If full attribute loading is cheap
-  enough for LDAPLite's target size, keep projection at the protocol boundary.
-- If benchmarks show meaningful waste, add a narrow projection option for
-  attribute-light searches.
-
-Acceptance criteria:
-
-- Tests cover `1.1`, `typesOnly`, selected user attributes, and operational
-  attribute requests.
-- Benchmarks or query-plan tests justify any added store-level projection API.
-- The API does not leak LDAP protocol trivia into unrelated store callers.
-
-### 2. Consolidate remaining Web UI handler repetition
+### 1. Consolidate remaining Web UI handler repetition
 
 Current state:
 
@@ -119,7 +98,7 @@ Acceptance criteria:
 - Tests cover create, edit, delete, validation error, and extra-attribute
   removal paths for each resource type touched.
 
-### 3. Add targeted cancellation tests
+### 2. Add targeted cancellation tests
 
 Current state:
 

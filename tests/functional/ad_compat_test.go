@@ -167,6 +167,43 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 		assertTimestampAttr(t, entry, "modifyTimestamp")
 	})
 
+	t.Run("attribute projection", func(t *testing.T) {
+		conn := srv.dial(t)
+		bindAdmin(t, conn)
+
+		res := search(t, conn, "(uid=jane)", []string{"1.1"})
+		entry := requireEntry(t, res, janeDN)
+		if len(entry.Attributes) != 0 {
+			t.Fatalf("1.1 search should return no attributes, got %v", entry.Attributes)
+		}
+
+		res = search(t, conn, "(uid=jane)", []string{"cn"})
+		entry = requireEntry(t, res, janeDN)
+		assertAttrValues(t, entry, "cn", []string{"Jane Doe"})
+		for _, attr := range []string{"mail", "memberOf", "createTimestamp", "modifyTimestamp"} {
+			assertNoAttr(t, entry, attr)
+		}
+
+		res = search(t, conn, "(uid=jane)", []string{"+"})
+		entry = requireEntry(t, res, janeDN)
+		assertTimestampAttr(t, entry, "createTimestamp")
+		assertTimestampAttr(t, entry, "modifyTimestamp")
+		assertAttrValues(t, entry, "memberOf", []string{groupDN})
+		assertNoAttr(t, entry, "cn")
+
+		res = searchTypesOnly(t, srv, conn, "(uid=jane)", []string{"cn", "mail"})
+		entry = requireEntry(t, res, janeDN)
+		for _, attr := range []string{"cn", "mail"} {
+			values, ok := attrValuesIfPresent(entry, attr)
+			if !ok {
+				t.Fatalf("typesOnly search should include attribute %s", attr)
+			}
+			if len(values) != 0 {
+				t.Fatalf("typesOnly search should not include values for %s, got %v", attr, values)
+			}
+		}
+	})
+
 	t.Run("escaped DN compatibility", func(t *testing.T) {
 		conn := srv.dial(t)
 		bindAdmin(t, conn)
@@ -322,6 +359,26 @@ func search(t *testing.T, conn *ldap.Conn, filter string, attrs []string) *ldap.
 	return res
 }
 
+func searchTypesOnly(t *testing.T, srv *testServer, conn *ldap.Conn, filter string, attrs []string) *ldap.SearchResult {
+	t.Helper()
+	req := ldap.NewSearchRequest(
+		baseDN,
+		ldap.ScopeWholeSubtree,
+		ldap.NeverDerefAliases,
+		0,
+		0,
+		true,
+		filter,
+		attrs,
+		nil,
+	)
+	res, err := conn.Search(req)
+	if err != nil {
+		t.Fatalf("typesOnly search %s: %v\nlogs:\n%s", filter, err, srv.logs.String())
+	}
+	return res
+}
+
 func assertDNs(t *testing.T, res *ldap.SearchResult, want []string) {
 	t.Helper()
 	got := make([]string, 0, len(res.Entries))
@@ -365,7 +422,7 @@ func assertAttrValues(t *testing.T, entry *ldap.Entry, attr string, want []strin
 
 func assertNoAttr(t *testing.T, entry *ldap.Entry, attr string) {
 	t.Helper()
-	if values := attrValues(entry, attr); len(values) > 0 {
+	if values, ok := attrValuesIfPresent(entry, attr); ok {
 		t.Fatalf("attribute %s unexpectedly present with values %v", attr, values)
 	}
 }
@@ -382,12 +439,17 @@ func assertTimestampAttr(t *testing.T, entry *ldap.Entry, attr string) {
 }
 
 func attrValues(entry *ldap.Entry, attr string) []string {
+	values, _ := attrValuesIfPresent(entry, attr)
+	return values
+}
+
+func attrValuesIfPresent(entry *ldap.Entry, attr string) ([]string, bool) {
 	for _, attribute := range entry.Attributes {
 		if strings.EqualFold(attribute.Name, attr) {
-			return append([]string(nil), attribute.Values...)
+			return append([]string(nil), attribute.Values...), true
 		}
 	}
-	return nil
+	return nil, false
 }
 
 func assertLDAPError(t *testing.T, err error) {

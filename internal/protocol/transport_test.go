@@ -1,0 +1,25 @@
+package protocol
+
+import (
+	"bytes"
+	"testing"
+)
+
+func TestNormalizeBERBooleansAcceptsNonCanonicalTrue(t *testing.T) {
+	data := []byte{
+		0x30, 0x09,
+		0x01, 0x01, 0x01,
+		0x04, 0x04, 0x01, 0x01, 0x01, 0x00,
+	}
+
+	normalizeBERBooleans(data)
+
+	want := []byte{
+		0x30, 0x09,
+		0x01, 0x01, 0xff,
+		0x04, 0x04, 0x01, 0x01, 0x01, 0x00,
+	}
+	if !bytes.Equal(data, want) {
+		t.Fatalf("normalizeBERBooleans() = %x, want %x", data, want)
+	}
+}

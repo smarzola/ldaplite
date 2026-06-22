@@ -54,6 +54,8 @@ func ReadLDAPMessage(conn net.Conn) (*message.LDAPMessage, error) {
 		}
 	}
 
+	normalizeBERBooleans(data)
+
 	// Decode the LDAP message using goldap
 	bytes := message.NewBytes(0, data)
 	msg, err := message.ReadLDAPMessage(bytes)
@@ -79,6 +81,40 @@ func WriteLDAPMessage(conn net.Conn, msg *message.LDAPMessage) error {
 	}
 
 	return nil
+}
+
+func normalizeBERBooleans(data []byte) {
+	normalizeBERBooleansInRange(data, 0, len(data))
+}
+
+func normalizeBERBooleansInRange(data []byte, start, end int) {
+	for offset := start; offset < end; {
+		if offset+2 > end {
+			return
+		}
+
+		tag := data[offset]
+		length, headerLen := parseBERLength(data[offset:end])
+		if length < 0 {
+			return
+		}
+
+		valueStart := offset + headerLen
+		valueEnd := valueStart + length
+		if valueEnd > end {
+			return
+		}
+
+		if tag == 0x01 && length == 1 && data[valueStart] != 0x00 {
+			data[valueStart] = 0xff
+		}
+
+		if tag&0x20 != 0 {
+			normalizeBERBooleansInRange(data, valueStart, valueEnd)
+		}
+
+		offset = valueEnd
+	}
 }
 
 // parseBERLength parses BER length encoding from a byte slice
