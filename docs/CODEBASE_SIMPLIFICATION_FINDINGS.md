@@ -14,8 +14,7 @@ what acceptance criteria should close or split issue #13.
 The remaining implementation goal is narrower than the original audit:
 
 > Finish the residual cleanup by consolidating remaining Web UI handler
-> repetition where it reduces code without hiding behavior, and adding targeted
-> cancellation coverage.
+> repetition where it reduces code without hiding behavior.
 
 ## Current Status
 
@@ -72,6 +71,8 @@ to residual follow-up work:
   attributes, and operational attributes are covered at the functional LDAP
   boundary without adding a store-level projection API; BER boolean decoding
   now accepts non-canonical true values emitted by real clients.
+- Cancellation coverage: store read, search, and write paths are covered for
+  already-canceled contexts without sleep-based timing.
 - Dependency health: the moderate `github.com/Azure/go-ntlmssp` alert is
   addressed by selecting the patched `v0.1.1` module version.
 
@@ -97,26 +98,6 @@ Acceptance criteria:
   behavior behind generic reflection-style helpers.
 - Tests cover create, edit, delete, validation error, and extra-attribute
   removal paths for each resource type touched.
-
-### 2. Add targeted cancellation tests
-
-Current state:
-
-- Server lifecycle uses signal context.
-- LDAP handlers receive context through the protocol flow.
-- There is still limited focused coverage proving cancellation reaches slow or
-  blocked store operations in predictable ways.
-
-Recommendation:
-
-- Add small tests around handler/store boundaries where cancellation matters
-  most: search, write, and shutdown behavior.
-
-Acceptance criteria:
-
-- A canceled context returns predictably without leaking goroutines or masking
-  the relevant LDAP result/error behavior.
-- Tests stay deterministic and do not rely on sleeps longer than necessary.
 
 ## Out Of Scope
 
