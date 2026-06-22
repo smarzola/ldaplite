@@ -46,7 +46,7 @@ func (fc *FilterCompiler) CompileToSQL(filter *Filter) (string, []interface{}, e
 // but computed dynamically (e.g., memberOf from group_members table).
 // These require in-memory filtering and cannot be compiled to SQL.
 var computedAttributes = map[string]bool{
-	"memberof": true, // RFC2307bis: computed from group_members table
+	"memberof": true, // RFC2307bis-style compatibility, computed from group_members
 }
 
 // isComputedAttribute checks if an attribute is computed (not stored in SQL)

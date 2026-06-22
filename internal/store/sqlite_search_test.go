@@ -1047,11 +1047,11 @@ func TestSearchEntriesTimestampComparisons(t *testing.T) {
 }
 
 // =============================================================================
-// memberOf Attribute Tests (RFC2307bis Compliance)
+// memberOf Attribute Tests (RFC2307bis-style client compatibility)
 // =============================================================================
 
 // TestMemberOfBasicPresence verifies that the memberOf attribute is populated
-// for users who are members of groups (RFC2307bis compliance).
+// for users who are members of groups.
 func TestMemberOfBasicPresence(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()
@@ -1213,7 +1213,7 @@ func TestSearchEntriesWithOptionsMemberOfFilterDoesNotForceProjection(t *testing
 }
 
 // TestMemberOfMultipleGroups verifies that users in multiple groups have
-// multiple memberOf values (multi-valued attribute per RFC2307bis).
+// multiple memberOf values for RFC2307bis-style client compatibility.
 func TestMemberOfMultipleGroups(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()
@@ -1452,7 +1452,7 @@ func TestMemberOfFilterSearch(t *testing.T) {
 }
 
 // TestMemberOfDNFormat verifies that memberOf values use proper DN format
-// as required by RFC2307bis (distinguishedName syntax).
+// for clients that expect distinguishedName-style memberOf values.
 func TestMemberOfDNFormat(t *testing.T) {
 	store := setupTestStore(t)
 	defer store.Close()

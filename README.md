@@ -32,7 +32,7 @@ Perfect for homelabs, development environments, and single-instance deployments 
   - `groupOfNames` - Groups with nested group support
   - `top` - Root of object class hierarchy
 
-- **Operational Attributes** (RFC 4512, RFC 4517, RFC2307bis):
+- **Operational Attributes** (RFC 4512, RFC 4517, RFC2307bis-style compatibility):
   - `createTimestamp` - Entry creation time (LDAP Generalized Time format)
   - `modifyTimestamp` - Last modification time
   - `objectClass` - Structural object class
@@ -42,7 +42,7 @@ Perfect for homelabs, development environments, and single-instance deployments 
 ### Advanced Features
 
 - **Nested Groups**: Groups can contain users and other groups with circular reference detection
-- **memberOf Attribute** (RFC2307bis): Users automatically include `memberOf` attribute with DNs of all groups they belong to
+- **memberOf Attribute**: Users can request a computed, read-only `memberOf` attribute with DNs of all groups they belong to
 - **SQL Filter Compilation**: LDAP filters compiled to indexed SQL queries for performance
 - **Hybrid Filtering**: Falls back to in-memory filtering for complex queries
 - **Argon2id Password Hashing**: OWASP-recommended parameters (64MB memory, 3 iterations)
@@ -320,7 +320,7 @@ ldapadd -H ldap://localhost:3389 \
 
 ### Querying User Group Memberships (memberOf)
 
-LDAPLite automatically populates the `memberOf` attribute for user entries per [RFC2307bis](https://datatracker.ietf.org/doc/html/draft-howard-rfc2307bis-02). Membership is transitive through nested groups, with cycle protection to avoid infinite traversal:
+LDAPLite computes the optional `memberOf` attribute for user entries as RFC2307bis-style client compatibility. Membership is transitive through nested groups, with cycle protection to avoid infinite traversal:
 
 ```bash
 # Search for a user - memberOf is automatically included
