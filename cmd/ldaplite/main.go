@@ -66,7 +66,8 @@ func startServer() error {
 
 	slog.Info("Starting LDAPLite", "version", version, "commit", commit)
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	// Initialize SQLite store
 	st := store.NewSQLiteStore(cfg)
@@ -105,9 +106,7 @@ func startServer() error {
 	}
 
 	// Wait for interrupt signal
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
+	<-ctx.Done()
 
 	slog.Info("Shutting down servers")
 
