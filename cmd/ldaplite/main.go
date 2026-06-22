@@ -15,6 +15,7 @@ import (
 
 	"github.com/smarzola/ldaplite/internal/server"
 	"github.com/smarzola/ldaplite/internal/store"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 	"github.com/smarzola/ldaplite/internal/web"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/spf13/cobra"
@@ -68,6 +69,18 @@ func startServer() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	telemetryRuntime, err := telemetry.Start(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to start telemetry: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := telemetryRuntime.Stop(shutdownCtx); err != nil {
+			slog.Error("Failed to stop telemetry", "error", err)
+		}
+	}()
 
 	// Initialize SQLite store
 	st := store.NewSQLiteStore(cfg)
