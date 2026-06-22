@@ -155,7 +155,7 @@ Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
 
-### [ ] 2. Introduce LDAPLite-Owned Message Types
+### [x] 2. Introduce LDAPLite-Owned Message Types
 
 Create internal protocol types so server code no longer depends directly on
 `goldap/message`.
@@ -183,7 +183,20 @@ GOCACHE=/private/tmp/ldaplite-gocache go test ./internal/protocol
 
 Status note:
 
-- Pending.
+- Done on 2026-06-22.
+- Added `internal/protocol/ldapmsg` with LDAPLite-owned message IDs, result
+  codes, request types, response types, attributes, modify changes, and filter
+  types.
+- Added `internal/protocol/goldap_adapter.go` to convert current
+  `goldap/message` request operations into LDAPLite-owned message types while
+  keeping `goldap` behind the adapter.
+- Added adapter tests covering bind, search, add, modify, delete, compare,
+  extended, unbind, and composed search filters.
+- Verification command run:
+  ```bash
+  GOCACHE=/private/tmp/ldaplite-gocache go test ./internal/protocol
+  ```
+- Commit hash: pending until this milestone commit is created.
 
 Commit requirement:
 
