@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
+	"github.com/smarzola/ldaplite/internal/audit"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/protocol"
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
@@ -14,25 +16,51 @@ import (
 
 // handleSearch handles search operations
 func (s *Server) handleSearch(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
+	start := time.Now()
 	searchReq := msg.Op.(ldapmsg.SearchRequest)
 	baseDN := searchReq.BaseObject
 	scope := ldapSearchScope(searchReq.Scope)
 	selection := newSearchAttributeSelection(searchReq.Attributes)
+	resultCode := ldapmsg.ResultCodeOperationsError
+	var resultCount *int
+	defer func() {
+		s.auditLDAPOperation(ctx, conn, msg, "search", audit.LDAPEvent{
+			ActorDN:     conn.GetBoundDN(),
+			BaseDN:      baseDN,
+			Scope:       searchScopeString(scope),
+			ResultCode:  int(resultCode),
+			ResultCount: resultCount,
+			Duration:    time.Since(start),
+		})
+	}()
 
 	// Handle RootDSE queries (empty base DN)
 	if baseDN == "" {
 		slog.Debug("RootDSE query")
-		return s.handleRootDSE(conn, msg)
+		err := s.handleRootDSE(conn, msg)
+		if err == nil {
+			resultCode = ldapmsg.ResultCodeSuccess
+			count := 1
+			resultCount = &count
+		}
+		return err
 	}
 
 	// Handle schema queries
 	if baseDN == "cn=Subschema" || baseDN == "cn=subschema" {
 		slog.Debug("Schema query")
-		return s.handleSchema(conn, msg)
+		err := s.handleSchema(conn, msg)
+		if err == nil {
+			resultCode = ldapmsg.ResultCodeSuccess
+			count := 1
+			resultCount = &count
+		}
+		return err
 	}
 
 	if !s.canSearch(conn, baseDN) {
 		slog.Info("Search rejected - bind required", "baseDN", baseDN)
+		resultCode = ldapmsg.ResultCodeInsufficientAccessRights
 		return conn.WriteResponse(msg.ID, protocol.NewSearchResultDone(ldapmsg.ResultCodeInsufficientAccessRights))
 	}
 
@@ -52,6 +80,7 @@ func (s *Server) handleSearch(ctx context.Context, conn *protocol.Connection, ms
 	})
 	if err != nil {
 		slog.Error("Search error", "error", err)
+		resultCode = ldapmsg.ResultCodeOperationsError
 		return conn.WriteResponse(msg.ID, protocol.NewSearchResultDone(ldapmsg.ResultCodeOperationsError))
 	}
 
@@ -71,6 +100,9 @@ func (s *Server) handleSearch(ctx context.Context, conn *protocol.Connection, ms
 	}
 
 	slog.Debug("Search completed", "baseDN", baseDN, "results", len(entries))
+	resultCode = ldapmsg.ResultCodeSuccess
+	count := len(entries)
+	resultCount = &count
 	return conn.WriteResponse(msg.ID, protocol.NewSearchResultDone(ldapmsg.ResultCodeSuccess))
 }
 
@@ -82,6 +114,17 @@ func ldapSearchScope(scope ldapmsg.SearchScope) store.SearchScope {
 		return store.SearchScopeSingleLevel
 	default:
 		return store.SearchScopeWholeSubtree
+	}
+}
+
+func searchScopeString(scope store.SearchScope) string {
+	switch scope {
+	case store.SearchScopeBaseObject:
+		return "base"
+	case store.SearchScopeSingleLevel:
+		return "one"
+	default:
+		return "subtree"
 	}
 }
 

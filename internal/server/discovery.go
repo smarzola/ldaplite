@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"log/slog"
+	"time"
 
+	"github.com/smarzola/ldaplite/internal/audit"
 	"github.com/smarzola/ldaplite/internal/protocol"
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 )
@@ -56,8 +58,18 @@ func (s *Server) handleSchema(conn *protocol.Connection, msg *ldapmsg.Message) e
 
 // handleExtended handles extended operations
 func (s *Server) handleExtended(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
+	start := time.Now()
 	extReq := msg.Op.(ldapmsg.ExtendedRequest)
 	reqOID := extReq.RequestName
+	resultCode := ldapmsg.ResultCodeOperationsError
+	defer func() {
+		s.auditLDAPOperation(ctx, conn, msg, "extended", audit.LDAPEvent{
+			ActorDN:    conn.GetBoundDN(),
+			OID:        reqOID,
+			ResultCode: int(resultCode),
+			Duration:   time.Since(start),
+		})
+	}()
 
 	slog.Debug("Extended request", "oid", reqOID)
 
@@ -75,10 +87,12 @@ func (s *Server) handleExtended(ctx context.Context, conn *protocol.Connection, 
 		resp := protocol.NewWhoAmIResponse(authzID)
 
 		slog.Debug("Who am I response", "authzID", authzID)
+		resultCode = ldapmsg.ResultCodeSuccess
 		return conn.WriteResponse(msg.ID, resp)
 	}
 
 	// Unsupported extended operation
 	slog.Debug("Unsupported extended operation", "oid", reqOID)
+	resultCode = ldapmsg.ResultCodeUnavailable
 	return conn.WriteResponse(msg.ID, protocol.NewExtendedResponse(ldapmsg.ResultCodeUnavailable))
 }

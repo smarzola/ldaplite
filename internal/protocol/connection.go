@@ -7,14 +7,20 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strconv"
 	"sync"
+	"sync/atomic"
 
+	"github.com/smarzola/ldaplite/internal/audit"
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 )
+
+var nextConnectionID atomic.Uint64
 
 // Connection represents an LDAP client connection
 type Connection struct {
 	conn     net.Conn
+	id       string
 	mu       sync.Mutex
 	closed   bool
 	bound    bool
@@ -38,6 +44,7 @@ type OperationHandlers struct {
 func NewConnection(conn net.Conn, handlers OperationHandlers) *Connection {
 	return &Connection{
 		conn:     conn,
+		id:       "ldap-" + strconv.FormatUint(nextConnectionID.Add(1), 10),
 		handlers: handlers,
 	}
 }
@@ -62,11 +69,31 @@ func (c *Connection) Handle(ctx context.Context) error {
 				return nil
 			}
 			slog.Error("Failed to read LDAP message", "error", err, "remote", c.conn.RemoteAddr())
+			audit.LogLDAP(ctx, audit.LDAPEvent{
+				Event:        audit.EventLDAPReadError,
+				Operation:    "read",
+				ConnectionID: c.ID(),
+				RemoteAddr:   c.remoteAddrString(),
+				ActorDN:      c.GetBoundDN(),
+				ResultCode:   int(ldapmsg.ResultCodeProtocolError),
+				Error:        err,
+			})
 			return err
 		}
 
 		if err := c.dispatch(ctx, msg); err != nil {
 			slog.Error("Failed to handle LDAP operation", "error", err, "operation", fmt.Sprintf("%T", msg.Op))
+			audit.LogLDAP(ctx, audit.LDAPEvent{
+				Event:        audit.EventLDAPHandlerError,
+				Operation:    OperationName(msg.Op),
+				RequestID:    audit.RequestID(c.ID(), int(msg.ID)),
+				ConnectionID: c.ID(),
+				MessageID:    int(msg.ID),
+				RemoteAddr:   c.remoteAddrString(),
+				ActorDN:      c.GetBoundDN(),
+				ResultCode:   int(ldapmsg.ResultCodeOperationsError),
+				Error:        err,
+			})
 			// Continue processing other messages even if one fails
 		}
 	}
@@ -118,10 +145,43 @@ func (c *Connection) dispatch(ctx context.Context, msg *ldapmsg.Message) error {
 
 	default:
 		slog.Warn("Unsupported LDAP operation", "operation", fmt.Sprintf("%T", msg.Op))
+		audit.LogLDAP(ctx, audit.LDAPEvent{
+			Operation:    "unsupported",
+			RequestID:    audit.RequestID(c.ID(), int(msg.ID)),
+			ConnectionID: c.ID(),
+			MessageID:    int(msg.ID),
+			RemoteAddr:   c.remoteAddrString(),
+			ActorDN:      c.GetBoundDN(),
+			ResultCode:   int(ldapmsg.ResultCodeProtocolError),
+		})
 		return c.WriteError(msg.ID, ldapmsg.ResultCodeProtocolError, "Unsupported operation")
 	}
 
 	return nil
+}
+
+// OperationName returns a stable lowercase operation name for an LDAP message operation.
+func OperationName(op ldapmsg.Operation) string {
+	switch op.(type) {
+	case ldapmsg.BindRequest:
+		return "bind"
+	case ldapmsg.SearchRequest:
+		return "search"
+	case ldapmsg.AddRequest:
+		return "add"
+	case ldapmsg.ModifyRequest:
+		return "modify"
+	case ldapmsg.DeleteRequest:
+		return "delete"
+	case ldapmsg.CompareRequest:
+		return "compare"
+	case ldapmsg.ExtendedRequest:
+		return "extended"
+	case ldapmsg.UnbindRequest:
+		return "unbind"
+	default:
+		return "unsupported"
+	}
 }
 
 // WriteResponse writes an LDAP response message
@@ -147,6 +207,17 @@ func (c *Connection) WriteError(messageID ldapmsg.MessageID, resultCode ldapmsg.
 // RemoteAddr returns the remote address of the connection
 func (c *Connection) RemoteAddr() net.Addr {
 	return c.conn.RemoteAddr()
+}
+
+// RemoteAddrString returns the remote address string, or an empty string when
+// the connection is not backed by a net.Conn.
+func (c *Connection) RemoteAddrString() string {
+	return c.remoteAddrString()
+}
+
+// ID returns the stable audit identifier for this LDAP connection.
+func (c *Connection) ID() string {
+	return c.id
 }
 
 // SetBoundDN marks this connection as bound after a successful bind. Anonymous
@@ -178,6 +249,13 @@ func (c *Connection) GetBoundDN() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.boundDN
+}
+
+func (c *Connection) remoteAddrString() string {
+	if c.conn == nil || c.conn.RemoteAddr() == nil {
+		return ""
+	}
+	return c.conn.RemoteAddr().String()
 }
 
 // Close closes the connection
