@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.10.0 - 2026-06-22
+
+### Protocol
+
+- Replaced `github.com/lor00x/goldap` request decoding and response encoding with repo-owned LDAP BER handling.
+- Added internal LDAP message types for bind, search, add, modify, delete, compare, abandon, unbind, and extended operations.
+- Added BER fixtures and malformed-message coverage for representative LDAP request/response paths.
+- Removed the `goldap` module dependency from `go.mod` and `go.sum`.
+
+### Documentation
+
+- Added a protocol inventory and goldap replacement goal prompt documenting the migration path and completed checklist.
+
 ## v0.9.0 - 2026-06-22
 
 ### Performance
