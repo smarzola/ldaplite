@@ -13,11 +13,11 @@ what acceptance criteria should close or split issue #13.
 
 The remaining implementation goal is narrower than the original audit:
 
-> Finish the residual cleanup by removing the last store-side virtual attribute
-> mutation, deciding whether LDAP response projection belongs in store queries
-> or only at the protocol boundary, consolidating remaining Web UI handler
-> repetition where it reduces code without hiding behavior, and resolving or
-> explicitly deferring the current dependency alert.
+> Finish the residual cleanup by deciding whether LDAP response projection
+> belongs in store queries or only at the protocol boundary, consolidating
+> remaining Web UI handler repetition where it reduces code without hiding
+> behavior, adding targeted cancellation coverage, and resolving or explicitly
+> deferring the current dependency alert.
 
 ## Current Status
 
@@ -68,36 +68,12 @@ to residual follow-up work:
 - Obsolete store reads: broad helper reads that encouraged over-fetching have
   been removed.
 - Server lifecycle: startup uses signal-aware context handling.
+- Virtual attribute boundary: `memberOf` is projected through explicit computed
+  attributes instead of being injected into persisted generic attributes.
 
 ## Remaining Opportunities
 
-### 1. Remove the last store-side virtual attribute mutation
-
-Current state:
-
-- `memberOf` is still appended into `Entry.Attributes` by store-side membership
-  code before response projection.
-- This is safer than the original state because operational attributes are no
-  longer generally added by store reads, but it still blurs persisted data and
-  computed LDAP presentation.
-
-Recommendation:
-
-- Return computed memberships separately or project them only at the LDAP/Web
-  response boundary.
-- Keep persisted `models.Entry.Attributes` free of virtual attributes by
-  construction.
-
-Acceptance criteria:
-
-- Store reads of persisted entries do not mutate generic attributes with
-  computed values unless the caller explicitly asks for that view.
-- Tests prove `memberOf` is not persisted or written back through generic
-  attribute update paths.
-- Functional search behavior for requested `memberOf`, omitted `memberOf`,
-  and filters involving `memberOf` remains unchanged.
-
-### 2. Decide how far LDAP response projection should move into storage
+### 1. Decide how far LDAP response projection should move into storage
 
 Current state:
 
@@ -105,6 +81,7 @@ Current state:
 - The store can avoid some unnecessary `memberOf` work.
 - Attribute selection, `typesOnly`, and `1.1` handling are still primarily
   response-projection concerns rather than narrow SQL projection concerns.
+- Computed attributes are now separated from persisted generic attributes.
 
 Recommendation:
 
@@ -120,7 +97,7 @@ Acceptance criteria:
 - Benchmarks or query-plan tests justify any added store-level projection API.
 - The API does not leak LDAP protocol trivia into unrelated store callers.
 
-### 3. Consolidate remaining Web UI handler repetition
+### 2. Consolidate remaining Web UI handler repetition
 
 Current state:
 
@@ -141,7 +118,7 @@ Acceptance criteria:
 - Tests cover create, edit, delete, validation error, and extra-attribute
   removal paths for each resource type touched.
 
-### 4. Add targeted cancellation tests
+### 3. Add targeted cancellation tests
 
 Current state:
 
@@ -161,7 +138,7 @@ Acceptance criteria:
   the relevant LDAP result/error behavior.
 - Tests stay deterministic and do not rely on sleeps longer than necessary.
 
-### 5. Resolve or explicitly defer the dependency alert
+### 4. Resolve or explicitly defer the dependency alert
 
 Current state:
 

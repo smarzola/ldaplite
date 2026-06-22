@@ -86,6 +86,26 @@ func TestHasAttribute(t *testing.T) {
 	assert.False(t, entry.HasAttribute("nonexistent"))
 }
 
+func TestComputedAttributesAreVisibleWithoutMutatingPersistedAttributes(t *testing.T) {
+	entry := NewEntry("uid=jdoe,dc=example,dc=com", "inetOrgPerson")
+	entry.UpdatedAt = time.Unix(0, 0)
+
+	values := []string{"cn=admins,dc=example,dc=com"}
+	entry.SetComputedAttributes("memberOf", values)
+	values[0] = "cn=mutated,dc=example,dc=com"
+
+	assert.True(t, entry.HasAttribute("memberOf"))
+	assert.Equal(t, []string{"cn=admins,dc=example,dc=com"}, entry.GetAttributes("memberOf"))
+	_, persisted := entry.Attributes["memberof"]
+	assert.False(t, persisted)
+	assert.Equal(t, time.Unix(0, 0), entry.UpdatedAt)
+
+	entry.ClearComputedAttribute("memberOf")
+
+	assert.False(t, entry.HasAttribute("memberOf"))
+	assert.Empty(t, entry.GetAttributes("memberOf"))
+}
+
 func TestRemoveAttribute(t *testing.T) {
 	entry := NewEntry("cn=test,dc=example,dc=com", "inetOrgPerson")
 	entry.SetAttribute("cn", "Test User")

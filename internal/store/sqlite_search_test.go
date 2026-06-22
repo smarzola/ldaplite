@@ -1106,6 +1106,9 @@ func TestMemberOfPopulationDoesNotMutateUpdatedAt(t *testing.T) {
 	if !containsValue(jdoeEntry.GetAttributes("memberOf"), "cn=admins,ou=groups,dc=test,dc=com") {
 		t.Fatalf("expected memberOf to be populated, got %v", jdoeEntry.GetAttributes("memberOf"))
 	}
+	if _, stored := jdoeEntry.Attributes["memberof"]; stored {
+		t.Fatalf("memberOf should be projected as computed data, not persisted attributes: %v", jdoeEntry.Attributes["memberof"])
+	}
 	if !jdoeEntry.UpdatedAt.Equal(storedUpdatedAt) {
 		t.Fatalf("memberOf population mutated UpdatedAt: got %v, want stored %v", jdoeEntry.UpdatedAt, storedUpdatedAt)
 	}
@@ -1147,6 +1150,9 @@ func TestSearchEntriesWithOptionsCanSkipMemberOfProjection(t *testing.T) {
 	if !containsValue(entries[0].GetAttributes("memberOf"), "cn=admins,ou=groups,dc=test,dc=com") {
 		t.Fatalf("memberOf should be populated when IncludeMemberOf is true: %v", entries[0].GetAttributes("memberOf"))
 	}
+	if _, stored := entries[0].Attributes["memberof"]; stored {
+		t.Fatalf("memberOf should not be stored in generic attributes after projection: %v", entries[0].Attributes["memberof"])
+	}
 }
 
 func TestGetEntryWithOptionsCanSkipMemberOfProjection(t *testing.T) {
@@ -1175,6 +1181,9 @@ func TestGetEntryWithOptionsCanSkipMemberOfProjection(t *testing.T) {
 	}
 	if !containsValue(entry.GetAttributes("memberOf"), "cn=admins,ou=groups,dc=test,dc=com") {
 		t.Fatalf("memberOf should be populated when IncludeMemberOf is true: %v", entry.GetAttributes("memberOf"))
+	}
+	if _, stored := entry.Attributes["memberof"]; stored {
+		t.Fatalf("memberOf should not be stored in generic attributes after projection: %v", entry.Attributes["memberof"])
 	}
 }
 

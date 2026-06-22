@@ -113,7 +113,7 @@ func (s *SQLiteStore) SearchEntriesWithOptions(ctx context.Context, options Sear
 
 	if filterUsesComputed && !options.IncludeMemberOf {
 		for _, entry := range entries {
-			delete(entry.Attributes, "memberof")
+			entry.ClearComputedAttribute("memberOf")
 		}
 	}
 

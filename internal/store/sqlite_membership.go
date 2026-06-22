@@ -134,14 +134,14 @@ func (s *SQLiteStore) IsUserInGroup(ctx context.Context, userDN, groupDN string)
 	return isMember, nil
 }
 
-// populateMemberOf adds the memberOf attribute to user entries (inetOrgPerson).
+// populateMemberOf projects the memberOf attribute for user entries (inetOrgPerson).
 // This is a virtual attribute computed from the group_members table. It
 // includes direct and nested group memberships with cycle protection.
 //
 // This function efficiently batches the lookup to minimize database queries:
 // 1. Collect all user entry IDs
 // 2. Single query to get all group memberships for those users
-// 3. Populate memberOf attribute for each user entry
+// 3. Populate memberOf as a computed attribute for each user entry
 func (s *SQLiteStore) populateMemberOf(ctx context.Context, entries []*models.Entry) error {
 	if len(entries) == 0 {
 		return nil
@@ -199,7 +199,7 @@ func (s *SQLiteStore) populateMemberOf(ctx context.Context, entries []*models.En
 	}
 	defer rows.Close()
 
-	// Populate memberOf attribute for each user
+	memberOfByEntryID := make(map[int64][]string)
 	for rows.Next() {
 		var memberEntryID int64
 		var groupDN string
@@ -207,10 +207,18 @@ func (s *SQLiteStore) populateMemberOf(ctx context.Context, entries []*models.En
 			return fmt.Errorf("failed to scan group membership: %w", err)
 		}
 
-		if entry, ok := userEntriesByID[memberEntryID]; ok {
-			entry.Attributes["memberof"] = append(entry.Attributes["memberof"], groupDN)
+		memberOfByEntryID[memberEntryID] = append(memberOfByEntryID[memberEntryID], groupDN)
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for entryID, memberOf := range memberOfByEntryID {
+		if entry, ok := userEntriesByID[entryID]; ok {
+			entry.SetComputedAttributes("memberOf", memberOf)
 		}
 	}
 
-	return rows.Err()
+	return nil
 }

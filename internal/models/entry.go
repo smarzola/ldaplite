@@ -20,13 +20,14 @@ const (
 
 // Entry represents an LDAP entry (object)
 type Entry struct {
-	ID          int64
-	DN          string              // Distinguished Name
-	ParentDN    string              // Parent DN for hierarchy
-	ObjectClass string              // Primary object class
-	Attributes  map[string][]string // Multi-valued attributes
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID                 int64
+	DN                 string              // Distinguished Name
+	ParentDN           string              // Parent DN for hierarchy
+	ObjectClass        string              // Primary object class
+	Attributes         map[string][]string // Persisted multi-valued attributes
+	ComputedAttributes map[string][]string // Read-only attributes projected from other storage
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // NewEntry creates a new LDAP entry
@@ -63,8 +64,8 @@ func (e *Entry) AddAttribute(name, value string) {
 
 // GetAttribute gets the first value of an attribute
 func (e *Entry) GetAttribute(name string) string {
-	name = strings.ToLower(name)
-	if values, exists := e.Attributes[name]; exists && len(values) > 0 {
+	values := e.GetAttributes(name)
+	if len(values) > 0 {
 		return values[0]
 	}
 	return ""
@@ -73,16 +74,26 @@ func (e *Entry) GetAttribute(name string) string {
 // GetAttributes gets all values of an attribute
 func (e *Entry) GetAttributes(name string) []string {
 	name = strings.ToLower(name)
+	var result []string
 	if values, exists := e.Attributes[name]; exists {
-		return values
+		result = append(result, values...)
 	}
-	return []string{}
+	if values, exists := e.ComputedAttributes[name]; exists {
+		result = append(result, values...)
+	}
+	if result == nil {
+		return []string{}
+	}
+	return result
 }
 
 // HasAttribute checks if an attribute exists
 func (e *Entry) HasAttribute(name string) bool {
 	name = strings.ToLower(name)
-	_, exists := e.Attributes[name]
+	if _, exists := e.Attributes[name]; exists {
+		return true
+	}
+	_, exists := e.ComputedAttributes[name]
 	return exists
 }
 
@@ -90,7 +101,25 @@ func (e *Entry) HasAttribute(name string) bool {
 func (e *Entry) RemoveAttribute(name string) {
 	name = strings.ToLower(name)
 	delete(e.Attributes, name)
+	delete(e.ComputedAttributes, name)
 	e.UpdatedAt = time.Now()
+}
+
+// SetComputedAttributes sets a read-only projected attribute without touching
+// persisted attributes or modification timestamps.
+func (e *Entry) SetComputedAttributes(name string, values []string) {
+	name = strings.ToLower(name)
+	if e.ComputedAttributes == nil {
+		e.ComputedAttributes = make(map[string][]string)
+	}
+	e.ComputedAttributes[name] = append([]string(nil), values...)
+}
+
+// ClearComputedAttribute removes a projected attribute without modifying
+// persisted attributes or modification timestamps.
+func (e *Entry) ClearComputedAttribute(name string) {
+	name = strings.ToLower(name)
+	delete(e.ComputedAttributes, name)
 }
 
 // RemoveAttributeValue removes a specific value from an attribute
