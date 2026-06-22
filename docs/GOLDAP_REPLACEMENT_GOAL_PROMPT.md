@@ -433,7 +433,7 @@ Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
 
-### [ ] 7. Full Regression And Cleanup
+### [x] 7. Full Regression And Cleanup
 
 Run the full repository verification and clean up the final implementation.
 
@@ -458,7 +458,32 @@ gofmt -l .
 
 Status note:
 
-- Pending.
+- Done on 2026-06-22.
+- Ran the full final verification set from this milestone.
+- `npm ci` completed successfully.
+- `npm run build:css` completed successfully with the existing Tailwind/DaisyUI
+  `@property --radialprogress` warning.
+- `make test` completed successfully when rerun with normal Go build cache
+  access; the first sandboxed attempt failed because Go could not write to
+  `~/Library/Caches/go-build`.
+- `make test-functional` completed successfully.
+- `go vet ./...` completed successfully.
+- `gofmt -l .` returned no files.
+- Final dependency grep:
+  ```bash
+  rg -n "github.com/lor00x/goldap|goldap" .
+  ```
+  returned only this replacement prompt and the historical protocol inventory.
+- Verification commands run:
+  ```bash
+  npm ci
+  npm run build:css
+  make test
+  make test-functional
+  go vet ./...
+  gofmt -l .
+  ```
+- Commit hash: pending until this milestone commit is created.
 
 Commit requirement:
 
