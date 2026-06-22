@@ -330,12 +330,7 @@ func encodeProtocolOpFixture(t *testing.T, op ldapmsg.Operation) []byte {
 
 	writeDone := make(chan error, 1)
 	go func() {
-		goldapOp, err := ToGoldapOperation(op)
-		if err != nil {
-			writeDone <- err
-			return
-		}
-		writeDone <- WriteGoldapResponse(serverConn, 1, goldapOp)
+		writeDone <- WriteLDAPResponse(serverConn, 1, op)
 	}()
 
 	gotCh := make(chan []byte, 1)
@@ -356,10 +351,10 @@ func encodeProtocolOpFixture(t *testing.T, op ldapmsg.Operation) []byte {
 	select {
 	case err := <-writeDone:
 		if err != nil {
-			t.Fatalf("WriteLDAPMessage() failed: %v", err)
+			t.Fatalf("WriteLDAPResponse() failed: %v", err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("WriteLDAPMessage() did not finish")
+		t.Fatal("WriteLDAPResponse() did not finish")
 	}
 
 	_ = serverConn.Close()

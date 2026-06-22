@@ -66,29 +66,6 @@ func ReadLDAPMessage(conn net.Conn) (*message.LDAPMessage, error) {
 	return &msg, nil
 }
 
-// WriteLDAPMessage writes a BER-encoded LDAP message to the connection
-func WriteLDAPMessage(conn net.Conn, msg *message.LDAPMessage) error {
-	// Encode the message using goldap
-	data, err := msg.Write()
-	if err != nil {
-		return fmt.Errorf("failed to encode LDAP message: %w", err)
-	}
-
-	// Write the encoded message to the connection
-	_, err = conn.Write(data.Bytes())
-	if err != nil {
-		return fmt.Errorf("failed to write to connection: %w", err)
-	}
-
-	return nil
-}
-
-func WriteGoldapResponse(conn net.Conn, messageID int, op message.ProtocolOp) error {
-	msg := message.NewLDAPMessageWithProtocolOp(op)
-	msg.SetMessageID(messageID)
-	return WriteLDAPMessage(conn, msg)
-}
-
 func normalizeBERBooleans(data []byte) {
 	normalizeBERBooleansInRange(data, 0, len(data))
 }

@@ -252,7 +252,7 @@ Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
 
-### [ ] 4. Implement Minimal BER Encoder For Responses
+### [x] 4. Implement Minimal BER Encoder For Responses
 
 Implement LDAP response encoding without `goldap`.
 
@@ -288,7 +288,29 @@ GOCACHE=/private/tmp/ldaplite-gocache go test -tags=functional -v ./tests/functi
 
 Status note:
 
-- Pending.
+- Done on 2026-06-22.
+- Added `internal/protocol/ber` with a minimal definite-length BER writer for
+  LDAPLite's current response subset.
+- Added `internal/protocol/encoder.go` to encode LDAP bind, search entry,
+  search done, add, modify, delete, compare, and extended responses from
+  `ldapmsg` values.
+- Routed `protocol.Connection.WriteResponse` through the LDAPLite-owned encoder
+  instead of `goldap`.
+- Removed the temporary `goldap` response conversion path and the unsafe
+  ExtendedResponse responseValue setter.
+- Existing exact BER fixture tests now exercise the LDAPLite-owned response
+  encoder.
+- Cleanup check run:
+  ```bash
+  rg -n "unsafe|ToGoldapOperation|WriteGoldapResponse|WriteLDAPMessage|NewLDAPMessageWithProtocolOp|\\.Write\\(" internal/protocol internal/server
+  ```
+  returned only ordinary socket/test writes, not goldap response encoding.
+- Verification commands run:
+  ```bash
+  GOCACHE=/private/tmp/ldaplite-gocache go test ./internal/protocol ./internal/server
+  GOCACHE=/private/tmp/ldaplite-gocache go test -tags=functional -v ./tests/functional/...
+  ```
+- Commit hash: pending until this milestone commit is created.
 
 Commit requirement:
 

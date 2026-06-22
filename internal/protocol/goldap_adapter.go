@@ -2,8 +2,6 @@ package protocol
 
 import (
 	"fmt"
-	"reflect"
-	"unsafe"
 
 	"github.com/lor00x/goldap/message"
 
@@ -24,82 +22,6 @@ func FromGoldapMessage(msg *message.LDAPMessage) (*ldapmsg.Message, error) {
 		ID: ldapmsg.MessageID(msg.MessageID()),
 		Op: op,
 	}, nil
-}
-
-func ToGoldapOperation(op ldapmsg.Operation) (message.ProtocolOp, error) {
-	switch resp := op.(type) {
-	case ldapmsg.BindResponse:
-		r := message.BindResponse{}
-		applyGoldapResult(&r.LDAPResult, resp.LDAPResult)
-		return r, nil
-	case ldapmsg.SearchResultEntry:
-		r := message.SearchResultEntry{}
-		r.SetObjectName(resp.ObjectName)
-		for _, attr := range resp.Attributes {
-			values := make([]message.AttributeValue, 0, len(attr.Values))
-			for _, value := range attr.Values {
-				values = append(values, message.AttributeValue(value))
-			}
-			r.AddAttribute(message.AttributeDescription(attr.Name), values...)
-		}
-		return r, nil
-	case ldapmsg.SearchResultDone:
-		r := message.SearchResultDone{}
-		applyGoldapResult((*message.LDAPResult)(&r), resp.LDAPResult)
-		return r, nil
-	case ldapmsg.AddResponse:
-		r := message.AddResponse{}
-		applyGoldapResult((*message.LDAPResult)(&r), resp.LDAPResult)
-		return r, nil
-	case ldapmsg.ModifyResponse:
-		r := message.ModifyResponse{}
-		applyGoldapResult((*message.LDAPResult)(&r), resp.LDAPResult)
-		return r, nil
-	case ldapmsg.DeleteResponse:
-		r := message.DelResponse{}
-		applyGoldapResult((*message.LDAPResult)(&r), resp.LDAPResult)
-		return r, nil
-	case ldapmsg.CompareResponse:
-		r := message.CompareResponse{}
-		applyGoldapResult((*message.LDAPResult)(&r), resp.LDAPResult)
-		return r, nil
-	case ldapmsg.ExtendedResponse:
-		r := message.ExtendedResponse{}
-		applyGoldapResult(&r.LDAPResult, resp.LDAPResult)
-		if resp.ResponseName != "" {
-			r.SetResponseName(message.LDAPOID(resp.ResponseName))
-		}
-		if resp.ResponseValue != nil {
-			if err := setGoldapExtendedResponseValue(&r, *resp.ResponseValue); err != nil {
-				return nil, err
-			}
-		}
-		return r, nil
-	default:
-		return nil, fmt.Errorf("unsupported ldapmsg operation %T", op)
-	}
-}
-
-func applyGoldapResult(result *message.LDAPResult, internal ldapmsg.LDAPResult) {
-	result.SetResultCode(int(internal.ResultCode))
-	if internal.DiagnosticMessage != "" {
-		result.SetDiagnosticMessage(internal.DiagnosticMessage)
-	}
-}
-
-func setGoldapExtendedResponseValue(resp *message.ExtendedResponse, value string) error {
-	octetString := message.OCTETSTRING(value)
-	respValue := reflect.ValueOf(resp).Elem()
-	responseValueField := respValue.FieldByName("responseValue")
-	if !responseValueField.IsValid() {
-		return fmt.Errorf("goldap ExtendedResponse.responseValue field not found")
-	}
-
-	// goldap does not expose a responseValue setter. This temporary adapter is
-	// removed once LDAPLite-owned BER response encoding replaces goldap writes.
-	ptr := unsafe.Pointer(responseValueField.UnsafeAddr())
-	*(**message.OCTETSTRING)(ptr) = &octetString
-	return nil
 }
 
 func fromGoldapOperation(op message.ProtocolOp) (ldapmsg.Operation, error) {

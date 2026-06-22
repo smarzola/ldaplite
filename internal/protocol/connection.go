@@ -140,12 +140,7 @@ func (c *Connection) WriteResponse(messageID ldapmsg.MessageID, response ldapmsg
 		return fmt.Errorf("connection closed")
 	}
 
-	op, err := ToGoldapOperation(response)
-	if err != nil {
-		return err
-	}
-
-	return WriteGoldapResponse(c.conn, int(messageID), op)
+	return WriteLDAPResponse(c.conn, messageID, response)
 }
 
 // WriteError writes an error response
