@@ -1,422 +1,216 @@
-# LDAPLite Codebase Simplification Findings
+# LDAPLite Codebase Simplification Tracker
 
-Date: 2026-06-21
+Date: 2026-06-22
 
 Issue: https://github.com/smarzola/ldaplite/issues/13
 
-> Status note, 2026-06-22: this document is now the original audit record, not
-> a fully current action list. The current implementation has addressed much of
-> the P0/P1 work: LDAP handlers are split by operation, config loading returns
-> errors, DN parsing is centralized in `internal/ldapdn`, store errors are typed,
-> operational attributes are projected at protocol boundaries, server-managed
-> attributes are not stored generically, search scope/options are pushed into the
-> store, `memberOf` projection can be skipped when unused, expression indexes
-> back case-insensitive filters, case-insensitive DN uniqueness is enforced by
-> migration, Web UI extra attributes use replacement semantics, group membership
-> sync is shared, and the Who Am I unsafe workaround is isolated in
-> `internal/protocol`.
->
-> Remaining high-value themes are smaller now: continue reducing duplicated Web
-> UI handler flow, consider further splitting entry CRUD from `sqlite.go`, add
-> targeted benchmarks for store/search behavior, add cancellation tests around
-> request-scoped operation handlers, and keep extending functional coverage for
-> escaped or normalized DN edge cases. Avoid treating the line-number evidence
-> below as current without direct source inspection.
-
-## Summary
-
-The codebase is in a healthy state for a small LDAP server: the normal Go test
-suite passes, password storage invariants are well represented, and several old
-roadmap items have already been addressed. The main opportunities are now less
-about adding features and more about removing accidental coupling:
-
-- split storage reads from LDAP response decoration;
-- stop mutating model entries to add virtual/operational attributes;
-- push LDAP scope and attribute selection into the store/query layer;
-- remove duplicated CRUD/update logic across the Web UI handlers;
-- replace stringly error classification with typed store/server errors;
-- isolate the unsafe `goldap` workaround behind one protocol helper;
-- add performance tests that prove the filter compiler and indexes actually
-  cooperate.
-
-## Verification Performed
-
-- `go test ./...` passed when run outside the sandbox. The sandboxed run failed
-  only because healthcheck tests could not bind `127.0.0.1:0`.
-- `go vet ./...` passed.
-- `go test -run '^$' -bench=. ./internal/store ./internal/schema` passed, but
-  there are no benchmarks in those packages today.
-- Structural and text searches were run over `cmd`, `internal`, `pkg`, `tests`,
-  and `docs`.
-
-## P0/P1 Opportunities
-
-### 1. Separate stored attributes from virtual and operational attributes
-
-Evidence:
-
-- `internal/store/sqlite.go:237-242`, `673-674`, `772-779`, and `837-845`
-  call `AddOperationalAttributes()` and `populateMemberOf()` directly inside
-  generic store read methods.
-- `internal/models/entry.go:185-193` mutates `Entry.Attributes` to add
-  `objectclass`, `createtimestamp`, and `modifytimestamp`.
-- `internal/store/sqlite.go:993-1003` mutates entries again by appending
-  `memberOf`.
-- `internal/server/ldap.go:731-752` has to special-case `objectClass` to avoid
-  double emission.
-
-Why this matters:
-
-The store currently returns a hybrid object: part persisted state, part computed
-LDAP response state. That makes writes riskier because `GetEntry()` returns an
-entry containing attributes that should not be stored back. The current
-`UpdateEntry()` protects `userPassword`, but it still rewrites whatever else is
-present in `entry.Attributes`. This is easy to regress as new virtual attributes
-are added.
-
-Recommended simplification:
-
-- Keep `models.Entry.Attributes` as persisted user attributes only.
-- Add a response/projection layer, for example `server.EntryView` or
-  `protocol.EntryAttributes(entry, options)`, that computes `objectClass`,
-  timestamps, and `memberOf` only when an LDAP/Web caller needs them.
-- Make computed attributes read-only by construction rather than by scattered
-  filtering and protection lists.
-
-Expected payoff:
-
-- Less mutation while reading.
-- Smaller write surface.
-- Cleaner tests: storage tests assert persisted shape, server/protocol tests
-  assert LDAP presentation shape.
-
-### 2. Push LDAP search scope and attribute selection earlier
-
-Evidence:
-
-- `internal/server/ldap.go:260` calls `SearchEntries(ctx, baseDN, filterStr)`.
-- `internal/server/ldap.go:266-278` applies base/one/subtree scope after the
-  store has already loaded a subtree.
-- `internal/server/ldap.go:283-284` applies attribute selection after every
-  returned entry has had full attributes decoded and `memberOf` populated.
-- `internal/store/sqlite.go:611-636` always uses a recursive subtree CTE.
-- `internal/store/sqlite.go:711-717` populates `memberOf` for all SQL-matched
-  entries even when the client requested `1.1`, only user attributes, or a
-  non-user object class.
-
-Why this matters:
-
-For base and one-level searches, the store does unnecessary recursive traversal.
-For attribute-light searches, it still loads all attributes and computes
-membership. This is the main performance opportunity in the LDAP hot path.
+## Updated Goal
+
+This document refreshes the original adversarial codebase audit into a current
+closure tracker. The immediate goal is reached when the audit states, without
+stale line-number evidence, what has been implemented, what still matters, and
+what acceptance criteria should close or split issue #13.
+
+The remaining implementation goal is narrower than the original audit:
+
+> Finish the residual cleanup by removing the last store-side virtual attribute
+> mutation, deciding whether LDAP response projection belongs in store queries
+> or only at the protocol boundary, consolidating remaining Web UI handler
+> repetition where it reduces code without hiding behavior, and resolving or
+> explicitly deferring the current dependency alert.
+
+## Current Status
+
+The broad P0/P1 audit is mostly implemented. Treat this file as the current
+tracker and the old findings as historical context only. Source inspection on
+2026-06-22 confirms:
+
+- LDAP operation handling is split across `internal/server/ldap.go`,
+  `internal/server/search.go`, and `internal/server/write.go`.
+- SQLite storage is split across focused files in `internal/store/`.
+- `AddOperationalAttributes`, `GetAllEntries`, and `GetChildren` are no longer
+  present.
+- Search calls use `SearchOptions` / `SearchEntriesWithOptions`.
+- Typed store errors and `entryWriteResultCode` handle known LDAP result
+  classes without substring matching.
+- The Who Am I extended-response workaround is isolated in
+  `internal/protocol/extended_response.go`.
+- Store benchmarks and query-plan tests exist in
+  `internal/store/sqlite_search_test.go`.
+- The black-box LDAP compatibility suite lives in `tests/functional/`.
+- Release and CI workflows now run the functional suite.
+
+The audit has therefore moved from "large design corrections" to "close the
+remaining sharp edges and prove they stay closed."
+
+## Completed Work
+
+The following themes from the original audit have been implemented or reduced
+to residual follow-up work:
+
+- Store/server decomposition: the old large files are now split by
+  responsibility.
+- Typed error mapping: store errors map to LDAP result codes through typed
+  error handling.
+- DN behavior: DN parsing and placement checks have dedicated coverage,
+  including escaped DN cases.
+- Search options: scope and LDAP search options are represented explicitly.
+- `memberOf` cost control: `memberOf` projection can be skipped when unused.
+- Case-insensitive query support: expression indexes and query-plan tests now
+  protect common search paths.
+- Security-sensitive attributes: passwords stay out of generic attributes, and
+  server-managed attributes are protected.
+- Web UI replacement semantics: editable extra attributes use replace-style
+  behavior instead of stale merge-only updates.
+- Functional compatibility: the suite starts a real server subprocess and uses
+  a real LDAP client library.
+- LDAP filter serialization: filter values are escaped before serialization.
+- Obsolete store reads: broad helper reads that encouraged over-fetching have
+  been removed.
+- Server lifecycle: startup uses signal-aware context handling.
 
-Recommended simplification:
+## Remaining Opportunities
 
-- Change the store search API to accept a query struct:
+### 1. Remove the last store-side virtual attribute mutation
 
-  ```go
-  type SearchOptions struct {
-      BaseDN string
-      Scope SearchScope
-      Filter *schema.Filter
-      RequestedAttributes AttributeSelection
-      IncludeOperational bool
-  }
-  ```
+Current state:
 
-- Select query shape by scope: exact DN, direct children, recursive subtree.
-- Only compute `memberOf` when the filter references it or the response
-  selection includes it.
-- Consider a store-level `SearchEntryIDs` or `SearchEntriesProjection` path for
-  `typesOnly`, `1.1`, and existence-style searches.
+- `memberOf` is still appended into `Entry.Attributes` by store-side membership
+  code before response projection.
+- This is safer than the original state because operational attributes are no
+  longer generally added by store reads, but it still blurs persisted data and
+  computed LDAP presentation.
 
-Expected payoff:
+Recommendation:
 
-- Less DB work for common client probes.
-- Better testability for search behavior.
-- Clearer division between LDAP protocol concerns and persistence concerns.
+- Return computed memberships separately or project them only at the LDAP/Web
+  response boundary.
+- Keep persisted `models.Entry.Attributes` free of virtual attributes by
+  construction.
 
-### 3. Make the filter compiler index-friendly
+Acceptance criteria:
 
-Evidence:
+- Store reads of persisted entries do not mutate generic attributes with
+  computed values unless the caller explicitly asks for that view.
+- Tests prove `memberOf` is not persisted or written back through generic
+  attribute update paths.
+- Functional search behavior for requested `memberOf`, omitted `memberOf`,
+  and filters involving `memberOf` remains unchanged.
 
-- `internal/schema/filter_compiler.go:127` uses `LOWER(e.object_class)`.
-- `internal/schema/filter_compiler.go:135-136`, `154`, and `180-181` use
-  `LOWER(a.name)` and `LOWER(a.value)`.
-- `internal/store/migrations/002_add_indexes.up.sql` defines normal indexes on
-  `attributes(name)`, `attributes(name, value)`, and `entries(object_class)`,
-  not expression indexes on `LOWER(...)`.
-- `internal/store/sqlite.go:320-325` comments reference partial indexes named
-  `idx_attributes_uid_lookup`, `idx_attributes_cn_lookup`, and
-  `idx_attributes_ou_lookup`, but the migrations in this repo do not create
-  those indexes.
+### 2. Decide how far LDAP response projection should move into storage
 
-Why this matters:
+Current state:
 
-The code says it is optimized, but the SQL likely prevents the current indexes
-from doing the intended work for case-insensitive LDAP matching. That can turn
-attribute equality and substring filters into repeated scans as data grows.
+- The server already uses explicit search options.
+- The store can avoid some unnecessary `memberOf` work.
+- Attribute selection, `typesOnly`, and `1.1` handling are still primarily
+  response-projection concerns rather than narrow SQL projection concerns.
 
-Recommended simplification:
+Recommendation:
 
-- Normalize attribute names at write time and query `a.name = ?`.
-- Decide whether values should be normalized in auxiliary columns, queried with
-  `COLLATE NOCASE`, or backed by expression indexes such as
-  `CREATE INDEX ... ON attributes(lower(name), lower(value))`.
-- Add `EXPLAIN QUERY PLAN` tests for representative filters:
-  `(uid=jane)`, `(objectClass=inetOrgPerson)`,
-  `(&(objectClass=inetOrgPerson)(uid=jane))`, and `(cn=Jane*)`.
-- Delete or update stale optimization comments so future work does not chase
-  indexes that are not real.
+- Measure before deepening the abstraction. If full attribute loading is cheap
+  enough for LDAPLite's target size, keep projection at the protocol boundary.
+- If benchmarks show meaningful waste, add a narrow projection option for
+  attribute-light searches.
 
-Expected payoff:
+Acceptance criteria:
 
-- Performance claims become measurable.
-- Fewer surprises under larger directories.
-- Cleaner compiler code once casing strategy is centralized.
+- Tests cover `1.1`, `typesOnly`, selected user attributes, and operational
+  attribute requests.
+- Benchmarks or query-plan tests justify any added store-level projection API.
+- The API does not leak LDAP protocol trivia into unrelated store callers.
 
-### 4. Replace stringly error-to-LDAP-result mapping
+### 3. Consolidate remaining Web UI handler repetition
 
-Evidence:
+Current state:
 
-- `internal/server/ldap.go:763-775` maps write errors by substring matching
-  lowercased error text.
-- `internal/store/sqlite.go:367-368`, `417-418`, `486-487`, and
-  `520-521` return plain formatted errors for known LDAP result classes.
-- `internal/server/ldap.go:380-382` and `531-533` depend on that string mapping.
+- Web UI handlers already have shared helpers for some form behavior.
+- Users, groups, and OUs still repeat enough list/form/load/update flow that
+  future validation changes can drift.
 
-Why this matters:
+Recommendation:
 
-The LDAP result code is part of the external compatibility contract. Today a
-wording change in a store error can silently change protocol behavior from
-`objectClassViolation`, `noSuchObject`, or `constraintViolation` into a generic
-operations error.
+- Extract only the repeated mechanics: OU loading, editable extra-attribute
+  replacement, form error rendering, and common redirect/error handling.
+- Leave resource-specific validation and model construction visible.
 
-Recommended simplification:
+Acceptance criteria:
 
-- Add sentinel or typed errors in `internal/store`, for example:
-  `ErrNoSuchObject`, `ErrParentMissing`, `ErrEntryAlreadyExists`,
-  `ErrConstraintViolation`, `ErrObjectClassViolation`.
-- Have the server map errors with `errors.Is` / `errors.As`.
-- Make tests assert result-code mapping directly for add/modify/delete.
+- Handler code shrinks without hiding security-sensitive or LDAP-specific
+  behavior behind generic reflection-style helpers.
+- Tests cover create, edit, delete, validation error, and extra-attribute
+  removal paths for each resource type touched.
 
-Expected payoff:
+### 4. Add targeted cancellation tests
 
-- More reliable client compatibility.
-- Less brittle logging/error copy.
-- Clearer ownership of LDAP semantics.
+Current state:
 
-### 5. Isolate or remove the unsafe extended-response workaround
+- Server lifecycle uses signal context.
+- LDAP handlers receive context through the protocol flow.
+- There is still limited focused coverage proving cancellation reaches slow or
+  blocked store operations in predictable ways.
 
-Evidence:
+Recommendation:
 
-- `internal/server/ldap.go:8-12` imports `reflect` and `unsafe`.
-- `internal/server/ldap.go:618-627` writes an unexported `goldap` field to set
-  the Who Am I response value.
+- Add small tests around handler/store boundaries where cancellation matters
+  most: search, write, and shutdown behavior.
 
-Why this matters:
+Acceptance criteria:
 
-This may be necessary because of the dependency API, but it is the most brittle
-piece of code in the server. It is also embedded in the already-large LDAP
-handler file, so it is easy to miss during dependency upgrades.
+- A canceled context returns predictably without leaking goroutines or masking
+  the relevant LDAP result/error behavior.
+- Tests stay deterministic and do not rely on sleeps longer than necessary.
 
-Recommended simplification:
+### 5. Resolve or explicitly defer the dependency alert
 
-- Move this into `internal/protocol`, for example
-  `protocol.NewWhoAmIResponse(authzID string)`.
-- Put the unsafe reflection in a tiny file with focused tests.
-- Re-check whether the current `github.com/lor00x/goldap` version or a small
-  fork/PR can expose a public setter. If so, delete the unsafe path.
+Current state:
 
-Expected payoff:
+- The latest push reported one moderate Dependabot vulnerability in GitHub.
 
-- One contained compatibility hack instead of a server-level pattern.
-- Easier dependency upgrades.
+Recommendation:
 
-## P2 Opportunities
+- Inspect the alert, update the dependency if low risk, or create a focused
+  follow-up issue with the reason for deferral.
 
-### 6. Split the 1,007-line SQLite store by responsibility
+Acceptance criteria:
 
-Evidence:
+- The vulnerability is closed, or issue #13 links to a specific dependency
+  follow-up explaining risk, owner, and next action.
 
-- `internal/store/sqlite.go` is 1,007 lines and contains initialization,
-  migrations, bootstrap data, CRUD, search, password lookup, group membership,
-  and helper functions.
+## Out Of Scope
 
-Recommended split:
+The original audit should not be used to smuggle in broader LDAP product scope.
+These remain intentional limits unless the roadmap changes:
 
-- `sqlite_init.go`: `Initialize`, migrations, bootstrap.
-- `sqlite_entries.go`: entry CRUD and placement validation.
-- `sqlite_search.go`: search query building and row decoding.
-- `sqlite_groups.go`: membership sync, `memberOf`, `IsUserInGroup`.
-- `sqlite_passwords.go`: password hash lookup.
-- `sqlite_rows.go`: shared row scanning/decode helpers.
+- TLS/LDAPS termination inside the server.
+- SASL, Kerberos, or GSSAPI.
+- Full Active Directory schema semantics.
+- Global Catalog, DirSync, paging controls, server-side sorting controls, and
+  AD recursive matching rule support.
+- Replication or high availability.
 
-This is mostly code motion, but it will make future changes much less
-adversarial to review.
+## Verification To Keep Using
 
-### 7. Deduplicate read/decode logic in store queries
+For implementation follow-ups, keep the verification bar high:
 
-Evidence:
+```bash
+GOCACHE=/private/tmp/ldaplite-gocache make test
+GOCACHE=/private/tmp/ldaplite-gocache go test -count=1 -tags=functional -v ./tests/functional/...
+```
 
-- `GetEntry`, `SearchEntries`, `GetAllEntries`, and `GetChildren` each embed a
-  JSON aggregation query and row decoding loop in
-  `internal/store/sqlite.go:190-245`, `611-676`, `723-783`, and `787-848`.
+For search/storage changes, also consider:
 
-Recommended simplification:
+```bash
+GOCACHE=/private/tmp/ldaplite-gocache go test -run '^$' -bench=. ./internal/store ./internal/schema
+```
 
-- Extract a common selected column list and scanner:
-  `scanEntryWithAttributes(rows)` / `queryEntries(ctx, query, args...)`.
-- Avoid JSON aggregation if simpler row grouping is easier to reason about and
-  faster under `modernc.org/sqlite`; benchmark both before switching.
+## Closure Criteria For Issue #13
 
-Expected payoff:
+Issue #13 can be closed, or split into smaller follow-up issues, when:
 
-- Smaller store methods.
-- One place to fix attribute decoding or casing behavior.
-
-### 8. Deduplicate group membership sync
-
-Evidence:
-
-- Group member insert/verify code is duplicated in
-  `internal/store/sqlite.go:352-370` and `470-489`.
-
-Recommended simplification:
-
-- Extract `syncGroupMembers(ctx, tx, groupEntryID, groupDN, members, replace bool)`.
-- Validate all referenced member DNs before mutating `group_members`, then apply
-  changes. This gives cleaner errors and avoids partial work before rollback.
-
-### 9. Web UI CRUD handlers repeat the same flow and have subtle update issues
-
-Evidence:
-
-- `internal/web/handlers/users.go`, `groups.go`, and `ous.go` repeat list,
-  form-load, edit, delete, OU-loading, extra-attribute formatting, and
-  `showError` flows.
-- User update parses extra attributes and assigns them into `entry.Attributes`
-  (`internal/web/handlers/users.go:217-220`) but does not remove old extra
-  attributes absent from the submitted form.
-- Group and OU update have the same merge-only behavior in
-  `internal/web/handlers/groups.go:195-198` and
-  `internal/web/handlers/ous.go:162-165`.
-- Group update only changes members when at least one member is submitted
-  (`internal/web/handlers/groups.go:190-193`), so a user cannot clear members
-  through the form even if the model/store were to allow it.
-
-Recommended simplification:
-
-- Extract shared helpers for loading OUs, formatting extra attributes, rendering
-  forms with errors, and replacing editable extra attributes.
-- Define per-resource editable/core attribute sets once, not as repeated
-  string slices.
-- Use a replace model for form-submitted attributes: remove prior editable
-  extras, then apply submitted extras.
-- Add handler tests for deleting an extra attribute, clearing optional fields,
-  and clearing/replacing group members.
-
-Expected payoff:
-
-- Less duplicated UI code.
-- Better alignment between form state and stored LDAP attributes.
-
-### 10. LDAP operation handlers need smaller units and request-scoped context
-
-Evidence:
-
-- `internal/server/ldap.go` is 883 lines.
-- LDAP operations use `context.Background()` at
-  `internal/server/ldap.go:167`, `228`, `299`, `391`, and `425`.
-- Add and modify both contain password processing and attribute mutation logic
-  in-line (`internal/server/ldap.go:354-361`, `466-520`).
-- `handleSearch` loads subtree results and then filters scope/attributes in the
-  server (`internal/server/ldap.go:260-284`).
-
-Recommended simplification:
-
-- Thread the connection/server context into operation handlers so shutdown and
-  disconnect cancellation reach store calls.
-- Extract add/modify request parsing into pure functions returning a command
-  object. Unit-test those without a network connection.
-- Split RootDSE/schema/extended operations into separate files.
-
-Expected payoff:
-
-- Easier tests for protocol behavior.
-- More predictable shutdown under slow DB operations.
-
-### 11. Config loading should return errors instead of exiting
-
-Evidence:
-
-- `pkg/config/config.go:101-105` logs and calls `os.Exit(1)` when base DN is
-  empty.
-
-Why this matters:
-
-Direct process exit makes config code harder to test and reuse. It is also
-inconsistent with the rest of the codebase, which generally returns errors.
-
-Recommended simplification:
-
-- Add `LoadFromEnv() (*Config, error)` or `Validate() error`.
-- Keep CLI exit behavior in `cmd/ldaplite/main.go`.
-- Keep `Load()` only as a backwards-compatible wrapper if needed.
-
-### 12. DN handling is too ad hoc for LDAP edge cases
-
-Evidence:
-
-- `internal/models/entry.go:123-131` splits parent DN with `strings.SplitN`.
-- `internal/server/ldap.go:778-789` extracts UID with a simple prefix check.
-- `internal/server/ldap.go:872-883` finds the first unescaped comma manually.
-- `internal/store/sqlite.go:536-540` checks base containment with lowercase
-  suffix matching.
-
-Why this matters:
-
-LDAP DNs have escaping and normalization rules. The current helpers are probably
-fine for simple examples but will become a compatibility trap as clients submit
-escaped commas, mixed attribute names, or non-`uid=` bind DNs.
-
-Recommended simplification:
-
-- Centralize DN parsing/normalization behind `internal/ldapdn`.
-- Use a proven parser if one is already available in the dependency graph; if
-  not, keep the local parser tiny and heavily tested.
-- Store a normalized DN key or add a normalization helper used consistently by
-  bind, placement, equality, and base checks.
-
-## Testability And Performance Gaps
-
-- There are no store/search benchmarks today; the benchmark command found no
-  benchmark functions in `internal/store` or `internal/schema`.
-- Add table-driven tests around search query shape and `EXPLAIN QUERY PLAN` for
-  the most common filters.
-- Add Web UI handler tests for form replacement semantics.
-- Add cancellation tests once operation handlers accept request/server context.
-- Add one integration/functional test for escaped DN components before changing
-  DN parsing.
-
-## Suggested Refactor Order
-
-1. Introduce typed store errors and update LDAP result-code mapping.
-2. Move operational/virtual attribute projection out of store read methods.
-3. Add search options with scope and attribute selection, then avoid unnecessary
-   recursive searches and `memberOf` computation.
-4. Fix index/case-insensitive query strategy and add query-plan tests.
-5. Split `sqlite.go` and `ldap.go` after behavior is better pinned down.
-6. Deduplicate Web UI CRUD helpers and repair replace semantics.
-7. Encapsulate the unsafe Who Am I response hack.
-
-## Files With Highest Leverage
-
-- `internal/store/sqlite.go`
-- `internal/server/ldap.go`
-- `internal/schema/filter_compiler.go`
-- `internal/models/entry.go`
-- `internal/web/handlers/users.go`
-- `internal/web/handlers/groups.go`
-- `internal/web/handlers/ous.go`
-- `pkg/config/config.go`
+- the remaining opportunities above are implemented or intentionally deferred;
+- the full Go test suite passes;
+- the functional LDAP suite passes;
+- no stale audit evidence or obsolete line-number claims remain in this file;
+- dependency health has been checked; and
+- all resulting commits are pushed.
