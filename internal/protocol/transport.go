@@ -83,6 +83,12 @@ func WriteLDAPMessage(conn net.Conn, msg *message.LDAPMessage) error {
 	return nil
 }
 
+func WriteGoldapResponse(conn net.Conn, messageID int, op message.ProtocolOp) error {
+	msg := message.NewLDAPMessageWithProtocolOp(op)
+	msg.SetMessageID(messageID)
+	return WriteLDAPMessage(conn, msg)
+}
+
 func normalizeBERBooleans(data []byte) {
 	normalizeBERBooleansInRange(data, 0, len(data))
 }

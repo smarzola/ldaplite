@@ -5,48 +5,47 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/lor00x/goldap/message"
-
 	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/protocol"
+	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 	"github.com/smarzola/ldaplite/internal/store"
 )
 
 // handleAdd handles add operations
-func (s *Server) handleAdd(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
-	addReq := msg.ProtocolOp().(message.AddRequest)
+func (s *Server) handleAdd(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
+	addReq := msg.Op.(ldapmsg.AddRequest)
 
-	dn := string(addReq.Entry())
+	dn := addReq.Entry
 	slog.Debug("Add request", "dn", dn)
 
 	if !s.canWrite(conn) {
 		slog.Info("Add rejected - authenticated bind required", "dn", dn)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeInsufficientAccessRights))
+		return conn.WriteResponse(msg.ID, protocol.NewAddResponse(ldapmsg.ResultCodeInsufficientAccessRights))
 	}
 
 	// Check if entry already exists
 	exists, err := s.store.EntryExists(ctx, dn)
 	if err != nil {
 		slog.Error("Failed to check entry existence", "dn", dn, "error", err)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeOperationsError))
+		return conn.WriteResponse(msg.ID, protocol.NewAddResponse(ldapmsg.ResultCodeOperationsError))
 	}
 
 	if exists {
 		slog.Debug("Entry already exists", "dn", dn)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeEntryAlreadyExists))
+		return conn.WriteResponse(msg.ID, protocol.NewAddResponse(ldapmsg.ResultCodeEntryAlreadyExists))
 	}
 
-	entry, resultCode, err := s.newAddEntry(dn, addRequestAttributes(addReq.Attributes()))
+	entry, resultCode, err := s.newAddEntry(dn, addRequestAttributes(addReq.Attributes))
 	if err != nil {
 		slog.Debug("Invalid add request", "dn", dn, "error", err)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(resultCode))
+		return conn.WriteResponse(msg.ID, protocol.NewAddResponse(resultCode))
 	}
-	if resultCode != message.ResultCodeSuccess {
-		if resultCode == message.ResultCodeUnwillingToPerform {
+	if resultCode != ldapmsg.ResultCodeSuccess {
+		if resultCode == ldapmsg.ResultCodeUnwillingToPerform {
 			slog.Debug("Attempt to set protected attribute", "dn", dn)
 		}
-		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(resultCode))
+		return conn.WriteResponse(msg.ID, protocol.NewAddResponse(resultCode))
 	}
 
 	slog.Debug("Creating entry", "dn", dn, "objectClass", entry.ObjectClass)
@@ -54,102 +53,100 @@ func (s *Server) handleAdd(ctx context.Context, conn *protocol.Connection, msg *
 	// Store entry
 	if err := s.store.CreateEntry(ctx, entry); err != nil {
 		slog.Error("Failed to create entry", "dn", dn, "error", err)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(entryWriteResultCode(err)))
+		return conn.WriteResponse(msg.ID, protocol.NewAddResponse(entryWriteResultCode(err)))
 	}
 
 	slog.Info("Entry created", "dn", dn)
-	return conn.WriteResponse(msg.MessageID(), protocol.NewAddResponse(message.ResultCodeSuccess))
+	return conn.WriteResponse(msg.ID, protocol.NewAddResponse(ldapmsg.ResultCodeSuccess))
 }
 
 // handleDelete handles delete operations
-func (s *Server) handleDelete(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
-	delReq := msg.ProtocolOp().(message.DelRequest)
-
-	dn := string(delReq)
+func (s *Server) handleDelete(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
+	delReq := msg.Op.(ldapmsg.DeleteRequest)
+	dn := delReq.DN
 	slog.Debug("Delete request", "dn", dn)
 
 	if !s.canWrite(conn) {
 		slog.Info("Delete rejected - authenticated bind required", "dn", dn)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewDelResponse(message.ResultCodeInsufficientAccessRights))
+		return conn.WriteResponse(msg.ID, protocol.NewDelResponse(ldapmsg.ResultCodeInsufficientAccessRights))
 	}
 
 	// Check if entry exists
 	exists, err := s.store.EntryExists(ctx, dn)
 	if err != nil {
 		slog.Error("Failed to check entry existence", "dn", dn, "error", err)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewDelResponse(message.ResultCodeOperationsError))
+		return conn.WriteResponse(msg.ID, protocol.NewDelResponse(ldapmsg.ResultCodeOperationsError))
 	}
 
 	if !exists {
 		slog.Debug("Entry not found", "dn", dn)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewDelResponse(message.ResultCodeNoSuchObject))
+		return conn.WriteResponse(msg.ID, protocol.NewDelResponse(ldapmsg.ResultCodeNoSuchObject))
 	}
 
 	if err := s.store.DeleteEntry(ctx, dn); err != nil {
 		slog.Error("Failed to delete entry", "dn", dn, "error", err)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewDelResponse(message.ResultCodeOperationsError))
+		return conn.WriteResponse(msg.ID, protocol.NewDelResponse(ldapmsg.ResultCodeOperationsError))
 	}
 
 	slog.Info("Entry deleted", "dn", dn)
-	return conn.WriteResponse(msg.MessageID(), protocol.NewDelResponse(message.ResultCodeSuccess))
+	return conn.WriteResponse(msg.ID, protocol.NewDelResponse(ldapmsg.ResultCodeSuccess))
 }
 
 // handleModify handles modify operations
-func (s *Server) handleModify(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
-	modReq := msg.ProtocolOp().(message.ModifyRequest)
+func (s *Server) handleModify(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
+	modReq := msg.Op.(ldapmsg.ModifyRequest)
 
-	dn := string(modReq.Object())
+	dn := modReq.Object
 	slog.Debug("Modify request", "dn", dn)
 
 	if !s.canWrite(conn) {
 		slog.Info("Modify rejected - authenticated bind required", "dn", dn)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeInsufficientAccessRights))
+		return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(ldapmsg.ResultCodeInsufficientAccessRights))
 	}
 
 	// Get entry
 	entry, err := s.store.GetEntryWithOptions(ctx, dn, store.EntryOptions{IncludeMemberOf: false})
 	if err != nil {
 		slog.Error("Failed to get entry", "dn", dn, "error", err)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeOperationsError))
+		return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(ldapmsg.ResultCodeOperationsError))
 	}
 
 	if entry == nil {
 		slog.Debug("Entry not found", "dn", dn)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeNoSuchObject))
+		return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(ldapmsg.ResultCodeNoSuchObject))
 	}
 
 	// Apply modifications
-	changes := modReq.Changes()
+	changes := modReq.Changes
 	for _, change := range changes {
-		modification := change.Modification()
-		attrType := string(modification.Type_())
+		modification := change.Modification
+		attrType := modification.Name
 
 		// Check protected attributes
 		if isModifyProtectedAttribute(attrType) {
 			slog.Debug("Attempt to modify protected attribute", "dn", dn, "attribute", attrType)
-			return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeUnwillingToPerform))
+			return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(ldapmsg.ResultCodeUnwillingToPerform))
 		}
 
-		vals := attributeValues(modification.Vals())
-		opType := int(change.Operation())
+		vals := modification.Values
 
-		switch opType {
-		case 0: // Add
+		switch change.Operation {
+		case ldapmsg.ModifyOperationAdd:
 			slog.Debug("Add attribute", "attr", attrType)
 			if err := s.addModifyValues(entry, attrType, vals); err != nil {
 				slog.Debug("Invalid password format", "dn", dn, "error", err)
-				return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeConstraintViolation))
+				return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(ldapmsg.ResultCodeConstraintViolation))
 			}
 
-		case 1: // Delete
+		case ldapmsg.ModifyOperationDelete:
 			slog.Debug("Delete attribute", "attr", attrType)
 			deleteModifyValues(entry, attrType, vals)
 
-		case 2: // Replace
+		case ldapmsg.ModifyOperationReplace:
 			slog.Debug("Replace attribute", "attr", attrType)
 			if err := s.replaceModifyValues(entry, attrType, vals); err != nil {
 				slog.Debug("Invalid password format", "dn", dn, "error", err)
-				return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeConstraintViolation))
+				return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(ldapmsg.ResultCodeConstraintViolation))
 			}
 		}
 	}
@@ -157,23 +154,22 @@ func (s *Server) handleModify(ctx context.Context, conn *protocol.Connection, ms
 	// Update entry
 	if err := s.store.UpdateEntry(ctx, entry); err != nil {
 		slog.Error("Failed to update entry", "dn", dn, "error", err)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(entryWriteResultCode(err)))
+		return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(entryWriteResultCode(err)))
 	}
 
 	slog.Info("Entry modified", "dn", dn)
-	return conn.WriteResponse(msg.MessageID(), protocol.NewModifyResponse(message.ResultCodeSuccess))
+	return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(ldapmsg.ResultCodeSuccess))
 }
 
-func addRequestAttributes(attrs []message.Attribute) map[string][]string {
+func addRequestAttributes(attrs []ldapmsg.Attribute) map[string][]string {
 	values := make(map[string][]string, len(attrs))
 	for _, attr := range attrs {
-		name := string(attr.Type_())
-		values[name] = append(values[name], attributeValues(attr.Vals())...)
+		values[attr.Name] = append(values[attr.Name], attr.Values...)
 	}
 	return values
 }
 
-func (s *Server) newAddEntry(dn string, attrs map[string][]string) (*models.Entry, int, error) {
+func (s *Server) newAddEntry(dn string, attrs map[string][]string) (*models.Entry, ldapmsg.ResultCode, error) {
 	entry := &models.Entry{
 		DN:         dn,
 		ParentDN:   ldapdn.Parent(dn),
@@ -184,7 +180,7 @@ func (s *Server) newAddEntry(dn string, attrs map[string][]string) (*models.Entr
 
 	for name, values := range attrs {
 		if isAddProtectedAttribute(name) {
-			return nil, message.ResultCodeUnwillingToPerform, nil
+			return nil, ldapmsg.ResultCodeUnwillingToPerform, nil
 		}
 		for _, value := range values {
 			entry.AddAttribute(name, value)
@@ -194,14 +190,14 @@ func (s *Server) newAddEntry(dn string, attrs map[string][]string) (*models.Entr
 	if userPassword := entry.GetAttribute("userPassword"); userPassword != "" {
 		processedPassword, err := s.hasher.ProcessPassword(userPassword)
 		if err != nil {
-			return nil, message.ResultCodeConstraintViolation, err
+			return nil, ldapmsg.ResultCodeConstraintViolation, err
 		}
 		entry.SetAttribute("userPassword", processedPassword)
 	}
 
 	objectClass := entry.GetAttribute("objectClass")
 	if objectClass == "" {
-		return nil, message.ResultCodeObjectClassViolation, nil
+		return nil, ldapmsg.ResultCodeObjectClassViolation, nil
 	}
 	allClasses := entry.GetAttributes("objectClass")
 	if len(allClasses) > 0 {
@@ -210,15 +206,7 @@ func (s *Server) newAddEntry(dn string, attrs map[string][]string) (*models.Entr
 	entry.ObjectClass = objectClass
 	delete(entry.Attributes, "objectclass")
 
-	return entry, message.ResultCodeSuccess, nil
-}
-
-func attributeValues(vals []message.AttributeValue) []string {
-	out := make([]string, 0, len(vals))
-	for _, val := range vals {
-		out = append(out, string(val))
-	}
-	return out
+	return entry, ldapmsg.ResultCodeSuccess, nil
 }
 
 func (s *Server) addModifyValues(entry *models.Entry, attrType string, vals []string) error {

@@ -3,32 +3,27 @@ package protocol
 import (
 	"strings"
 
-	"github.com/lor00x/goldap/message"
+	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 )
 
 // Helper functions for creating LDAP responses
 
 // NewBindResponse creates a bind response with the given result code
-func NewBindResponse(resultCode int) message.BindResponse {
-	r := message.BindResponse{}
-	r.SetResultCode(resultCode)
-	return r
+func NewBindResponse(resultCode ldapmsg.ResultCode) ldapmsg.BindResponse {
+	return ldapmsg.BindResponse{LDAPResult: ldapmsg.LDAPResult{ResultCode: resultCode}}
 }
 
 // NewSearchResultEntry creates a search result entry with the given DN
-func NewSearchResultEntry(dn string) message.SearchResultEntry {
-	r := message.SearchResultEntry{}
-	r.SetObjectName(dn)
-	return r
+func NewSearchResultEntry(dn string) ldapmsg.SearchResultEntry {
+	return ldapmsg.SearchResultEntry{ObjectName: dn}
 }
 
 // AddAttribute adds an attribute to a search result entry
-func AddAttribute(entry *message.SearchResultEntry, name string, values ...string) {
-	attrValues := make([]message.AttributeValue, len(values))
-	for i, v := range values {
-		attrValues[i] = message.AttributeValue(v)
-	}
-	entry.AddAttribute(message.AttributeDescription(CanonicalAttributeName(name)), attrValues...)
+func AddAttribute(entry *ldapmsg.SearchResultEntry, name string, values ...string) {
+	entry.Attributes = append(entry.Attributes, ldapmsg.Attribute{
+		Name:   CanonicalAttributeName(name),
+		Values: append([]string(nil), values...),
+	})
 }
 
 // CanonicalAttributeName returns the preferred display casing for known LDAP
@@ -67,43 +62,31 @@ func CanonicalAttributeName(name string) string {
 }
 
 // NewSearchResultDone creates a search done response
-func NewSearchResultDone(resultCode int) message.SearchResultDone {
-	r := message.SearchResultDone{}
-	r.SetResultCode(resultCode)
-	return r
+func NewSearchResultDone(resultCode ldapmsg.ResultCode) ldapmsg.SearchResultDone {
+	return ldapmsg.SearchResultDone{LDAPResult: ldapmsg.LDAPResult{ResultCode: resultCode}}
 }
 
 // NewAddResponse creates an add response
-func NewAddResponse(resultCode int) message.AddResponse {
-	r := message.AddResponse{}
-	r.SetResultCode(resultCode)
-	return r
+func NewAddResponse(resultCode ldapmsg.ResultCode) ldapmsg.AddResponse {
+	return ldapmsg.AddResponse{LDAPResult: ldapmsg.LDAPResult{ResultCode: resultCode}}
 }
 
 // NewModifyResponse creates a modify response
-func NewModifyResponse(resultCode int) message.ModifyResponse {
-	r := message.ModifyResponse{}
-	r.SetResultCode(resultCode)
-	return r
+func NewModifyResponse(resultCode ldapmsg.ResultCode) ldapmsg.ModifyResponse {
+	return ldapmsg.ModifyResponse{LDAPResult: ldapmsg.LDAPResult{ResultCode: resultCode}}
 }
 
 // NewDelResponse creates a delete response
-func NewDelResponse(resultCode int) message.DelResponse {
-	r := message.DelResponse{}
-	r.SetResultCode(resultCode)
-	return r
+func NewDelResponse(resultCode ldapmsg.ResultCode) ldapmsg.DeleteResponse {
+	return ldapmsg.DeleteResponse{LDAPResult: ldapmsg.LDAPResult{ResultCode: resultCode}}
 }
 
 // NewCompareResponse creates a compare response
-func NewCompareResponse(resultCode int) message.CompareResponse {
-	r := message.CompareResponse{}
-	r.SetResultCode(resultCode)
-	return r
+func NewCompareResponse(resultCode ldapmsg.ResultCode) ldapmsg.CompareResponse {
+	return ldapmsg.CompareResponse{LDAPResult: ldapmsg.LDAPResult{ResultCode: resultCode}}
 }
 
 // NewExtendedResponse creates an extended response
-func NewExtendedResponse(resultCode int) message.ExtendedResponse {
-	r := message.ExtendedResponse{}
-	r.SetResultCode(resultCode)
-	return r
+func NewExtendedResponse(resultCode ldapmsg.ResultCode) ldapmsg.ExtendedResponse {
+	return ldapmsg.ExtendedResponse{LDAPResult: ldapmsg.LDAPResult{ResultCode: resultCode}}
 }

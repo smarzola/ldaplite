@@ -1,7 +1,11 @@
 package protocol
 
 import (
+	"net"
 	"testing"
+	"time"
+
+	"github.com/lor00x/goldap/message"
 
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 )
@@ -258,7 +262,7 @@ func TestFromGoldapMessageConvertsRequestFixtures(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			goldapMsg := readLDAPFixture(t, tt.wire)
+			goldapMsg := readGoldapMessageFixture(t, tt.wire)
 			msg, err := FromGoldapMessage(goldapMsg)
 			if err != nil {
 				t.Fatalf("FromGoldapMessage() failed: %v", err)
@@ -266,4 +270,36 @@ func TestFromGoldapMessageConvertsRequestFixtures(t *testing.T) {
 			tt.assertion(t, msg)
 		})
 	}
+}
+
+func readGoldapMessageFixture(t *testing.T, wire []byte) *message.LDAPMessage {
+	t.Helper()
+
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+
+	writeDone := make(chan error, 1)
+	go func() {
+		_, err := clientConn.Write(wire)
+		if closeErr := clientConn.Close(); err == nil {
+			err = closeErr
+		}
+		writeDone <- err
+	}()
+
+	msg, err := ReadLDAPMessage(serverConn)
+	if err != nil {
+		t.Fatalf("ReadLDAPMessage() failed: %v", err)
+	}
+
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			t.Fatalf("client write fixture failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("fixture writer did not finish")
+	}
+
+	return msg
 }

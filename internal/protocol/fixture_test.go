@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lor00x/goldap/message"
+	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 )
 
 func TestReadLDAPMessageDecodesRepresentativeRequestFixtures(t *testing.T) {
 	tests := []struct {
 		name      string
 		wire      []byte
-		assertion func(*testing.T, *message.LDAPMessage)
+		assertion func(*testing.T, *ldapmsg.Message)
 	}{
 		{
 			name: "bind simple empty credentials",
@@ -25,20 +25,20 @@ func TestReadLDAPMessageDecodesRepresentativeRequestFixtures(t *testing.T) {
 				0x04, 0x00,
 				0x80, 0x00,
 			},
-			assertion: func(t *testing.T, msg *message.LDAPMessage) {
+			assertion: func(t *testing.T, msg *ldapmsg.Message) {
 				t.Helper()
-				req, ok := msg.ProtocolOp().(message.BindRequest)
+				req, ok := msg.Op.(ldapmsg.BindRequest)
 				if !ok {
-					t.Fatalf("ProtocolOp() = %T, want message.BindRequest", msg.ProtocolOp())
+					t.Fatalf("Op = %T, want ldapmsg.BindRequest", msg.Op)
 				}
-				if got := msg.MessageID(); got != 1 {
-					t.Fatalf("MessageID() = %d, want 1", got)
+				if got := msg.ID; got != 1 {
+					t.Fatalf("ID = %d, want 1", got)
 				}
-				if got := string(req.Name()); got != "" {
-					t.Fatalf("Name() = %q, want empty", got)
+				if got := req.Name; got != "" {
+					t.Fatalf("Name = %q, want empty", got)
 				}
-				if got := string(req.AuthenticationSimple()); got != "" {
-					t.Fatalf("AuthenticationSimple() = %q, want empty", got)
+				if got := req.Password; got != "" {
+					t.Fatalf("Password = %q, want empty", got)
 				}
 			},
 		},
@@ -59,29 +59,29 @@ func TestReadLDAPMessageDecodesRepresentativeRequestFixtures(t *testing.T) {
 				'o', 'b', 'j', 'e', 'c', 't', 'C', 'l', 'a', 's', 's',
 				0x30, 0x00,
 			},
-			assertion: func(t *testing.T, msg *message.LDAPMessage) {
+			assertion: func(t *testing.T, msg *ldapmsg.Message) {
 				t.Helper()
-				req, ok := msg.ProtocolOp().(message.SearchRequest)
+				req, ok := msg.Op.(ldapmsg.SearchRequest)
 				if !ok {
-					t.Fatalf("ProtocolOp() = %T, want message.SearchRequest", msg.ProtocolOp())
+					t.Fatalf("Op = %T, want ldapmsg.SearchRequest", msg.Op)
 				}
-				if got := msg.MessageID(); got != 2 {
-					t.Fatalf("MessageID() = %d, want 2", got)
+				if got := msg.ID; got != 2 {
+					t.Fatalf("ID = %d, want 2", got)
 				}
-				if got := string(req.BaseObject()); got != "dc=example,dc=com" {
-					t.Fatalf("BaseObject() = %q, want dc=example,dc=com", got)
+				if got := req.BaseObject; got != "dc=example,dc=com" {
+					t.Fatalf("BaseObject = %q, want dc=example,dc=com", got)
 				}
-				if got := int(req.Scope()); got != 2 {
-					t.Fatalf("Scope() = %d, want 2", got)
+				if got := req.Scope; got != ldapmsg.SearchScopeWholeSubtree {
+					t.Fatalf("Scope = %d, want subtree", got)
 				}
-				if _, ok := req.Filter().(message.FilterPresent); !ok {
-					t.Fatalf("Filter() = %T, want message.FilterPresent", req.Filter())
+				if _, ok := req.Filter.(ldapmsg.PresentFilter); !ok {
+					t.Fatalf("Filter = %T, want ldapmsg.PresentFilter", req.Filter)
 				}
-				if got := bool(req.TypesOnly()); got {
-					t.Fatalf("TypesOnly() = true, want false")
+				if req.TypesOnly {
+					t.Fatalf("TypesOnly = true, want false")
 				}
-				if got := len(req.Attributes()); got != 0 {
-					t.Fatalf("len(Attributes()) = %d, want 0", got)
+				if got := len(req.Attributes); got != 0 {
+					t.Fatalf("len(Attributes) = %d, want 0", got)
 				}
 			},
 		},
@@ -102,23 +102,23 @@ func TestReadLDAPMessageDecodesRepresentativeRequestFixtures(t *testing.T) {
 				0x04, 0x0d,
 				'i', 'n', 'e', 't', 'O', 'r', 'g', 'P', 'e', 'r', 's', 'o', 'n',
 			},
-			assertion: func(t *testing.T, msg *message.LDAPMessage) {
+			assertion: func(t *testing.T, msg *ldapmsg.Message) {
 				t.Helper()
-				req, ok := msg.ProtocolOp().(message.AddRequest)
+				req, ok := msg.Op.(ldapmsg.AddRequest)
 				if !ok {
-					t.Fatalf("ProtocolOp() = %T, want message.AddRequest", msg.ProtocolOp())
+					t.Fatalf("Op = %T, want ldapmsg.AddRequest", msg.Op)
 				}
-				if got := string(req.Entry()); got != "uid=jane,ou=users,dc=example,dc=com" {
-					t.Fatalf("Entry() = %q, want jane DN", got)
+				if got := req.Entry; got != "uid=jane,ou=users,dc=example,dc=com" {
+					t.Fatalf("Entry = %q, want jane DN", got)
 				}
-				attrs := req.Attributes()
+				attrs := req.Attributes
 				if len(attrs) != 1 {
-					t.Fatalf("len(Attributes()) = %d, want 1", len(attrs))
+					t.Fatalf("len(Attributes) = %d, want 1", len(attrs))
 				}
-				if got := string(attrs[0].Type_()); got != "objectClass" {
-					t.Fatalf("attribute Type_() = %q, want objectClass", got)
+				if got := attrs[0].Name; got != "objectClass" {
+					t.Fatalf("attribute Name = %q, want objectClass", got)
 				}
-				if got := attributeValues(attrs[0].Vals()); len(got) != 1 || got[0] != "inetOrgPerson" {
+				if got := attrs[0].Values; len(got) != 1 || got[0] != "inetOrgPerson" {
 					t.Fatalf("attribute values = %v, want [inetOrgPerson]", got)
 				}
 			},
@@ -132,14 +132,14 @@ func TestReadLDAPMessageDecodesRepresentativeRequestFixtures(t *testing.T) {
 				'u', 'i', 'd', '=', 'j', 'a', 'n', 'e', ',', 'o', 'u', '=', 'u', 's', 'e', 'r', 's',
 				',', 'd', 'c', '=', 'e', 'x', 'a', 'm', 'p', 'l', 'e', ',', 'd', 'c', '=', 'c', 'o', 'm',
 			},
-			assertion: func(t *testing.T, msg *message.LDAPMessage) {
+			assertion: func(t *testing.T, msg *ldapmsg.Message) {
 				t.Helper()
-				req, ok := msg.ProtocolOp().(message.DelRequest)
+				req, ok := msg.Op.(ldapmsg.DeleteRequest)
 				if !ok {
-					t.Fatalf("ProtocolOp() = %T, want message.DelRequest", msg.ProtocolOp())
+					t.Fatalf("Op = %T, want ldapmsg.DeleteRequest", msg.Op)
 				}
-				if got := string(req); got != "uid=jane,ou=users,dc=example,dc=com" {
-					t.Fatalf("DelRequest = %q, want jane DN", got)
+				if got := req.DN; got != "uid=jane,ou=users,dc=example,dc=com" {
+					t.Fatalf("DeleteRequest DN = %q, want jane DN", got)
 				}
 			},
 		},
@@ -156,10 +156,10 @@ func TestReadLDAPMessageDecodesRepresentativeRequestFixtures(t *testing.T) {
 				0x04, 0x03, 'u', 'i', 'd',
 				0x04, 0x04, 'j', 'a', 'n', 'e',
 			},
-			assertion: func(t *testing.T, msg *message.LDAPMessage) {
+			assertion: func(t *testing.T, msg *ldapmsg.Message) {
 				t.Helper()
-				if _, ok := msg.ProtocolOp().(message.CompareRequest); !ok {
-					t.Fatalf("ProtocolOp() = %T, want message.CompareRequest", msg.ProtocolOp())
+				if _, ok := msg.Op.(ldapmsg.CompareRequest); !ok {
+					t.Fatalf("Op = %T, want ldapmsg.CompareRequest", msg.Op)
 				}
 			},
 		},
@@ -176,12 +176,12 @@ func TestReadLDAPMessageDecodesRepresentativeRequestFixtures(t *testing.T) {
 func TestResponseHelpersEncodeExactBERFixtures(t *testing.T) {
 	tests := []struct {
 		name     string
-		response message.ProtocolOp
+		response ldapmsg.Operation
 		want     []byte
 	}{
 		{
 			name:     "bind success",
-			response: NewBindResponse(message.ResultCodeSuccess),
+			response: NewBindResponse(ldapmsg.ResultCodeSuccess),
 			want: []byte{
 				0x30, 0x0c,
 				0x02, 0x01, 0x01,
@@ -193,7 +193,7 @@ func TestResponseHelpersEncodeExactBERFixtures(t *testing.T) {
 		},
 		{
 			name:     "search done success",
-			response: NewSearchResultDone(message.ResultCodeSuccess),
+			response: NewSearchResultDone(ldapmsg.ResultCodeSuccess),
 			want: []byte{
 				0x30, 0x0c,
 				0x02, 0x01, 0x01,
@@ -205,7 +205,7 @@ func TestResponseHelpersEncodeExactBERFixtures(t *testing.T) {
 		},
 		{
 			name:     "add success",
-			response: NewAddResponse(message.ResultCodeSuccess),
+			response: NewAddResponse(ldapmsg.ResultCodeSuccess),
 			want: []byte{
 				0x30, 0x0c,
 				0x02, 0x01, 0x01,
@@ -217,7 +217,7 @@ func TestResponseHelpersEncodeExactBERFixtures(t *testing.T) {
 		},
 		{
 			name:     "modify success",
-			response: NewModifyResponse(message.ResultCodeSuccess),
+			response: NewModifyResponse(ldapmsg.ResultCodeSuccess),
 			want: []byte{
 				0x30, 0x0c,
 				0x02, 0x01, 0x01,
@@ -229,7 +229,7 @@ func TestResponseHelpersEncodeExactBERFixtures(t *testing.T) {
 		},
 		{
 			name:     "delete success",
-			response: NewDelResponse(message.ResultCodeSuccess),
+			response: NewDelResponse(ldapmsg.ResultCodeSuccess),
 			want: []byte{
 				0x30, 0x0c,
 				0x02, 0x01, 0x01,
@@ -241,7 +241,7 @@ func TestResponseHelpersEncodeExactBERFixtures(t *testing.T) {
 		},
 		{
 			name:     "compare false",
-			response: NewCompareResponse(message.ResultCodeCompareFalse),
+			response: NewCompareResponse(ldapmsg.ResultCodeCompareFalse),
 			want: []byte{
 				0x30, 0x0c,
 				0x02, 0x01, 0x01,
@@ -264,10 +264,7 @@ func TestResponseHelpersEncodeExactBERFixtures(t *testing.T) {
 }
 
 func TestWhoAmIResponseEncodesExactBERFixture(t *testing.T) {
-	resp, err := NewWhoAmIResponse("dn:uid=admin,ou=users,dc=example,dc=com")
-	if err != nil {
-		t.Fatalf("NewWhoAmIResponse() failed: %v", err)
-	}
+	resp := NewWhoAmIResponse("dn:uid=admin,ou=users,dc=example,dc=com")
 
 	want := []byte{
 		0x30, 0x4e,
@@ -289,7 +286,7 @@ func TestWhoAmIResponseEncodesExactBERFixture(t *testing.T) {
 	}
 }
 
-func readLDAPFixture(t *testing.T, wire []byte) *message.LDAPMessage {
+func readLDAPFixture(t *testing.T, wire []byte) *ldapmsg.Message {
 	t.Helper()
 
 	serverConn, clientConn := net.Pipe()
@@ -304,9 +301,13 @@ func readLDAPFixture(t *testing.T, wire []byte) *message.LDAPMessage {
 		writeDone <- err
 	}()
 
-	msg, err := ReadLDAPMessage(serverConn)
+	goldapMsg, err := ReadLDAPMessage(serverConn)
 	if err != nil {
 		t.Fatalf("ReadLDAPMessage() failed: %v", err)
+	}
+	msg, err := FromGoldapMessage(goldapMsg)
+	if err != nil {
+		t.Fatalf("FromGoldapMessage() failed: %v", err)
 	}
 
 	select {
@@ -321,18 +322,20 @@ func readLDAPFixture(t *testing.T, wire []byte) *message.LDAPMessage {
 	return msg
 }
 
-func encodeProtocolOpFixture(t *testing.T, op message.ProtocolOp) []byte {
+func encodeProtocolOpFixture(t *testing.T, op ldapmsg.Operation) []byte {
 	t.Helper()
 
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()
 
-	msg := message.NewLDAPMessageWithProtocolOp(op)
-	msg.SetMessageID(1)
-
 	writeDone := make(chan error, 1)
 	go func() {
-		writeDone <- WriteLDAPMessage(serverConn, msg)
+		goldapOp, err := ToGoldapOperation(op)
+		if err != nil {
+			writeDone <- err
+			return
+		}
+		writeDone <- WriteGoldapResponse(serverConn, 1, goldapOp)
 	}()
 
 	gotCh := make(chan []byte, 1)
@@ -371,12 +374,4 @@ func encodeProtocolOpFixture(t *testing.T, op message.ProtocolOp) []byte {
 	}
 
 	panic("unreachable")
-}
-
-func attributeValues(vals []message.AttributeValue) []string {
-	out := make([]string, 0, len(vals))
-	for _, val := range vals {
-		out = append(out, string(val))
-	}
-	return out
 }

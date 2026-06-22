@@ -9,9 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lor00x/goldap/message"
-
 	"github.com/smarzola/ldaplite/internal/protocol"
+	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/smarzola/ldaplite/pkg/crypto"
@@ -172,12 +171,12 @@ func (s *Server) Stop() error {
 }
 
 // handleBind handles bind operations
-func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
+func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
 	conn.ClearBoundDN()
 
-	bindReq := msg.ProtocolOp().(message.BindRequest)
-	bindDN := string(bindReq.Name())
-	password := string(bindReq.AuthenticationSimple())
+	bindReq := msg.Op.(ldapmsg.BindRequest)
+	bindDN := bindReq.Name
+	password := bindReq.Password
 
 	slog.Debug("Bind request", "dn", bindDN)
 
@@ -186,46 +185,46 @@ func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg 
 		if s.cfg.Security.AllowAnonymousBind {
 			conn.SetBoundDN("") // Anonymous bind
 			slog.Debug("Anonymous bind allowed")
-			return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeSuccess))
+			return conn.WriteResponse(msg.ID, protocol.NewBindResponse(ldapmsg.ResultCodeSuccess))
 		}
 		slog.Info("Anonymous bind rejected - not allowed by configuration")
-		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
+		return conn.WriteResponse(msg.ID, protocol.NewBindResponse(ldapmsg.ResultCodeInvalidCredentials))
 	}
 
 	// Look up user by bind DN to get password hash and canonical DN from database
 	passwordHash, dn, err := s.store.GetUserPasswordHashByDN(ctx, bindDN)
 	if err != nil {
 		slog.Debug("Error retrieving user", "dn", bindDN, "error", err)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
+		return conn.WriteResponse(msg.ID, protocol.NewBindResponse(ldapmsg.ResultCodeInvalidCredentials))
 	}
 
 	if passwordHash == "" || dn == "" {
 		slog.Debug("User not found", "dn", bindDN)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
+		return conn.WriteResponse(msg.ID, protocol.NewBindResponse(ldapmsg.ResultCodeInvalidCredentials))
 	}
 
 	// Verify password
 	valid, err := s.hasher.Verify(password, passwordHash)
 	if err != nil || !valid {
 		slog.Debug("Password verification failed", "dn", dn)
-		return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeInvalidCredentials))
+		return conn.WriteResponse(msg.ID, protocol.NewBindResponse(ldapmsg.ResultCodeInvalidCredentials))
 	}
 
 	// Bind successful - set the DN on the connection
 	conn.SetBoundDN(dn)
 
 	slog.Debug("Bind successful", "dn", dn)
-	return conn.WriteResponse(msg.MessageID(), protocol.NewBindResponse(message.ResultCodeSuccess))
+	return conn.WriteResponse(msg.ID, protocol.NewBindResponse(ldapmsg.ResultCodeSuccess))
 }
 
 // handleCompare handles compare operations
-func (s *Server) handleCompare(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
+func (s *Server) handleCompare(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
 	slog.Debug("Compare request")
-	return conn.WriteResponse(msg.MessageID(), protocol.NewCompareResponse(message.ResultCodeCompareFalse))
+	return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(ldapmsg.ResultCodeCompareFalse))
 }
 
 // handleUnbind handles unbind operations
-func (s *Server) handleUnbind(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
+func (s *Server) handleUnbind(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
 	slog.Debug("Unbind request")
 	conn.ClearBoundDN()
 	return nil // Connection will be closed by handler
@@ -235,23 +234,23 @@ func (s *Server) canWrite(conn *protocol.Connection) bool {
 	return conn.IsBound() && conn.GetBoundDN() != ""
 }
 
-func entryWriteResultCode(err error) int {
+func entryWriteResultCode(err error) ldapmsg.ResultCode {
 	if err == nil {
-		return message.ResultCodeSuccess
+		return ldapmsg.ResultCodeSuccess
 	}
 
 	if errors.Is(err, store.ErrEntryAlreadyExists) {
-		return message.ResultCodeEntryAlreadyExists
+		return ldapmsg.ResultCodeEntryAlreadyExists
 	}
 	if errors.Is(err, store.ErrNoSuchObject) {
-		return message.ResultCodeNoSuchObject
+		return ldapmsg.ResultCodeNoSuchObject
 	}
 	if errors.Is(err, store.ErrObjectClassViolation) {
-		return message.ResultCodeObjectClassViolation
+		return ldapmsg.ResultCodeObjectClassViolation
 	}
 	if errors.Is(err, store.ErrConstraintViolation) {
-		return message.ResultCodeConstraintViolation
+		return ldapmsg.ResultCodeConstraintViolation
 	}
 
-	return message.ResultCodeOperationsError
+	return ldapmsg.ResultCodeOperationsError
 }

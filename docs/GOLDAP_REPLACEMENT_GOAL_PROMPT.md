@@ -202,7 +202,7 @@ Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
 
-### [ ] 3. Move Server Handlers Off goldap Types
+### [x] 3. Move Server Handlers Off goldap Types
 
 Change the server and protocol connection dispatch path to use LDAPLite-owned
 types.
@@ -225,7 +225,28 @@ GOCACHE=/private/tmp/ldaplite-gocache go test -tags=functional -v ./tests/functi
 
 Status note:
 
-- Pending.
+- Done on 2026-06-22.
+- Updated `protocol.Connection` and `protocol.OperationHandlers` to dispatch
+  LDAPLite-owned `ldapmsg.Message` values.
+- Updated response helpers to return LDAPLite-owned response types.
+- Updated server bind, search, write, discovery, extended, compare, and unbind
+  handlers to consume `ldapmsg` request/response types instead of
+  `goldap/message`.
+- Kept `goldap` isolated in the temporary protocol transport/adapter layer for
+  BER reads and writes until the encoder/decoder milestones replace it.
+- Updated protocol and server tests to construct or assert `ldapmsg` values
+  directly, except for adapter-specific coverage.
+- Boundary check run:
+  ```bash
+  rg -n "github.com/lor00x/goldap/message|message\\." internal/server
+  ```
+  returned no matches.
+- Verification commands run:
+  ```bash
+  GOCACHE=/private/tmp/ldaplite-gocache go test ./internal/protocol ./internal/server
+  GOCACHE=/private/tmp/ldaplite-gocache go test -tags=functional -v ./tests/functional/...
+  ```
+- Commit hash: pending until this milestone commit is created.
 
 Commit requirement:
 

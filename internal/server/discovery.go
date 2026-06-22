@@ -4,12 +4,11 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/lor00x/goldap/message"
-
 	"github.com/smarzola/ldaplite/internal/protocol"
+	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 )
 
-func (s *Server) handleRootDSE(conn *protocol.Connection, msg *message.LDAPMessage) error {
+func (s *Server) handleRootDSE(conn *protocol.Connection, msg *ldapmsg.Message) error {
 	entry := protocol.NewSearchResultEntry("")
 	protocol.AddAttribute(&entry, "objectClass", "top")
 	protocol.AddAttribute(&entry, "namingContexts", s.cfg.LDAP.BaseDN)
@@ -18,14 +17,14 @@ func (s *Server) handleRootDSE(conn *protocol.Connection, msg *message.LDAPMessa
 	protocol.AddAttribute(&entry, "vendorName", "LDAPLite")
 	protocol.AddAttribute(&entry, "vendorVersion", s.version)
 
-	if err := conn.WriteResponse(msg.MessageID(), entry); err != nil {
+	if err := conn.WriteResponse(msg.ID, entry); err != nil {
 		return err
 	}
-	return conn.WriteResponse(msg.MessageID(), protocol.NewSearchResultDone(message.ResultCodeSuccess))
+	return conn.WriteResponse(msg.ID, protocol.NewSearchResultDone(ldapmsg.ResultCodeSuccess))
 }
 
 // handleSchema handles schema queries
-func (s *Server) handleSchema(conn *protocol.Connection, msg *message.LDAPMessage) error {
+func (s *Server) handleSchema(conn *protocol.Connection, msg *ldapmsg.Message) error {
 	entry := protocol.NewSearchResultEntry("cn=Subschema")
 	protocol.AddAttribute(&entry, "objectClass", "top", "subschema")
 	protocol.AddAttribute(&entry, "objectClasses",
@@ -49,16 +48,16 @@ func (s *Server) handleSchema(conn *protocol.Connection, msg *message.LDAPMessag
 		"( 1.2.840.113556.1.2.102 NAME 'memberOf' DESC 'RFC2307bis-style: groups to which the entry belongs' EQUALITY distinguishedNameMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 NO-USER-MODIFICATION USAGE directoryOperation )",
 	)
 
-	if err := conn.WriteResponse(msg.MessageID(), entry); err != nil {
+	if err := conn.WriteResponse(msg.ID, entry); err != nil {
 		return err
 	}
-	return conn.WriteResponse(msg.MessageID(), protocol.NewSearchResultDone(message.ResultCodeSuccess))
+	return conn.WriteResponse(msg.ID, protocol.NewSearchResultDone(ldapmsg.ResultCodeSuccess))
 }
 
 // handleExtended handles extended operations
-func (s *Server) handleExtended(ctx context.Context, conn *protocol.Connection, msg *message.LDAPMessage) error {
-	extReq := msg.ProtocolOp().(message.ExtendedRequest)
-	reqOID := string(extReq.RequestName())
+func (s *Server) handleExtended(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
+	extReq := msg.Op.(ldapmsg.ExtendedRequest)
+	reqOID := extReq.RequestName
 
 	slog.Debug("Extended request", "oid", reqOID)
 
@@ -73,17 +72,13 @@ func (s *Server) handleExtended(ctx context.Context, conn *protocol.Connection, 
 			authzID = "dn:" + boundDN
 		}
 
-		resp, err := protocol.NewWhoAmIResponse(authzID)
-		if err != nil {
-			slog.Error("Failed to build Who am I response", "error", err)
-			return conn.WriteResponse(msg.MessageID(), protocol.NewExtendedResponse(message.ResultCodeOperationsError))
-		}
+		resp := protocol.NewWhoAmIResponse(authzID)
 
 		slog.Debug("Who am I response", "authzID", authzID)
-		return conn.WriteResponse(msg.MessageID(), resp)
+		return conn.WriteResponse(msg.ID, resp)
 	}
 
 	// Unsupported extended operation
 	slog.Debug("Unsupported extended operation", "oid", reqOID)
-	return conn.WriteResponse(msg.MessageID(), protocol.NewExtendedResponse(message.ResultCodeUnavailable))
+	return conn.WriteResponse(msg.ID, protocol.NewExtendedResponse(ldapmsg.ResultCodeUnavailable))
 }
