@@ -121,9 +121,8 @@ func (h *UserHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UserHandler) Edit(w http.ResponseWriter, r *http.Request) {
-	dn := r.URL.Query().Get("dn")
-	if dn == "" {
-		http.Error(w, "DN parameter required", http.StatusBadRequest)
+	dn, ok := queryDN(w, r)
+	if !ok {
 		return
 	}
 
@@ -149,7 +148,7 @@ func (h *UserHandler) Edit(w http.ResponseWriter, r *http.Request) {
 	}{
 		BaseData:        NewBaseData(h.cfg, r, "users"),
 		User:            entry,
-		ExtraAttributes: FormatExtraAttributes(entry, userFormExcludeAttributes),
+		ExtraAttributes: formatExtraAttributesForForm(entry, userFormExcludeAttributes),
 		OUs:             ous,
 	}
 
@@ -209,11 +208,6 @@ func (h *UserHandler) showError(w http.ResponseWriter, r *http.Request, errMsg s
 
 	ous := loadOrganizationalUnits(ctx, h.store, h.cfg.LDAP.BaseDN)
 
-	extraAttrs := ""
-	if user != nil {
-		extraAttrs = FormatExtraAttributes(user, userFormExcludeAttributes)
-	}
-
 	data := struct {
 		BaseData
 		User            *models.Entry
@@ -222,7 +216,7 @@ func (h *UserHandler) showError(w http.ResponseWriter, r *http.Request, errMsg s
 	}{
 		BaseData:        NewBaseDataWithError(h.cfg, r, "users", errMsg),
 		User:            user,
-		ExtraAttributes: extraAttrs,
+		ExtraAttributes: formatExtraAttributesForForm(user, userFormExcludeAttributes),
 		OUs:             ous,
 	}
 

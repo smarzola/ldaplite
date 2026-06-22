@@ -42,3 +42,40 @@ func TestDeleteHandlersRejectGet(t *testing.T) {
 		})
 	}
 }
+
+func TestEditHandlersRequireDN(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		handler http.HandlerFunc
+	}{
+		{
+			name:    "users",
+			path:    "/users/edit",
+			handler: (&UserHandler{}).Edit,
+		},
+		{
+			name:    "groups",
+			path:    "/groups/edit",
+			handler: (&GroupHandler{}).Edit,
+		},
+		{
+			name:    "ous",
+			path:    "/ous/edit",
+			handler: (&OUHandler{}).Edit,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			rr := httptest.NewRecorder()
+
+			tt.handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+			}
+		})
+	}
+}

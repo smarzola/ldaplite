@@ -11,10 +11,11 @@ closure tracker. The immediate goal is reached when the audit states, without
 stale line-number evidence, what has been implemented, what still matters, and
 what acceptance criteria should close or split issue #13.
 
-The remaining implementation goal is narrower than the original audit:
+The updated implementation goal is complete:
 
-> Finish the residual cleanup by consolidating remaining Web UI handler
-> repetition where it reduces code without hiding behavior.
+> Keep issue #13 as a historical audit record, with all actionable
+> simplification items either implemented, proven by tests, or explicitly
+> out of scope for LDAPLite's current roadmap.
 
 ## Current Status
 
@@ -74,30 +75,19 @@ to residual follow-up work:
 - Cancellation coverage: store read, search, and write paths are covered for
   already-canceled contexts without sleep-based timing.
 - Dependency health: the moderate `github.com/Azure/go-ntlmssp` alert is
-  addressed by selecting the patched `v0.1.1` module version.
+  addressed by selecting the patched `v0.1.1` module version; Dependabot alert
+  #5 is fixed as of 2026-06-22.
+- Web UI handler repetition: common edit-DN validation and nil-safe
+  extra-attribute form formatting now live in shared helpers used by users,
+  groups, and OUs. Deeper generic form-handler extraction was intentionally
+  avoided because it would hide resource-specific validation and LDAP model
+  construction.
 
 ## Remaining Opportunities
 
-### 1. Consolidate remaining Web UI handler repetition
-
-Current state:
-
-- Web UI handlers already have shared helpers for some form behavior.
-- Users, groups, and OUs still repeat enough list/form/load/update flow that
-  future validation changes can drift.
-
-Recommendation:
-
-- Extract only the repeated mechanics: OU loading, editable extra-attribute
-  replacement, form error rendering, and common redirect/error handling.
-- Leave resource-specific validation and model construction visible.
-
-Acceptance criteria:
-
-- Handler code shrinks without hiding security-sensitive or LDAP-specific
-  behavior behind generic reflection-style helpers.
-- Tests cover create, edit, delete, validation error, and extra-attribute
-  removal paths for each resource type touched.
+No current code-simplification opportunities remain from the issue #13 audit.
+Future simplification work should be opened as focused issues with fresh source
+evidence instead of reusing the historical audit.
 
 ## Out Of Scope
 
@@ -128,11 +118,13 @@ GOCACHE=/private/tmp/ldaplite-gocache go test -run '^$' -bench=. ./internal/stor
 
 ## Closure Criteria For Issue #13
 
-Issue #13 can be closed, or split into smaller follow-up issues, when:
+Issue #13 can be closed when:
 
-- the remaining opportunities above are implemented or intentionally deferred;
 - the full Go test suite passes;
 - the functional LDAP suite passes;
 - no stale audit evidence or obsolete line-number claims remain in this file;
 - dependency health has been checked; and
 - all resulting commits are pushed.
+
+As of this refresh, the actionable audit items are implemented or intentionally
+out of scope. Keep the verification commands above as the final closure proof.

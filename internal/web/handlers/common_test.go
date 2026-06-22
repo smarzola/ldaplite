@@ -59,6 +59,46 @@ func TestRedirectWithMessageEscapesQueryValue(t *testing.T) {
 	}
 }
 
+func TestQueryDNRequiresDNParameter(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/users/edit", nil)
+	rr := httptest.NewRecorder()
+
+	dn, ok := queryDN(rr, req)
+
+	if ok {
+		t.Fatal("queryDN() ok = true, want false")
+	}
+	if dn != "" {
+		t.Fatalf("queryDN() dn = %q, want empty", dn)
+	}
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
+}
+
+func TestQueryDNReturnsDNParameter(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/users/edit?dn=uid%3Djdoe%2Cdc%3Dtest%2Cdc%3Dcom", nil)
+	rr := httptest.NewRecorder()
+
+	dn, ok := queryDN(rr, req)
+
+	if !ok {
+		t.Fatal("queryDN() ok = false, want true")
+	}
+	if want := "uid=jdoe,dc=test,dc=com"; dn != want {
+		t.Fatalf("queryDN() dn = %q, want %q", dn, want)
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want untouched recorder status %d", rr.Code, http.StatusOK)
+	}
+}
+
+func TestFormatExtraAttributesForFormAllowsNilEntry(t *testing.T) {
+	if got := formatExtraAttributesForForm(nil, []string{"cn"}); got != "" {
+		t.Fatalf("formatExtraAttributesForForm(nil) = %q, want empty", got)
+	}
+}
+
 func TestSetOptionalAttributeRemovesBlankValues(t *testing.T) {
 	entry := models.NewEntry("uid=jdoe,ou=users,dc=test,dc=com", "inetOrgPerson")
 	entry.SetAttribute("mail", "jdoe@test.com")

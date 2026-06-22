@@ -111,9 +111,8 @@ func (h *GroupHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *GroupHandler) Edit(w http.ResponseWriter, r *http.Request) {
-	dn := r.URL.Query().Get("dn")
-	if dn == "" {
-		http.Error(w, "DN parameter required", http.StatusBadRequest)
+	dn, ok := queryDN(w, r)
+	if !ok {
 		return
 	}
 
@@ -139,7 +138,7 @@ func (h *GroupHandler) Edit(w http.ResponseWriter, r *http.Request) {
 	}{
 		BaseData:        NewBaseData(h.cfg, r, "groups"),
 		Group:           entry,
-		ExtraAttributes: FormatExtraAttributes(entry, groupFormExcludeAttributes),
+		ExtraAttributes: formatExtraAttributesForForm(entry, groupFormExcludeAttributes),
 		OUs:             ous,
 	}
 
@@ -186,11 +185,6 @@ func (h *GroupHandler) showError(w http.ResponseWriter, r *http.Request, errMsg 
 
 	ous := loadOrganizationalUnits(ctx, h.store, h.cfg.LDAP.BaseDN)
 
-	extraAttrs := ""
-	if group != nil {
-		extraAttrs = FormatExtraAttributes(group, groupFormExcludeAttributes)
-	}
-
 	data := struct {
 		BaseData
 		Group           *models.Entry
@@ -199,7 +193,7 @@ func (h *GroupHandler) showError(w http.ResponseWriter, r *http.Request, errMsg 
 	}{
 		BaseData:        NewBaseDataWithError(h.cfg, r, "groups", errMsg),
 		Group:           group,
-		ExtraAttributes: extraAttrs,
+		ExtraAttributes: formatExtraAttributesForForm(group, groupFormExcludeAttributes),
 		OUs:             ous,
 	}
 

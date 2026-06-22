@@ -101,9 +101,8 @@ func (h *OUHandler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OUHandler) Edit(w http.ResponseWriter, r *http.Request) {
-	dn := r.URL.Query().Get("dn")
-	if dn == "" {
-		http.Error(w, "DN parameter required", http.StatusBadRequest)
+	dn, ok := queryDN(w, r)
+	if !ok {
 		return
 	}
 
@@ -129,7 +128,7 @@ func (h *OUHandler) Edit(w http.ResponseWriter, r *http.Request) {
 	}{
 		BaseData:        NewBaseData(h.cfg, r, "ous"),
 		OU:              entry,
-		ExtraAttributes: FormatExtraAttributes(entry, ouFormExcludeAttributes),
+		ExtraAttributes: formatExtraAttributesForForm(entry, ouFormExcludeAttributes),
 		OUs:             ous,
 	}
 
@@ -173,11 +172,6 @@ func (h *OUHandler) showError(w http.ResponseWriter, r *http.Request, errMsg str
 
 	ous := loadOrganizationalUnits(ctx, h.store, h.cfg.LDAP.BaseDN)
 
-	extraAttrs := ""
-	if ou != nil {
-		extraAttrs = FormatExtraAttributes(ou, ouFormExcludeAttributes)
-	}
-
 	data := struct {
 		BaseData
 		OU              *models.Entry
@@ -186,7 +180,7 @@ func (h *OUHandler) showError(w http.ResponseWriter, r *http.Request, errMsg str
 	}{
 		BaseData:        NewBaseDataWithError(h.cfg, r, "ous", errMsg),
 		OU:              ou,
-		ExtraAttributes: extraAttrs,
+		ExtraAttributes: formatExtraAttributesForForm(ou, ouFormExcludeAttributes),
 		OUs:             ous,
 	}
 

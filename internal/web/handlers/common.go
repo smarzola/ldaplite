@@ -67,6 +67,15 @@ func deleteEntry(w http.ResponseWriter, r *http.Request, st store.Store, path, e
 	redirectWithMessage(w, r, path, "success", fmt.Sprintf("%s deleted successfully", successResourceName))
 }
 
+func queryDN(w http.ResponseWriter, r *http.Request) (string, bool) {
+	dn := r.URL.Query().Get("dn")
+	if dn == "" {
+		http.Error(w, "DN parameter required", http.StatusBadRequest)
+		return "", false
+	}
+	return dn, true
+}
+
 // ParseAttributes parses additional attributes from form input
 // Format: "name: value" one per line
 func ParseAttributes(input string) map[string][]string {
@@ -116,6 +125,13 @@ func FormatExtraAttributes(entry *models.Entry, exclude []string) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func formatExtraAttributesForForm(entry *models.Entry, exclude []string) string {
+	if entry == nil {
+		return ""
+	}
+	return FormatExtraAttributes(entry, exclude)
 }
 
 func ReplaceExtraAttributes(entry *models.Entry, preserve []string, extras map[string][]string) {
