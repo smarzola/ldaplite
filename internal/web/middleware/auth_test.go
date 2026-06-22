@@ -139,6 +139,7 @@ func TestRequireAuthMissingCredentials(t *testing.T) {
 func TestRequireAuthInvalidPassword(t *testing.T) {
 	auth, st := setupTestAuth(t)
 	defer st.Close()
+	logs := captureMiddlewareAuditLogs(t)
 
 	// Create a test handler that should NOT be called
 	called := false
@@ -164,6 +165,13 @@ func TestRequireAuthInvalidPassword(t *testing.T) {
 	if called {
 		t.Error("Test handler was called but should have been blocked by auth")
 	}
+
+	got := logs.String()
+	assertAuditLogContains(t, got, `"event":"web.auth_failed"`)
+	assertAuditLogContains(t, got, `"actor_uid":"admin"`)
+	assertAuditLogContains(t, got, `"route":"unknown"`)
+	assertAuditLogContains(t, got, `"status":401`)
+	assertAuditLogNotContains(t, got, "WrongPassword")
 }
 
 func TestRequireAuthNonExistentUser(t *testing.T) {

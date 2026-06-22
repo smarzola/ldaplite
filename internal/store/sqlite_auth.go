@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"github.com/smarzola/ldaplite/internal/telemetry"
 )
 
 // GetUserPasswordHash retrieves the password hash for a user by UID.
@@ -19,7 +21,12 @@ import (
 //
 // Uses optimized index (idx_attributes_uid_lookup) for fast uid lookup,
 // then joins to users table for password retrieval.
-func (s *SQLiteStore) GetUserPasswordHash(ctx context.Context, uid string) (string, string, error) {
+func (s *SQLiteStore) GetUserPasswordHash(ctx context.Context, uid string) (passwordHash string, dn string, err error) {
+	ctx, span := telemetry.StartStoreSpan(ctx, "GetUserPasswordHash")
+	defer func() {
+		telemetry.EndStoreSpan(span, err)
+	}()
+
 	query := `
 		SELECT u.password_hash, e.dn
 		FROM users u
@@ -36,7 +43,12 @@ func (s *SQLiteStore) GetUserPasswordHash(ctx context.Context, uid string) (stri
 // LDAP bind receives a DN, not a uid. Looking up by DN avoids ambiguity when
 // identical uid values exist in different subtrees and returns the stored DN so
 // callers can bind the canonical value onto the connection.
-func (s *SQLiteStore) GetUserPasswordHashByDN(ctx context.Context, dn string) (string, string, error) {
+func (s *SQLiteStore) GetUserPasswordHashByDN(ctx context.Context, dn string) (passwordHash string, canonicalDN string, err error) {
+	ctx, span := telemetry.StartStoreSpan(ctx, "GetUserPasswordHashByDN")
+	defer func() {
+		telemetry.EndStoreSpan(span, err)
+	}()
+
 	query := `
 		SELECT u.password_hash, e.dn
 		FROM users u

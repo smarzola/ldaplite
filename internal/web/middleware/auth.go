@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/smarzola/ldaplite/internal/audit"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/smarzola/ldaplite/pkg/crypto"
@@ -41,6 +42,7 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 		// Get Authorization header
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
+			a.logAuthRequired(r, "")
 			a.requestAuth(w)
 			return
 		}
@@ -48,6 +50,7 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 		// Parse Basic Auth
 		const prefix = "Basic "
 		if !strings.HasPrefix(authHeader, prefix) {
+			a.logAuthRequired(r, "")
 			a.requestAuth(w)
 			return
 		}
@@ -55,6 +58,7 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 		// Decode base64
 		decoded, err := base64.StdEncoding.DecodeString(authHeader[len(prefix):])
 		if err != nil {
+			a.logAuthRequired(r, "")
 			a.requestAuth(w)
 			return
 		}
@@ -63,6 +67,7 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 		credentials := string(decoded)
 		colonIndex := strings.Index(credentials, ":")
 		if colonIndex == -1 {
+			a.logAuthRequired(r, "")
 			a.requestAuth(w)
 			return
 		}
@@ -75,9 +80,19 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 		userDN, err := a.authenticate(ctx, uid, password)
 		if err != nil {
 			slog.Warn("Authentication failed", "uid", uid, "error", err)
+			audit.LogWeb(ctx, audit.WebEvent{
+				Event:      audit.EventWebAuthFailed,
+				RemoteAddr: r.RemoteAddr,
+				ActorUID:   uid,
+				Method:     r.Method,
+				Route:      NormalizeRoute(r.URL.Path),
+				Status:     http.StatusUnauthorized,
+				Error:      err,
+			})
 			a.requestAuth(w)
 			return
 		}
+		audit.SetActorDN(ctx, userDN)
 
 		// Search for the admin group entry to get its actual DN
 		adminGroups, err := a.store.SearchEntriesWithOptions(ctx, store.SearchOptions{
@@ -108,6 +123,14 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 
 		if !isMember {
 			slog.Warn("Access denied: user not in admin group", "user_dn", userDN)
+			audit.LogWeb(ctx, audit.WebEvent{
+				Event:      audit.EventWebAuthorizationDeny,
+				RemoteAddr: r.RemoteAddr,
+				ActorDN:    userDN,
+				Method:     r.Method,
+				Route:      NormalizeRoute(r.URL.Path),
+				Status:     http.StatusForbidden,
+			})
 			http.Error(w, "Access denied: admin privileges required", http.StatusForbidden)
 			return
 		}
@@ -115,6 +138,17 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 		// Add user DN to context
 		ctx = context.WithValue(ctx, UserDNKey, userDN)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func (a *Auth) logAuthRequired(r *http.Request, uid string) {
+	audit.LogWeb(r.Context(), audit.WebEvent{
+		Event:      audit.EventWebAuthRequired,
+		RemoteAddr: r.RemoteAddr,
+		ActorUID:   uid,
+		Method:     r.Method,
+		Route:      NormalizeRoute(r.URL.Path),
+		Status:     http.StatusUnauthorized,
 	})
 }
 

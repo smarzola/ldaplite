@@ -16,6 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/smarzola/ldaplite/internal/models"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/smarzola/ldaplite/pkg/crypto"
 )
@@ -56,6 +57,7 @@ func (s *SQLiteStore) Initialize(ctx context.Context) error {
 	}
 
 	s.db = db
+	telemetry.RegisterDatabaseStatsProvider(s.db.Stats)
 	slog.Info("Database connection established", "path", s.cfg.Database.Path)
 
 	// Run migrations from embedded filesystem

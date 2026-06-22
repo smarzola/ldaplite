@@ -8,10 +8,13 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/smarzola/ldaplite/internal/audit"
 	"github.com/smarzola/ldaplite/internal/protocol"
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 	"github.com/smarzola/ldaplite/internal/store"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/smarzola/ldaplite/pkg/crypto"
 )
@@ -115,6 +118,7 @@ func (s *Server) acceptLoop() {
 		}
 
 		slog.Debug("New connection", "remote", conn.RemoteAddr())
+		telemetry.RecordLDAPConnectionAccepted(s.ctx)
 
 		// Handle connection in a separate goroutine
 		s.wg.Add(1)
@@ -127,6 +131,9 @@ func (s *Server) acceptLoop() {
 
 // handleConnection handles a single client connection
 func (s *Server) handleConnection(conn net.Conn) {
+	telemetry.AddActiveLDAPConnection(1)
+	defer telemetry.AddActiveLDAPConnection(-1)
+
 	done := make(chan struct{})
 	go func() {
 		select {
@@ -172,11 +179,32 @@ func (s *Server) Stop() error {
 
 // handleBind handles bind operations
 func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
+	start := time.Now()
+	resultCode := ldapmsg.ResultCodeOperationsError
+	targetDN := ""
+	ctx, span := telemetry.StartLDAPSpan(ctx, "bind")
+	defer func() {
+		telemetry.EndLDAPSpan(span, int(resultCode))
+	}()
+	defer func() {
+		actorDN := ""
+		if resultCode == ldapmsg.ResultCodeSuccess {
+			actorDN = conn.GetBoundDN()
+		}
+		s.auditLDAPOperation(ctx, conn, msg, "bind", audit.LDAPEvent{
+			ActorDN:    actorDN,
+			TargetDN:   targetDN,
+			ResultCode: int(resultCode),
+			Duration:   time.Since(start),
+		})
+	}()
+
 	conn.ClearBoundDN()
 
 	bindReq := msg.Op.(ldapmsg.BindRequest)
 	bindDN := bindReq.Name
 	password := bindReq.Password
+	targetDN = bindDN
 
 	slog.Debug("Bind request", "dn", bindDN)
 
@@ -185,9 +213,11 @@ func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg 
 		if s.cfg.Security.AllowAnonymousBind {
 			conn.SetBoundDN("") // Anonymous bind
 			slog.Debug("Anonymous bind allowed")
+			resultCode = ldapmsg.ResultCodeSuccess
 			return conn.WriteResponse(msg.ID, protocol.NewBindResponse(ldapmsg.ResultCodeSuccess))
 		}
 		slog.Info("Anonymous bind rejected - not allowed by configuration")
+		resultCode = ldapmsg.ResultCodeInvalidCredentials
 		return conn.WriteResponse(msg.ID, protocol.NewBindResponse(ldapmsg.ResultCodeInvalidCredentials))
 	}
 
@@ -195,11 +225,13 @@ func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg 
 	passwordHash, dn, err := s.store.GetUserPasswordHashByDN(ctx, bindDN)
 	if err != nil {
 		slog.Debug("Error retrieving user", "dn", bindDN, "error", err)
+		resultCode = ldapmsg.ResultCodeInvalidCredentials
 		return conn.WriteResponse(msg.ID, protocol.NewBindResponse(ldapmsg.ResultCodeInvalidCredentials))
 	}
 
 	if passwordHash == "" || dn == "" {
 		slog.Debug("User not found", "dn", bindDN)
+		resultCode = ldapmsg.ResultCodeInvalidCredentials
 		return conn.WriteResponse(msg.ID, protocol.NewBindResponse(ldapmsg.ResultCodeInvalidCredentials))
 	}
 
@@ -207,6 +239,8 @@ func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg 
 	valid, err := s.hasher.Verify(password, passwordHash)
 	if err != nil || !valid {
 		slog.Debug("Password verification failed", "dn", dn)
+		targetDN = dn
+		resultCode = ldapmsg.ResultCodeInvalidCredentials
 		return conn.WriteResponse(msg.ID, protocol.NewBindResponse(ldapmsg.ResultCodeInvalidCredentials))
 	}
 
@@ -214,20 +248,62 @@ func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg 
 	conn.SetBoundDN(dn)
 
 	slog.Debug("Bind successful", "dn", dn)
+	targetDN = dn
+	resultCode = ldapmsg.ResultCodeSuccess
 	return conn.WriteResponse(msg.ID, protocol.NewBindResponse(ldapmsg.ResultCodeSuccess))
 }
 
 // handleCompare handles compare operations
 func (s *Server) handleCompare(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
+	start := time.Now()
+	compareReq := msg.Op.(ldapmsg.CompareRequest)
+	resultCode := ldapmsg.ResultCodeCompareFalse
+	ctx, span := telemetry.StartLDAPSpan(ctx, "compare")
+	defer func() {
+		telemetry.EndLDAPSpan(span, int(resultCode))
+	}()
+	defer func() {
+		s.auditLDAPOperation(ctx, conn, msg, "compare", audit.LDAPEvent{
+			ActorDN:    conn.GetBoundDN(),
+			TargetDN:   compareReq.Entry,
+			ResultCode: int(resultCode),
+			Duration:   time.Since(start),
+		})
+	}()
+
 	slog.Debug("Compare request")
 	return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(ldapmsg.ResultCodeCompareFalse))
 }
 
 // handleUnbind handles unbind operations
 func (s *Server) handleUnbind(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
+	start := time.Now()
+	actorDN := conn.GetBoundDN()
+	ctx, span := telemetry.StartLDAPSpan(ctx, "unbind")
+	defer func() {
+		telemetry.EndLDAPSpan(span, int(ldapmsg.ResultCodeSuccess))
+	}()
+	defer func() {
+		s.auditLDAPOperation(ctx, conn, msg, "unbind", audit.LDAPEvent{
+			ActorDN:    actorDN,
+			ResultCode: int(ldapmsg.ResultCodeSuccess),
+			Duration:   time.Since(start),
+		})
+	}()
+
 	slog.Debug("Unbind request")
 	conn.ClearBoundDN()
 	return nil // Connection will be closed by handler
+}
+
+func (s *Server) auditLDAPOperation(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message, operation string, event audit.LDAPEvent) {
+	event.Operation = operation
+	event.RequestID = audit.RequestID(conn.ID(), int(msg.ID))
+	event.ConnectionID = conn.ID()
+	event.MessageID = int(msg.ID)
+	event.RemoteAddr = conn.RemoteAddrString()
+	audit.LogLDAP(ctx, event)
+	telemetry.RecordLDAPOperation(ctx, operation, event.ResultCode, event.Duration)
 }
 
 func (s *Server) canWrite(conn *protocol.Connection) bool {

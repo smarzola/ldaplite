@@ -9,12 +9,13 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	LDAP     LDAPConfig
-	Database DatabaseConfig
-	Logging  LoggingConfig
-	Security SecurityConfig
-	WebUI    WebUIConfig
+	Server    ServerConfig
+	LDAP      LDAPConfig
+	Database  DatabaseConfig
+	Logging   LoggingConfig
+	Security  SecurityConfig
+	WebUI     WebUIConfig
+	Telemetry TelemetryConfig
 }
 
 type ServerConfig struct {
@@ -60,6 +61,16 @@ type WebUIConfig struct {
 	BindAddress string
 }
 
+type TelemetryConfig struct {
+	Enabled                  bool
+	OTelServiceName          string
+	OTelExporterOTLPEndpoint string
+	MetricsEnabled           bool
+	MetricsBindAddress       string
+	MetricsPort              int
+	MetricsPath              string
+}
+
 func LoadFromEnv() (*Config, error) {
 	cfg := &Config{
 		Server: ServerConfig{
@@ -96,6 +107,15 @@ func LoadFromEnv() (*Config, error) {
 			Enabled:     getEnvBoolAny(false, "LDAP_WEB_UI_ENABLED", "LDAP_WEBUI_ENABLED"),
 			Port:        getEnvIntAny(8080, "LDAP_WEB_UI_PORT", "LDAP_WEBUI_PORT"),
 			BindAddress: getEnvStringAny("0.0.0.0", "LDAP_WEB_UI_BIND_ADDRESS", "LDAP_WEBUI_BIND_ADDRESS"),
+		},
+		Telemetry: TelemetryConfig{
+			Enabled:                  getEnvBool("LDAP_TELEMETRY_ENABLED", false),
+			OTelServiceName:          getEnvString("LDAP_OTEL_SERVICE_NAME", "ldaplite"),
+			OTelExporterOTLPEndpoint: getEnvString("LDAP_OTEL_EXPORTER_OTLP_ENDPOINT", ""),
+			MetricsEnabled:           getEnvBool("LDAP_METRICS_ENABLED", false),
+			MetricsBindAddress:       getEnvString("LDAP_METRICS_BIND_ADDRESS", "0.0.0.0"),
+			MetricsPort:              getEnvInt("LDAP_METRICS_PORT", 9090),
+			MetricsPath:              getEnvString("LDAP_METRICS_PATH", "/metrics"),
 		},
 	}
 

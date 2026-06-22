@@ -9,9 +9,11 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/smarzola/ldaplite/internal/audit"
 	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/store"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 	"github.com/smarzola/ldaplite/internal/web/middleware"
 	"github.com/smarzola/ldaplite/pkg/config"
 )
@@ -49,21 +51,25 @@ func redirectWithMessage(w http.ResponseWriter, r *http.Request, path, key, mess
 
 func deleteEntry(w http.ResponseWriter, r *http.Request, st store.Store, path, errorResourceName, successResourceName string) {
 	if r.Method != http.MethodPost {
+		auditWebWrite(r, "delete", errorResourceName, "", http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	dn := r.FormValue("dn")
 	if dn == "" {
+		auditWebWrite(r, "delete", errorResourceName, "", http.StatusBadRequest, fmt.Errorf("DN parameter required"))
 		http.Error(w, "DN parameter required", http.StatusBadRequest)
 		return
 	}
 
 	if err := st.DeleteEntry(r.Context(), dn); err != nil {
+		auditWebWrite(r, "delete", errorResourceName, dn, http.StatusInternalServerError, err)
 		redirectWithMessage(w, r, path, "error", fmt.Sprintf("Failed to delete %s: %v", errorResourceName, err))
 		return
 	}
 
+	auditWebWrite(r, "delete", successResourceName, dn, http.StatusFound, nil)
 	redirectWithMessage(w, r, path, "success", fmt.Sprintf("%s deleted successfully", successResourceName))
 }
 
@@ -199,6 +205,21 @@ func searchEntriesWithoutMemberOf(ctx context.Context, st store.Store, baseDN, f
 
 func getEntryWithoutMemberOf(ctx context.Context, st store.Store, dn string) (*models.Entry, error) {
 	return st.GetEntryWithOptions(ctx, dn, store.EntryOptions{IncludeMemberOf: false})
+}
+
+func auditWebWrite(r *http.Request, operation, resource, targetDN string, status int, err error) {
+	audit.LogWeb(r.Context(), audit.WebEvent{
+		Event:      audit.EventWebWrite,
+		RemoteAddr: r.RemoteAddr,
+		Method:     r.Method,
+		Route:      middleware.NormalizeRoute(r.URL.Path),
+		Operation:  operation,
+		Resource:   resource,
+		TargetDN:   targetDN,
+		Status:     status,
+		Error:      err,
+	})
+	telemetry.RecordWebWrite(r.Context(), operation, resource, status)
 }
 
 // GetBaseDN returns the base DN string for templates

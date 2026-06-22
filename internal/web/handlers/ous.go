@@ -74,6 +74,7 @@ func (h *OUHandler) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if err := r.ParseForm(); err != nil {
+		auditWebWrite(r, "create", "ou", "", http.StatusBadRequest, err)
 		h.showError(w, r, "Invalid form data", nil)
 		return
 	}
@@ -83,6 +84,7 @@ func (h *OUHandler) create(w http.ResponseWriter, r *http.Request) {
 	description := strings.TrimSpace(r.FormValue("description"))
 
 	if parentDN == "" || ou == "" {
+		auditWebWrite(r, "create", "ou", "", http.StatusBadRequest, fmt.Errorf("required OU fields missing"))
 		h.showError(w, r, "Parent DN and OU name are required", nil)
 		return
 	}
@@ -93,10 +95,12 @@ func (h *OUHandler) create(w http.ResponseWriter, r *http.Request) {
 	addExtraAttributes(ouEntry.Entry, ParseAttributes(r.FormValue("attributes")))
 
 	if err := h.store.CreateEntry(ctx, ouEntry.Entry); err != nil {
+		auditWebWrite(r, "create", "ou", ouEntry.DN, http.StatusInternalServerError, err)
 		h.showError(w, r, fmt.Sprintf("Failed to create OU: %v", err), nil)
 		return
 	}
 
+	auditWebWrite(r, "create", "ou", ouEntry.DN, http.StatusFound, nil)
 	redirectWithMessage(w, r, "/ous", "success", "OU created successfully")
 }
 
@@ -140,11 +144,13 @@ func (h *OUHandler) update(w http.ResponseWriter, r *http.Request, dn string) {
 
 	entry, err := getEntryWithoutMemberOf(ctx, h.store, dn)
 	if err != nil {
+		auditWebWrite(r, "update", "ou", dn, http.StatusNotFound, err)
 		h.showError(w, r, fmt.Sprintf("OU not found: %v", err), nil)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
+		auditWebWrite(r, "update", "ou", dn, http.StatusBadRequest, err)
 		h.showError(w, r, "Invalid form data", entry)
 		return
 	}
@@ -156,10 +162,12 @@ func (h *OUHandler) update(w http.ResponseWriter, r *http.Request, dn string) {
 	ReplaceExtraAttributes(entry, ouFormAttributes, extraAttrs)
 
 	if err := h.store.UpdateEntry(ctx, entry); err != nil {
+		auditWebWrite(r, "update", "ou", dn, http.StatusInternalServerError, err)
 		h.showError(w, r, fmt.Sprintf("Failed to update OU: %v", err), entry)
 		return
 	}
 
+	auditWebWrite(r, "update", "ou", dn, http.StatusFound, nil)
 	redirectWithMessage(w, r, "/ous", "success", "OU updated successfully")
 }
 

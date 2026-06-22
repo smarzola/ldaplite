@@ -30,6 +30,13 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, "info", cfg.Logging.Level)
 	assert.Equal(t, "json", cfg.Logging.Format)
 	assert.False(t, cfg.WebUI.Enabled)
+	assert.False(t, cfg.Telemetry.Enabled)
+	assert.False(t, cfg.Telemetry.MetricsEnabled)
+	assert.Equal(t, "ldaplite", cfg.Telemetry.OTelServiceName)
+	assert.Equal(t, "", cfg.Telemetry.OTelExporterOTLPEndpoint)
+	assert.Equal(t, "0.0.0.0", cfg.Telemetry.MetricsBindAddress)
+	assert.Equal(t, 9090, cfg.Telemetry.MetricsPort)
+	assert.Equal(t, "/metrics", cfg.Telemetry.MetricsPath)
 }
 
 func TestLoadFromEnvReturnsValidationError(t *testing.T) {
@@ -253,4 +260,25 @@ func TestConfigWebUICanonicalEnvWinsOverLegacyAlias(t *testing.T) {
 
 	assert.False(t, cfg.WebUI.Enabled)
 	assert.Equal(t, 18080, cfg.WebUI.Port)
+}
+
+func TestConfigTelemetry(t *testing.T) {
+	t.Setenv("LDAP_BASE_DN", "dc=test,dc=com")
+	t.Setenv("LDAP_TELEMETRY_ENABLED", "true")
+	t.Setenv("LDAP_OTEL_SERVICE_NAME", "ldaplite-test")
+	t.Setenv("LDAP_OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318")
+	t.Setenv("LDAP_METRICS_ENABLED", "true")
+	t.Setenv("LDAP_METRICS_BIND_ADDRESS", "127.0.0.1")
+	t.Setenv("LDAP_METRICS_PORT", "19090")
+	t.Setenv("LDAP_METRICS_PATH", "/custom-metrics")
+
+	cfg := Load()
+
+	assert.True(t, cfg.Telemetry.Enabled)
+	assert.Equal(t, "ldaplite-test", cfg.Telemetry.OTelServiceName)
+	assert.Equal(t, "http://collector:4318", cfg.Telemetry.OTelExporterOTLPEndpoint)
+	assert.True(t, cfg.Telemetry.MetricsEnabled)
+	assert.Equal(t, "127.0.0.1", cfg.Telemetry.MetricsBindAddress)
+	assert.Equal(t, 19090, cfg.Telemetry.MetricsPort)
+	assert.Equal(t, "/custom-metrics", cfg.Telemetry.MetricsPath)
 }
