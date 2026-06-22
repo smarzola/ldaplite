@@ -21,6 +21,9 @@ func TestCreateEntryRejectsOutsideBaseDN(t *testing.T) {
 	if err == nil {
 		t.Fatal("CreateEntry() expected outside-base error, got nil")
 	}
+	if !errors.Is(err, ErrConstraintViolation) {
+		t.Fatalf("CreateEntry() error = %v, want ErrConstraintViolation", err)
+	}
 	if !strings.Contains(err.Error(), "outside base DN") {
 		t.Fatalf("CreateEntry() error = %v, want outside base DN", err)
 	}

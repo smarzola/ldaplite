@@ -269,7 +269,7 @@ func (s *SQLiteStore) validateEntryPlacement(ctx context.Context, tx *sql.Tx, en
 		return fmt.Errorf("base DN is not configured")
 	}
 	if !ldapdn.WithinBase(entry.DN, baseDN) {
-		return fmt.Errorf("entry DN %s is outside base DN %s", entry.DN, baseDN)
+		return fmt.Errorf("%w: entry DN %s is outside base DN %s", ErrConstraintViolation, entry.DN, baseDN)
 	}
 
 	if ldapdn.Equal(entry.DN, baseDN) {
