@@ -205,6 +205,39 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
+      - name: Extract changelog section
+        run: |
+          extract_section() {
+            local heading="$1"
+            awk -v heading="$heading" '
+              /^## / {
+                if (capture) {
+                  exit
+                }
+                if ($0 == heading || index($0, heading " ") == 1) {
+                  capture = 1
+                  found = 1
+                  next
+                }
+              }
+              capture {
+                print
+              }
+              END {
+                exit found ? 0 : 1
+              }
+            ' CHANGELOG.md
+          }
+
+          if extract_section "## ${{ steps.version.outputs.VERSION }}" > changelog_notes.md && [ -s changelog_notes.md ]; then
+            echo "Using CHANGELOG.md section for ${{ steps.version.outputs.VERSION }}"
+          elif extract_section "## Unreleased" > changelog_notes.md && [ -s changelog_notes.md ]; then
+            echo "Using CHANGELOG.md Unreleased section"
+          else
+            echo "No CHANGELOG.md section found for ${{ steps.version.outputs.VERSION }} or Unreleased" >&2
+            exit 1
+          fi
+
       - name: Generate release notes
         id: release_notes
         run: |
@@ -260,10 +293,10 @@ jobs:
 
           For Windows, download the matching `.zip`, extract it, and run `ldaplite-windows-amd64.exe version` or `ldaplite-windows-arm64.exe version`.
 
-          ### Changes
-
-          See commit history for detailed changes.
+          ## Changes
           EOF
+
+          cat changelog_notes.md >> release_notes.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
