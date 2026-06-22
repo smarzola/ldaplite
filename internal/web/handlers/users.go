@@ -78,6 +78,7 @@ func (h *UserHandler) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if err := r.ParseForm(); err != nil {
+		auditWebWrite(r, "create", "user", "", http.StatusBadRequest, err)
 		h.showError(w, r, "Invalid form data", nil)
 		return
 	}
@@ -91,6 +92,7 @@ func (h *UserHandler) create(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("userPassword")
 
 	if parentDN == "" || uid == "" || cn == "" || sn == "" || password == "" {
+		auditWebWrite(r, "create", "user", "", http.StatusBadRequest, fmt.Errorf("required user fields missing"))
 		h.showError(w, r, "Parent OU, UID, CN, SN, and password are required", nil)
 		return
 	}
@@ -104,6 +106,7 @@ func (h *UserHandler) create(w http.ResponseWriter, r *http.Request) {
 	// Hash password
 	hashedPassword, err := h.hasher.Hash(password)
 	if err != nil {
+		auditWebWrite(r, "create", "user", user.DN, http.StatusInternalServerError, err)
 		h.showError(w, r, "Failed to hash password", nil)
 		return
 	}
@@ -113,10 +116,12 @@ func (h *UserHandler) create(w http.ResponseWriter, r *http.Request) {
 	addExtraAttributes(user.Entry, ParseAttributes(r.FormValue("attributes")))
 
 	if err := h.store.CreateEntry(ctx, user.Entry); err != nil {
+		auditWebWrite(r, "create", "user", user.DN, http.StatusInternalServerError, err)
 		h.showError(w, r, fmt.Sprintf("Failed to create user: %v", err), nil)
 		return
 	}
 
+	auditWebWrite(r, "create", "user", user.DN, http.StatusFound, nil)
 	redirectWithMessage(w, r, "/users", "success", "User created successfully")
 }
 
@@ -160,11 +165,13 @@ func (h *UserHandler) update(w http.ResponseWriter, r *http.Request, dn string) 
 
 	entry, err := getEntryWithoutMemberOf(ctx, h.store, dn)
 	if err != nil {
+		auditWebWrite(r, "update", "user", dn, http.StatusNotFound, err)
 		h.showError(w, r, fmt.Sprintf("User not found: %v", err), nil)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
+		auditWebWrite(r, "update", "user", dn, http.StatusBadRequest, err)
 		h.showError(w, r, "Invalid form data", entry)
 		return
 	}
@@ -185,6 +192,7 @@ func (h *UserHandler) update(w http.ResponseWriter, r *http.Request, dn string) 
 	if password != "" {
 		hashedPassword, err := h.hasher.Hash(password)
 		if err != nil {
+			auditWebWrite(r, "update", "user", dn, http.StatusInternalServerError, err)
 			h.showError(w, r, "Failed to hash password", entry)
 			return
 		}
@@ -192,10 +200,12 @@ func (h *UserHandler) update(w http.ResponseWriter, r *http.Request, dn string) 
 	}
 
 	if err := h.store.UpdateEntry(ctx, entry); err != nil {
+		auditWebWrite(r, "update", "user", dn, http.StatusInternalServerError, err)
 		h.showError(w, r, fmt.Sprintf("Failed to update user: %v", err), entry)
 		return
 	}
 
+	auditWebWrite(r, "update", "user", dn, http.StatusFound, nil)
 	redirectWithMessage(w, r, "/users", "success", "User updated successfully")
 }
 

@@ -117,7 +117,7 @@ func (s *Server) Start() error {
 
 	s.httpServer = &http.Server{
 		Addr:    addr,
-		Handler: s.mux,
+		Handler: middleware.AuditHTTP(s.mux),
 	}
 
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

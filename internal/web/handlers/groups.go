@@ -75,6 +75,7 @@ func (h *GroupHandler) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if err := r.ParseForm(); err != nil {
+		auditWebWrite(r, "create", "group", "", http.StatusBadRequest, err)
 		h.showError(w, r, "Invalid form data", nil)
 		return
 	}
@@ -84,12 +85,14 @@ func (h *GroupHandler) create(w http.ResponseWriter, r *http.Request) {
 	description := strings.TrimSpace(r.FormValue("description"))
 
 	if parentDN == "" || cn == "" {
+		auditWebWrite(r, "create", "group", "", http.StatusBadRequest, fmt.Errorf("required group fields missing"))
 		h.showError(w, r, "Parent OU and CN are required", nil)
 		return
 	}
 
 	members := parseNonEmptyLines(r.FormValue("member"))
 	if len(members) == 0 {
+		auditWebWrite(r, "create", "group", "", http.StatusBadRequest, fmt.Errorf("required group member missing"))
 		h.showError(w, r, "At least one member is required", nil)
 		return
 	}
@@ -103,10 +106,12 @@ func (h *GroupHandler) create(w http.ResponseWriter, r *http.Request) {
 	addExtraAttributes(group.Entry, ParseAttributes(r.FormValue("attributes")))
 
 	if err := h.store.CreateEntry(ctx, group.Entry); err != nil {
+		auditWebWrite(r, "create", "group", group.DN, http.StatusInternalServerError, err)
 		h.showError(w, r, fmt.Sprintf("Failed to create group: %v", err), nil)
 		return
 	}
 
+	auditWebWrite(r, "create", "group", group.DN, http.StatusFound, nil)
 	redirectWithMessage(w, r, "/groups", "success", "Group created successfully")
 }
 
@@ -150,11 +155,13 @@ func (h *GroupHandler) update(w http.ResponseWriter, r *http.Request, dn string)
 
 	entry, err := getEntryWithoutMemberOf(ctx, h.store, dn)
 	if err != nil {
+		auditWebWrite(r, "update", "group", dn, http.StatusNotFound, err)
 		h.showError(w, r, fmt.Sprintf("Group not found: %v", err), nil)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
+		auditWebWrite(r, "update", "group", dn, http.StatusBadRequest, err)
 		h.showError(w, r, "Invalid form data", entry)
 		return
 	}
@@ -169,10 +176,12 @@ func (h *GroupHandler) update(w http.ResponseWriter, r *http.Request, dn string)
 	ReplaceExtraAttributes(entry, groupFormAttributes, extraAttrs)
 
 	if err := h.store.UpdateEntry(ctx, entry); err != nil {
+		auditWebWrite(r, "update", "group", dn, http.StatusInternalServerError, err)
 		h.showError(w, r, fmt.Sprintf("Failed to update group: %v", err), entry)
 		return
 	}
 
+	auditWebWrite(r, "update", "group", dn, http.StatusFound, nil)
 	redirectWithMessage(w, r, "/groups", "success", "Group updated successfully")
 }
 

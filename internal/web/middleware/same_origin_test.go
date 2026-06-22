@@ -40,6 +40,7 @@ func TestRequireSameOriginRejectsMutatingRequestsWithoutOrigin(t *testing.T) {
 }
 
 func TestRequireSameOriginRejectsCrossOriginMutatingRequests(t *testing.T) {
+	logs := captureMiddlewareAuditLogs(t)
 	handler := RequireSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler should not be called")
 	}))
@@ -52,6 +53,12 @@ func TestRequireSameOriginRejectsCrossOriginMutatingRequests(t *testing.T) {
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusForbidden)
 	}
+
+	got := logs.String()
+	assertAuditLogContains(t, got, `"event":"web.same_origin_denied"`)
+	assertAuditLogContains(t, got, `"method":"POST"`)
+	assertAuditLogContains(t, got, `"route":"/users/new"`)
+	assertAuditLogContains(t, got, `"status":403`)
 }
 
 func TestRequireSameOriginAllowsSameOriginMutatingRequests(t *testing.T) {

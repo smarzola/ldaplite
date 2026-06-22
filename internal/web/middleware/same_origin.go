@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/smarzola/ldaplite/internal/audit"
 )
 
 // RequireSameOrigin rejects mutating requests that do not come from the same
@@ -16,6 +18,13 @@ func RequireSameOrigin(next http.Handler) http.Handler {
 		}
 
 		if !sameOrigin(r) {
+			audit.LogWeb(r.Context(), audit.WebEvent{
+				Event:      audit.EventWebSameOriginDeny,
+				RemoteAddr: r.RemoteAddr,
+				Method:     r.Method,
+				Route:      NormalizeRoute(r.URL.Path),
+				Status:     http.StatusForbidden,
+			})
 			http.Error(w, "Forbidden: invalid request origin", http.StatusForbidden)
 			return
 		}
