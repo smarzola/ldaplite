@@ -14,6 +14,7 @@ import (
 	"github.com/smarzola/ldaplite/internal/protocol"
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 	"github.com/smarzola/ldaplite/internal/store"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/smarzola/ldaplite/pkg/crypto"
 )
@@ -117,6 +118,7 @@ func (s *Server) acceptLoop() {
 		}
 
 		slog.Debug("New connection", "remote", conn.RemoteAddr())
+		telemetry.RecordLDAPConnectionAccepted(s.ctx)
 
 		// Handle connection in a separate goroutine
 		s.wg.Add(1)
@@ -129,6 +131,9 @@ func (s *Server) acceptLoop() {
 
 // handleConnection handles a single client connection
 func (s *Server) handleConnection(conn net.Conn) {
+	telemetry.AddActiveLDAPConnection(1)
+	defer telemetry.AddActiveLDAPConnection(-1)
+
 	done := make(chan struct{})
 	go func() {
 		select {
@@ -286,6 +291,7 @@ func (s *Server) auditLDAPOperation(ctx context.Context, conn *protocol.Connecti
 	event.MessageID = int(msg.ID)
 	event.RemoteAddr = conn.RemoteAddrString()
 	audit.LogLDAP(ctx, event)
+	telemetry.RecordLDAPOperation(ctx, operation, event.ResultCode, event.Duration)
 }
 
 func (s *Server) canWrite(conn *protocol.Connection) bool {

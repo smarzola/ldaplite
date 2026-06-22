@@ -13,6 +13,7 @@ import (
 
 	"github.com/smarzola/ldaplite/internal/audit"
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 )
 
 var nextConnectionID atomic.Uint64
@@ -78,6 +79,7 @@ func (c *Connection) Handle(ctx context.Context) error {
 				ResultCode:   int(ldapmsg.ResultCodeProtocolError),
 				Error:        err,
 			})
+			telemetry.RecordLDAPReadError(ctx)
 			return err
 		}
 
@@ -94,6 +96,7 @@ func (c *Connection) Handle(ctx context.Context) error {
 				ResultCode:   int(ldapmsg.ResultCodeOperationsError),
 				Error:        err,
 			})
+			telemetry.RecordLDAPHandlerError(ctx, OperationName(msg.Op))
 			// Continue processing other messages even if one fails
 		}
 	}

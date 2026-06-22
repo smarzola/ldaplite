@@ -61,6 +61,9 @@ func NewRuntime(cfg config.TelemetryConfig) (*Runtime, error) {
 		)),
 	)
 	otel.SetMeterProvider(runtime.meterProvider)
+	if err := initMetrics(); err != nil {
+		return nil, fmt.Errorf("initialize metrics: %w", err)
+	}
 
 	mux := http.NewServeMux()
 	metricsPath := cfg.MetricsPath

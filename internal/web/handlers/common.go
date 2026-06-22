@@ -13,6 +13,7 @@ import (
 	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/store"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 	"github.com/smarzola/ldaplite/internal/web/middleware"
 	"github.com/smarzola/ldaplite/pkg/config"
 )
@@ -218,6 +219,7 @@ func auditWebWrite(r *http.Request, operation, resource, targetDN string, status
 		Status:     status,
 		Error:      err,
 	})
+	telemetry.RecordWebWrite(r.Context(), operation, resource, status)
 }
 
 // GetBaseDN returns the base DN string for templates

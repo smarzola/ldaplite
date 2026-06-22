@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/smarzola/ldaplite/internal/audit"
+	"github.com/smarzola/ldaplite/internal/telemetry"
 )
 
 func AuditHTTP(next http.Handler) http.Handler {
@@ -26,6 +27,7 @@ func AuditHTTP(next http.Handler) http.Handler {
 
 		start := time.Now()
 		next.ServeHTTP(recorder, r)
+		duration := time.Since(start)
 
 		audit.LogWeb(r.Context(), audit.WebEvent{
 			Event:      audit.EventHTTPRequest,
@@ -35,8 +37,9 @@ func AuditHTTP(next http.Handler) http.Handler {
 			Method:     r.Method,
 			Route:      info.Route,
 			Status:     recorder.status,
-			Duration:   time.Since(start),
+			Duration:   duration,
 		})
+		telemetry.RecordHTTPRequest(r.Context(), r.Method, info.Route, recorder.status, duration)
 	})
 }
 
