@@ -16,8 +16,7 @@ The remaining implementation goal is narrower than the original audit:
 > Finish the residual cleanup by deciding whether LDAP response projection
 > belongs in store queries or only at the protocol boundary, consolidating
 > remaining Web UI handler repetition where it reduces code without hiding
-> behavior, adding targeted cancellation coverage, and resolving or explicitly
-> deferring the current dependency alert.
+> behavior, and adding targeted cancellation coverage.
 
 ## Current Status
 
@@ -70,6 +69,8 @@ to residual follow-up work:
 - Server lifecycle: startup uses signal-aware context handling.
 - Virtual attribute boundary: `memberOf` is projected through explicit computed
   attributes instead of being injected into persisted generic attributes.
+- Dependency health: the moderate `github.com/Azure/go-ntlmssp` alert is
+  addressed by selecting the patched `v0.1.1` module version.
 
 ## Remaining Opportunities
 
@@ -137,22 +138,6 @@ Acceptance criteria:
 - A canceled context returns predictably without leaking goroutines or masking
   the relevant LDAP result/error behavior.
 - Tests stay deterministic and do not rely on sleeps longer than necessary.
-
-### 4. Resolve or explicitly defer the dependency alert
-
-Current state:
-
-- The latest push reported one moderate Dependabot vulnerability in GitHub.
-
-Recommendation:
-
-- Inspect the alert, update the dependency if low risk, or create a focused
-  follow-up issue with the reason for deferral.
-
-Acceptance criteria:
-
-- The vulnerability is closed, or issue #13 links to a specific dependency
-  follow-up explaining risk, owner, and next action.
 
 ## Out Of Scope
 
