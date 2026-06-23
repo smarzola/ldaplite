@@ -229,7 +229,7 @@ When a milestone is complete:
 - [x] Milestone 1: Shared capability authorization layer.
 - [x] Milestone 2: Breaking least-privilege LDAP write policy.
 - [x] Milestone 3: Embedded shadcn frontend build foundation.
-- [ ] Milestone 4: Role-aware Web UI API and shell.
+- [x] Milestone 4: Role-aware Web UI API and shell.
 - [ ] Milestone 5: Directory management and password flows.
 - [ ] Milestone 6: Browser visual validation, documentation, and final
       regression.
@@ -651,6 +651,38 @@ go test -v ./internal/server
 Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
+
+Status note, 2026-06-23:
+
+- Split Web UI auth middleware into authenticated `ui.read` access and explicit
+  `ui.admin` capability gates, with resolved capabilities attached to request
+  context.
+- Added `/api/session` for current actor, roles, and capabilities, and
+  `/api/directory` for safe read-only summaries of users, groups, and OUs.
+- Protected `/app/` with `ui.read` Basic Auth so the embedded React shell and
+  API calls share the same LDAP credential session.
+- Kept old template list routes readable by authenticated users while mutating
+  template routes require `ui.admin` plus same-origin checks.
+- Replaced the static React placeholder with a role-aware shadcn shell using
+  server-provided capabilities, loading/error/empty states, and directory data.
+- Added shadcn components through the CLI after `docs` and `--dry-run`: `table`,
+  `alert`, `skeleton`, `separator`, and `empty`.
+- Added route tests covering admin vs authenticated non-admin session
+  capabilities, non-admin directory reads, direct non-admin write denial, and
+  authorization-denial audit logging.
+- Verification passed:
+  - `npm run build`
+  - `go test -v ./internal/web/...`
+  - `go test -v ./internal/server`
+  - `make build`
+  - local `./bin/ldaplite server` on `127.0.0.1:18080`
+  - `ldapadd` seeded `uid=reader,ou=users,dc=example,dc=com`
+  - in-app Browser validation for admin desktop `1280x720`
+  - in-app Browser validation for reader mobile `390x844`
+- Browser validation found no blank app, console-visible app error, page
+  horizontal overflow, admin navigation leakage to reader, or incorrect
+  capability badges.
+- Commit: pending.
 
 ## Milestone 5: Directory Management And Password Flows
 

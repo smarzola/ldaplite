@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smarzola/ldaplite/internal/authz"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/internal/web/handlers"
 	"github.com/smarzola/ldaplite/internal/web/middleware"
@@ -68,8 +69,12 @@ func (s *Server) setupRoutes() {
 	userHandler := handlers.NewUserHandler(s.store, s.cfg, s.GetTemplate)
 	groupHandler := handlers.NewGroupHandler(s.store, s.cfg, s.GetTemplate)
 	ouHandler := handlers.NewOUHandler(s.store, s.cfg, s.GetTemplate)
-	protected := func(handler http.HandlerFunc) http.Handler {
-		return auth.RequireAuth(middleware.RequireSameOrigin(handler))
+	apiHandler := handlers.NewAPIHandler(s.store, s.cfg)
+	readProtected := func(handler http.HandlerFunc) http.Handler {
+		return auth.RequireCapability(authz.UIRead, handler)
+	}
+	adminProtected := func(handler http.HandlerFunc) http.Handler {
+		return auth.RequireCapability(authz.UIAdmin, middleware.RequireSameOrigin(handler))
 	}
 
 	// Serve static CSS (no auth required)
@@ -79,7 +84,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/app", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/app/", http.StatusMovedPermanently)
 	})
-	s.mux.Handle("/app/", http.StripPrefix("/app/", spaFileServer(mustSubFS(staticFS, "static/app"))))
+	s.mux.Handle("/app/", auth.RequireCapability(authz.UIRead, http.StripPrefix("/app/", spaFileServer(mustSubFS(staticFS, "static/app")))))
 
 	// Root redirect
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -93,28 +98,32 @@ func (s *Server) setupRoutes() {
 	// Logout handler
 	s.mux.HandleFunc("/logout", func(w http.ResponseWriter, r *http.Request) {
 		// Send 401 to clear browser's auth cache
-		w.Header().Set("WWW-Authenticate", `Basic realm="LDAPLite Admin"`)
+		w.Header().Set("WWW-Authenticate", `Basic realm="LDAPLite Web UI"`)
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte("Logged out successfully. Close this browser tab."))
 	})
 
+	// API routes
+	s.mux.Handle("/api/session", readProtected(apiHandler.Session))
+	s.mux.Handle("/api/directory", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(apiHandler.Directory)))
+
 	// User routes
-	s.mux.Handle("/users", auth.RequireAuth(http.HandlerFunc(userHandler.List)))
-	s.mux.Handle("/users/new", protected(userHandler.New))
-	s.mux.Handle("/users/edit", protected(userHandler.Edit))
-	s.mux.Handle("/users/delete", protected(userHandler.Delete))
+	s.mux.Handle("/users", readProtected(userHandler.List))
+	s.mux.Handle("/users/new", adminProtected(userHandler.New))
+	s.mux.Handle("/users/edit", adminProtected(userHandler.Edit))
+	s.mux.Handle("/users/delete", adminProtected(userHandler.Delete))
 
 	// Group routes
-	s.mux.Handle("/groups", auth.RequireAuth(http.HandlerFunc(groupHandler.List)))
-	s.mux.Handle("/groups/new", protected(groupHandler.New))
-	s.mux.Handle("/groups/edit", protected(groupHandler.Edit))
-	s.mux.Handle("/groups/delete", protected(groupHandler.Delete))
+	s.mux.Handle("/groups", readProtected(groupHandler.List))
+	s.mux.Handle("/groups/new", adminProtected(groupHandler.New))
+	s.mux.Handle("/groups/edit", adminProtected(groupHandler.Edit))
+	s.mux.Handle("/groups/delete", adminProtected(groupHandler.Delete))
 
 	// OU routes
-	s.mux.Handle("/ous", auth.RequireAuth(http.HandlerFunc(ouHandler.List)))
-	s.mux.Handle("/ous/new", protected(ouHandler.New))
-	s.mux.Handle("/ous/edit", protected(ouHandler.Edit))
-	s.mux.Handle("/ous/delete", protected(ouHandler.Delete))
+	s.mux.Handle("/ous", readProtected(ouHandler.List))
+	s.mux.Handle("/ous/new", adminProtected(ouHandler.New))
+	s.mux.Handle("/ous/edit", adminProtected(ouHandler.Edit))
+	s.mux.Handle("/ous/delete", adminProtected(ouHandler.Delete))
 }
 
 func mustSubFS(fsys fs.FS, dir string) fs.FS {
