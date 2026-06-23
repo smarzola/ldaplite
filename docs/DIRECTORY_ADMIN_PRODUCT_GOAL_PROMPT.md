@@ -164,7 +164,7 @@ When a milestone is complete:
 
 - [x] Milestone 0: UX baseline, IA, and component plan.
 - [x] Milestone 1: Search/list API contract and tests.
-- [ ] Milestone 2: Real app shell and role-specific landing.
+- [x] Milestone 2: Real app shell and role-specific landing.
 - [ ] Milestone 3: Searchable paginated directory results.
 - [ ] Milestone 4: Entry detail surface and row actions.
 - [ ] Milestone 5: Focused admin workflows.
@@ -438,6 +438,56 @@ go test -v ./internal/web
 Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
+
+Status note, 2026-06-23:
+
+- Replaced the inert top button row with a real URL-backed app shell.
+  - Supported views: `directory`, `users`, `groups`, `ous`, `admin`, and
+    `account`.
+  - Navigation writes `?view=...` with same-document relative history updates
+    so it works even when Basic Auth credentials appear in the loaded URL.
+  - Active navigation uses `aria-current="page"` and the page title/copy is
+    derived from the current workflow.
+- Rendered role-specific navigation from `/api/session` roles.
+  - Admin: `Directory`, `Users`, `Groups`, `OUs`, `Admin`, `Account`.
+  - Read-only: `Directory`, `Users`, `Groups`, `OUs`, `Account`.
+  - Password-only: `Account` only.
+- Split the previous mixed page into distinct view bodies.
+  - Directory view shows grouped directory browse tables.
+  - `Users`, `Groups`, and `OUs` show scoped browse views.
+  - `Admin` owns the create/edit/delete/reset forms.
+  - `Account` owns password self-service and secondary session details.
+- Removed the primary `Capability rail` and old `Directory workbench` product
+  copy. Capability badges now appear only as secondary account/session detail.
+- shadcn notes:
+  - Reused installed shadcn primitives: `Button`, `Card`, `Badge`, `Alert`,
+    `Empty`, `Field`, `Input`, `Separator`, `Skeleton`, `Table`, `Tabs`, and
+    `Textarea`.
+  - Checked `npx shadcn@latest add sidebar --dry-run`; it would add sidebar
+    support but prompt to overwrite `separator.tsx`. Milestone 2 stayed scoped
+    to existing primitives; richer sidebar/sheet components can be added in
+    the search/detail milestones if still worthwhile.
+- Browser validation:
+  - Admin at `127.0.0.1`: landed on `Directory`; nav showed
+    `Directory`, `Users`, `Groups`, `OUs`, `Admin`, `Account`; clicking
+    `Users` changed URL to `/app/?view=users`, title to `Users`, and active
+    nav to `Users`.
+  - Read-only at `localhost`: direct `/app/?view=admin` normalized to
+    `/app/?view=directory`; nav omitted `Admin`; clicking `Groups` changed URL
+    to `/app/?view=groups`, title to `Groups`, and active nav to `Groups`.
+  - Password-only at `0.0.0.0`: direct `/app/?view=directory` normalized to
+    `/app/?view=account`; only `Account` nav was visible; title was `Account`;
+    `Change password` was visible; directory/admin nav was absent.
+  - Browser console errors were empty after the relative-history fix.
+- Commands run:
+  - `npx shadcn@latest info --json`
+  - `npx shadcn@latest docs sidebar`
+  - `npx shadcn@latest add sidebar --dry-run`
+  - `npx shadcn@latest add sidebar --diff internal/web/frontend/src/components/ui/separator.tsx`
+  - `npm run build`
+  - `go test -v ./internal/web`
+  - Temporary single-binary build and in-app Browser role validation.
+- Commit hash: pending.
 
 ## Milestone 3: Searchable Paginated Directory Results
 

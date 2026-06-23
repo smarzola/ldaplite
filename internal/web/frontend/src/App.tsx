@@ -1,5 +1,15 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react"
-import { AlertCircle, Database, KeyRound, ShieldCheck } from "lucide-react"
+import {
+  AlertCircle,
+  Database,
+  FolderTree,
+  KeyRound,
+  Settings2,
+  ShieldCheck,
+  UserRound,
+  Users,
+  type LucideIcon,
+} from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -78,10 +88,19 @@ type Notice = {
   text: string
 }
 
+type ViewId = "directory" | "users" | "groups" | "ous" | "admin" | "account"
+
+type NavItem = {
+  id: ViewId
+  label: string
+  description: string
+  icon: LucideIcon
+}
+
 const capabilityLabels: Array<[keyof Session["roles"], string]> = [
   ["directoryRead", "Directory read"],
   ["directoryWrite", "Directory write"],
-  ["admin", "Admin UI"],
+  ["admin", "Administration"],
   ["passwordSelf", "Own password"],
   ["passwordReset", "Password reset"],
 ]
@@ -90,6 +109,7 @@ export default function App() {
   const [state, setState] = useState<LoadState>({ loading: true })
   const [notice, setNotice] = useState<Notice>()
   const [mutating, setMutating] = useState(false)
+  const [activeView, setActiveView] = useState<ViewId>(() => viewFromLocation())
 
   useEffect(() => {
     let cancelled = false
@@ -103,10 +123,30 @@ export default function App() {
     }
   }, [])
 
+  useEffect(() => {
+    function syncViewFromURL() {
+      setActiveView(viewFromLocation())
+    }
+
+    window.addEventListener("popstate", syncViewFromURL)
+    return () => window.removeEventListener("popstate", syncViewFromURL)
+  }, [])
+
   const session = state.session
   const directory = state.directory
   const navItems = useMemo(() => buildNavItems(session), [session])
   const accessLabel = accessBadgeLabel(session)
+  const currentView = useMemo(
+    () => normalizeActiveView(activeView, navItems, session),
+    [activeView, navItems, session]
+  )
+  const pageCopy = viewCopy(currentView)
+
+  useEffect(() => {
+    if (!state.loading && session && currentView !== activeView) {
+      navigateToView(currentView, setActiveView, true)
+    }
+  }, [activeView, currentView, session, state.loading])
 
   async function runMutation(path: string, method: string, payload: unknown, success: string, reload = true) {
     setMutating(true)
@@ -129,149 +169,232 @@ export default function App() {
 
   return (
     <main className="min-h-svh overflow-x-hidden bg-background text-foreground">
-      <div className="mx-auto flex min-h-svh w-full max-w-[100vw] min-w-0 flex-col gap-6 px-4 py-6 sm:px-6 lg:max-w-6xl lg:px-8">
-        <header className="flex min-w-0 flex-col gap-5 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0 flex flex-col gap-2">
-            <p className="font-mono text-xs uppercase tracking-normal text-muted-foreground">
+      <div className="mx-auto grid min-h-svh w-full max-w-[100vw] min-w-0 lg:grid-cols-[17rem_minmax(0,1fr)]">
+        <aside className="flex min-w-0 flex-col gap-4 border-b px-4 py-4 sm:px-6 lg:border-b-0 lg:border-r lg:px-5 lg:py-6">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <Database />
+              <p className="text-sm font-semibold">LDAPLite</p>
+            </div>
+            <p className="break-all font-mono text-xs text-muted-foreground">
               {session?.baseDN ?? "Loading directory"}
             </p>
-            <div className="flex flex-col gap-1">
-              <h1 className="text-2xl font-semibold tracking-normal">LDAPLite directory console</h1>
+          </div>
+
+          <nav aria-label="Primary" className="flex min-w-0 gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0">
+            {navItems.map((item) => {
+              const Icon = item.icon
+              const active = item.id === currentView
+              return (
+                <Button
+                  aria-current={active ? "page" : undefined}
+                  className="shrink-0 justify-start"
+                  key={item.id}
+                  onClick={() => navigateToView(item.id, setActiveView)}
+                  size="sm"
+                  variant={active ? "default" : "ghost"}
+                >
+                  <Icon data-icon="inline-start" />
+                  {item.label}
+                </Button>
+              )
+            })}
+          </nav>
+
+          {session ? (
+            <div className="hidden flex-col gap-2 lg:flex">
+              <Separator />
+              <Badge className="w-fit" variant={session.roles.admin ? "default" : "secondary"}>
+                {accessLabel}
+              </Badge>
+            </div>
+          ) : null}
+        </aside>
+
+        <div className="flex min-w-0 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+          <header className="flex min-w-0 flex-col gap-2 border-b pb-5">
+            <p className="font-mono text-xs uppercase tracking-normal text-muted-foreground">
+              {session?.userID ?? "Loading account"}
+            </p>
+            <div className="flex min-w-0 flex-col gap-1">
+              <h1 className="text-2xl font-semibold tracking-normal">{pageCopy.title}</h1>
               <p className="max-w-2xl break-words text-sm leading-relaxed text-muted-foreground">
-                Role-aware users, groups, OUs, and account access.
+                {pageCopy.description}
               </p>
             </div>
-          </div>
+          </header>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {navItems.map((item) => (
-              <Button key={item} variant={item === "Admin" ? "default" : "outline"} size="sm">
-                {item === "Account" ? <KeyRound data-icon="inline-start" /> : null}
-                {item}
-              </Button>
-            ))}
-          </div>
-        </header>
+          {state.error ? (
+            <Alert variant="destructive">
+              <AlertCircle />
+              <AlertTitle>Console unavailable</AlertTitle>
+              <AlertDescription>{state.error}</AlertDescription>
+            </Alert>
+          ) : null}
 
-        {state.error ? (
-          <Alert variant="destructive">
-            <AlertCircle />
-            <AlertTitle>Console unavailable</AlertTitle>
-            <AlertDescription>{state.error}</AlertDescription>
-          </Alert>
-        ) : null}
+          {notice ? (
+            <Alert variant={notice.kind === "error" ? "destructive" : "default"}>
+              {notice.kind === "error" ? <AlertCircle /> : <ShieldCheck />}
+              <AlertTitle>{notice.kind === "error" ? "Request failed" : "Saved"}</AlertTitle>
+              <AlertDescription>{notice.text}</AlertDescription>
+            </Alert>
+          ) : null}
 
-        {notice ? (
-          <Alert variant={notice.kind === "error" ? "destructive" : "default"}>
-            {notice.kind === "error" ? <AlertCircle /> : <ShieldCheck />}
-            <AlertTitle>{notice.kind === "error" ? "Request failed" : "Saved"}</AlertTitle>
-            <AlertDescription>{notice.text}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex flex-col gap-1">
-                  <CardTitle>Directory workbench</CardTitle>
-                  <CardDescription>
-                    {directoryAccessDescription(session)}
-                  </CardDescription>
-                </div>
-                <Badge variant={session?.roles.admin ? "default" : "secondary"}>
-                  {accessLabel}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {state.loading ? <DirectorySkeleton /> : <DirectoryTables directory={directory} />}
-            </CardContent>
-          </Card>
-
-          <div className="flex flex-col gap-4">
-            <CapabilityRail loading={state.loading} session={session} />
-            <SessionCard loading={state.loading} session={session} />
-          </div>
-        </section>
-
-        {session && !state.loading ? (
-          <section className="grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)]">
-            <AccountPanel disabled={mutating} onMutate={runMutation} session={session} />
-            {session.roles.admin ? (
-              <AdminPanel
-                baseDN={session.baseDN}
-                directory={directory}
-                disabled={mutating}
-                onMutate={runMutation}
-              />
-            ) : null}
-          </section>
-        ) : null}
+          {state.loading ? (
+            <ShellSkeleton />
+          ) : session ? (
+            <AppView
+              activeView={currentView}
+              directory={directory}
+              mutating={mutating}
+              onMutate={runMutation}
+              session={session}
+            />
+          ) : null}
+        </div>
       </div>
     </main>
   )
 }
 
-function CapabilityRail({ loading, session }: { loading: boolean; session?: Session }) {
+function AppView({
+  activeView,
+  directory,
+  mutating,
+  onMutate,
+  session,
+}: {
+  activeView: ViewId
+  directory?: Directory
+  mutating: boolean
+  onMutate: (path: string, method: string, payload: unknown, success: string, reload?: boolean) => Promise<void>
+  session: Session
+}) {
+  if (activeView === "account") {
+    return (
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <AccountPanel disabled={mutating} onMutate={onMutate} session={session} />
+        <SessionCard session={session} />
+      </section>
+    )
+  }
+
+  if (activeView === "admin" && session.roles.admin) {
+    return (
+      <AdminPanel
+        baseDN={session.baseDN}
+        directory={directory}
+        disabled={mutating}
+        onMutate={onMutate}
+      />
+    )
+  }
+
+  if (activeView === "users") {
+    return (
+      <ScopedDirectoryCard
+        description="Browse user accounts under the configured base DN."
+        directory={directory}
+        kind="users"
+        title="Users"
+      />
+    )
+  }
+
+  if (activeView === "groups") {
+    return (
+      <ScopedDirectoryCard
+        description="Browse groups and membership counts."
+        directory={directory}
+        kind="groups"
+        title="Groups"
+      />
+    )
+  }
+
+  if (activeView === "ous") {
+    return (
+      <ScopedDirectoryCard
+        description="Browse organizational units under the configured base DN."
+        directory={directory}
+        kind="ous"
+        title="Organizational units"
+      />
+    )
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Capability rail</CardTitle>
-        <CardDescription>Permissions resolved by the server for this request.</CardDescription>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-1">
+            <CardTitle>Directory</CardTitle>
+            <CardDescription>Browse users, groups, and organizational units.</CardDescription>
+          </div>
+          <Badge variant={session.roles.admin ? "default" : "secondary"}>
+            {accessBadgeLabel(session)}
+          </Badge>
+        </div>
       </CardHeader>
       <CardContent>
-        {loading ? (
-          <div className="flex flex-col gap-2">
-            {capabilityLabels.map(([, label]) => (
-              <Skeleton key={label} className="h-6" />
-            ))}
-          </div>
+        <DirectoryTables directory={directory} />
+      </CardContent>
+    </Card>
+  )
+}
+
+function ScopedDirectoryCard({
+  description,
+  directory,
+  kind,
+  title,
+}: {
+  description: string
+  directory?: Directory
+  kind: "users" | "groups" | "ous"
+  title: string
+}) {
+  const entries = directory?.[kind] ?? []
+  const detail = kind === "users" ? "mail" : kind === "groups" ? "members" : "description"
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {directory ? (
+          <EntryTable entries={entries} title={title} detail={detail} />
         ) : (
-          <div className="flex flex-col gap-2">
-            {capabilityLabels.map(([key, label]) => (
-              <div key={key} className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
-                <span className="min-w-0 text-sm">{label}</span>
-                <Badge variant={session?.roles[key] ? "default" : "secondary"}>
-                  {session?.roles[key] ? "Allowed" : "Denied"}
-                </Badge>
-              </div>
-            ))}
-          </div>
+          <NoDirectoryAccess />
         )}
       </CardContent>
     </Card>
   )
 }
 
-function SessionCard({ loading, session }: { loading: boolean; session?: Session }) {
+function SessionCard({ session }: { session: Session }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Session</CardTitle>
-        <CardDescription>Authenticated LDAP actor.</CardDescription>
+        <CardTitle>Session details</CardTitle>
+        <CardDescription>Current bind DN and access summary.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        {loading ? (
-          <>
-            <Skeleton className="h-5" />
-            <Skeleton className="h-5" />
-          </>
-        ) : (
-          <>
-            <div className="flex items-center gap-2">
-              <ShieldCheck />
-              <span className="text-sm font-medium">{session?.userID}</span>
-            </div>
-            <p className="break-all font-mono text-xs text-muted-foreground">{session?.userDN}</p>
-            <Separator />
-            <p className="text-sm text-muted-foreground">
-              {session?.roles.passwordSelf
-                ? "Self-service password changes are available."
-                : "Password self-service is not available for this actor."}
-            </p>
-          </>
-        )}
+        <div className="flex items-center gap-2">
+          <ShieldCheck />
+          <span className="text-sm font-medium">{session.userID}</span>
+        </div>
+        <p className="break-all font-mono text-xs text-muted-foreground">{session.userDN}</p>
+        <Separator />
+        <div className="flex flex-wrap gap-2">
+          {capabilityLabels.map(([key, label]) => (
+            <Badge key={key} variant={session.roles[key] ? "default" : "secondary"}>
+              {label}
+            </Badge>
+          ))}
+        </div>
       </CardContent>
     </Card>
   )
@@ -349,8 +472,8 @@ function AdminPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Admin operations</CardTitle>
-        <CardDescription>Create, update, delete, reset passwords, and edit group membership.</CardDescription>
+        <CardTitle>Directory administration</CardTitle>
+        <CardDescription>Create and maintain users, groups, organizational units, and passwords.</CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="users">
@@ -794,19 +917,149 @@ function errorMessage(status: number) {
   return `Request failed with HTTP ${status}.`
 }
 
-function buildNavItems(session?: Session) {
+function viewFromLocation(): ViewId {
+  const params = new URLSearchParams(window.location.search)
+  return normalizeViewId(params.get("view"))
+}
+
+function normalizeViewId(value: string | null): ViewId {
+  switch (value) {
+    case "directory":
+    case "users":
+    case "groups":
+    case "ous":
+    case "admin":
+    case "account":
+      return value
+    default:
+      return "directory"
+  }
+}
+
+function navigateToView(
+  view: ViewId,
+  setActiveView: (view: ViewId) => void,
+  replace = false
+) {
+  const params = new URLSearchParams(window.location.search)
+  params.set("view", view)
+  const url = `${window.location.pathname}?${params.toString()}${window.location.hash}`
+  if (replace) {
+    window.history.replaceState(null, "", url)
+  } else {
+    window.history.pushState(null, "", url)
+  }
+  setActiveView(view)
+}
+
+function normalizeActiveView(activeView: ViewId, navItems: NavItem[], session?: Session): ViewId {
   if (!session) {
-    return ["Account"]
+    return activeView
+  }
+  if (navItems.some((item) => item.id === activeView)) {
+    return activeView
+  }
+  return defaultView(session)
+}
+
+function defaultView(session: Session): ViewId {
+  if (session.roles.directoryRead) {
+    return "directory"
+  }
+  return "account"
+}
+
+function buildNavItems(session?: Session): NavItem[] {
+  if (!session) {
+    return [
+      {
+        id: "account",
+        label: "Account",
+        description: "Change your password.",
+        icon: KeyRound,
+      },
+    ]
   }
 
-  const items = ["Account"]
+  const items: NavItem[] = []
   if (session.roles.directoryRead) {
-    items.unshift("Directory")
+    items.push(
+      {
+        id: "directory",
+        label: "Directory",
+        description: "Browse all readable entries.",
+        icon: Database,
+      },
+      {
+        id: "users",
+        label: "Users",
+        description: "Browse user accounts.",
+        icon: UserRound,
+      },
+      {
+        id: "groups",
+        label: "Groups",
+        description: "Browse groups and members.",
+        icon: Users,
+      },
+      {
+        id: "ous",
+        label: "OUs",
+        description: "Browse organizational units.",
+        icon: FolderTree,
+      }
+    )
   }
   if (session.roles.admin) {
-    items.push("Admin")
+    items.push({
+      id: "admin",
+      label: "Admin",
+      description: "Create and maintain entries.",
+      icon: Settings2,
+    })
   }
+  items.push({
+    id: "account",
+    label: "Account",
+    description: "Change your password.",
+    icon: KeyRound,
+  })
   return items
+}
+
+function viewCopy(view: ViewId) {
+  switch (view) {
+    case "users":
+      return {
+        title: "Users",
+        description: "Browse user accounts under the configured base DN.",
+      }
+    case "groups":
+      return {
+        title: "Groups",
+        description: "Browse groups and inspect membership counts.",
+      }
+    case "ous":
+      return {
+        title: "Organizational units",
+        description: "Browse the containers that shape the directory tree.",
+      }
+    case "admin":
+      return {
+        title: "Directory administration",
+        description: "Create and maintain users, groups, organizational units, and passwords.",
+      }
+    case "account":
+      return {
+        title: "Account",
+        description: "Change the password for the current bind DN.",
+      }
+    default:
+      return {
+        title: "Directory",
+        description: "Browse users, groups, and organizational units.",
+      }
+  }
 }
 
 function accessBadgeLabel(session?: Session) {
@@ -819,39 +1072,36 @@ function accessBadgeLabel(session?: Session) {
   return "Account only"
 }
 
-function directoryAccessDescription(session?: Session) {
-  if (session?.roles.directoryWrite) {
-    return "Administrative actions are available for this session."
-  }
-  if (session?.roles.directoryRead) {
-    return "Read-only directory access is active for this session."
-  }
-  return "Account-only access is active for this session."
-}
-
-function DirectorySkeleton() {
+function ShellSkeleton() {
   return (
-    <div className="flex flex-col gap-4">
-      <Skeleton className="h-24" />
-      <Skeleton className="h-24" />
-      <Skeleton className="h-24" />
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-48" />
+          <Skeleton className="h-4 w-72 max-w-full" />
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <Skeleton className="h-12" />
+          <Skeleton className="h-12" />
+          <Skeleton className="h-12" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-32" />
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <Skeleton className="h-8" />
+          <Skeleton className="h-8" />
+        </CardContent>
+      </Card>
     </div>
   )
 }
 
 function DirectoryTables({ directory }: { directory?: Directory }) {
   if (!directory) {
-    return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <Database />
-          </EmptyMedia>
-          <EmptyTitle>No directory access</EmptyTitle>
-          <EmptyDescription>This session can only access account-level functionality.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    )
+    return <NoDirectoryAccess />
   }
 
   return (
@@ -860,6 +1110,20 @@ function DirectoryTables({ directory }: { directory?: Directory }) {
       <EntryTable title="Groups" entries={directory.groups} detail="members" />
       <EntryTable title="Organizational units" entries={directory.ous} detail="description" />
     </div>
+  )
+}
+
+function NoDirectoryAccess() {
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Database />
+        </EmptyMedia>
+        <EmptyTitle>No directory access</EmptyTitle>
+        <EmptyDescription>This account can only use account-level actions.</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }
 
