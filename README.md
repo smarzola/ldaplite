@@ -482,6 +482,13 @@ compiles them, while local runs are better for comparing before/after changes.
 
 ## Integration Guides
 
+See [docs/integrations/](docs/integrations/) for LDAP consumer recipes.
+
+- [Authelia](docs/integrations/authelia.md)
+- [Dex](docs/integrations/dex.md)
+- [Gitea and Forgejo](docs/integrations/gitea-forgejo.md)
+- [Grafana](docs/integrations/grafana.md)
+- [Nextcloud](docs/integrations/nextcloud.md)
 - [Pocket ID](docs/integrations/pocket-id.md)
 
 ## Roadmap

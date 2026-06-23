@@ -12,6 +12,7 @@ This roadmap tracks current project direction after the security and interoperab
 - Operational attributes: `objectClass`, `createTimestamp`, `modifyTimestamp`, and computed `memberOf`.
 - Stable generated entry identifiers: operational `entryUUID` plus `uuid` compatibility alias.
 - Pocket ID LDAP sync compatibility recipe and functional coverage.
+- LDAP integration recipes for Authelia, Dex, Gitea/Forgejo, Grafana, and Nextcloud.
 - Canonical LDAP attribute casing for known response attributes.
 - Bind enforcement for normal searches and write operations.
 - Web UI same-origin protection and POST-only deletes.

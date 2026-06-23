@@ -111,7 +111,7 @@ complete:
 - [x] Milestone 0: Baseline audit and compatibility matrix.
 - [x] Milestone 1: Stable generated IDs for users and groups.
 - [x] Milestone 2: Pocket ID compatibility test and integration recipe.
-- [ ] Milestone 3: Integration recipe pack for common LDAP consumers.
+- [x] Milestone 3: Integration recipe pack for common LDAP consumers.
 - [ ] Milestone 4: Correct LDAP Compare behavior.
 - [ ] Milestone 5: Service-account/read-only bind strategy.
 - [ ] Milestone 6: TLS/LDAPS deployment path.
