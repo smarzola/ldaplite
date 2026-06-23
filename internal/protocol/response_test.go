@@ -23,6 +23,7 @@ func TestCanonicalAttributeName(t *testing.T) {
 		{name: "namingcontexts", want: "namingContexts"},
 		{name: "subschemasubentry", want: "subschemaSubentry"},
 		{name: "supportedldapversion", want: "supportedLDAPVersion"},
+		{name: "supportedextension", want: "supportedExtension"},
 		{name: "vendorname", want: "vendorName"},
 		{name: "vendorversion", want: "vendorVersion"},
 		{name: "customattr", want: "customattr"},
@@ -50,6 +51,7 @@ func TestSearchResultEntryBERUsesCanonicalKnownAttributeNames(t *testing.T) {
 	AddAttribute(&entry, "namingcontexts", "dc=example,dc=com")
 	AddAttribute(&entry, "subschemasubentry", "cn=Subschema")
 	AddAttribute(&entry, "supportedldapversion", "3")
+	AddAttribute(&entry, "supportedextension", StartTLSOID)
 	AddAttribute(&entry, "vendorname", "LDAPLite")
 	AddAttribute(&entry, "vendorversion", "test")
 
@@ -67,6 +69,7 @@ func TestSearchResultEntryBERUsesCanonicalKnownAttributeNames(t *testing.T) {
 		"namingContexts",
 		"subschemaSubentry",
 		"supportedLDAPVersion",
+		"supportedExtension",
 		"vendorName",
 		"vendorVersion",
 	} {

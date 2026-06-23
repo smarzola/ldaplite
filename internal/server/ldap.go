@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -22,14 +23,15 @@ import (
 
 // Server represents an LDAP server
 type Server struct {
-	cfg      *config.Config
-	store    store.Store
-	hasher   *crypto.PasswordHasher
-	version  string
-	listener net.Listener
-	wg       sync.WaitGroup
-	ctx      context.Context
-	cancel   context.CancelFunc
+	cfg       *config.Config
+	store     store.Store
+	hasher    *crypto.PasswordHasher
+	version   string
+	listener  net.Listener
+	tlsConfig *tls.Config
+	wg        sync.WaitGroup
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 // NewServer creates a new LDAP server
@@ -88,14 +90,21 @@ func containsAttributeName(names []string, attrName string) bool {
 // Start starts the LDAP server
 func (s *Server) Start() error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Server.BindAddress, s.cfg.Server.Port)
+	tlsConfig, err := s.loadTLSConfig()
+	if err != nil {
+		return err
+	}
+	s.tlsConfig = tlsConfig
 
-	var err error
 	s.listener, err = net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to start TCP listener: %w", err)
 	}
+	if s.cfg.Server.TLS.Enabled {
+		s.listener = tls.NewListener(s.listener, tlsConfig)
+	}
 
-	slog.Info("LDAP server starting", "address", addr)
+	slog.Info("LDAP server starting", "address", addr, "tls_enabled", s.cfg.Server.TLS.Enabled, "starttls_enabled", s.cfg.Server.TLS.StartTLSEnabled)
 
 	// Accept connections in a goroutine
 	s.wg.Add(1)
@@ -163,6 +172,9 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	// Create connection wrapper
 	ldapConn := protocol.NewConnection(conn, handlers)
+	if s.cfg.Server.TLS.Enabled {
+		ldapConn.MarkTLS()
+	}
 
 	// Handle the connection
 	if err := ldapConn.Handle(s.ctx); err != nil {
@@ -170,6 +182,22 @@ func (s *Server) handleConnection(conn net.Conn) {
 			slog.Debug("Connection closed", "remote", conn.RemoteAddr(), "error", err)
 		}
 	}
+}
+
+func (s *Server) loadTLSConfig() (*tls.Config, error) {
+	if !s.cfg.Server.TLS.Enabled && !s.cfg.Server.TLS.StartTLSEnabled {
+		return nil, nil
+	}
+
+	cert, err := tls.LoadX509KeyPair(s.cfg.Server.TLS.CertFile, s.cfg.Server.TLS.KeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load LDAP TLS certificate: %w", err)
+	}
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}, nil
 }
 
 // Stop stops the LDAP server

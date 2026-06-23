@@ -19,8 +19,8 @@ Shared assumptions:
 - Group membership is DN-based through `member`.
 - User reverse membership is exposed as computed `memberOf`.
 - Stable IDs are exposed as `entryUUID`.
-- Native LDAPS/StartTLS is not implemented yet; use the
-  [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md) where
-  encryption is required.
+- Use native LDAPS/StartTLS where encryption is required, or the
+  [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md) when external
+  TLS termination is preferred.
 - For app bind users, create a user under `ou=users,<baseDN>` and add it to
   `cn=ldaplite.readonly,ou=groups,<baseDN>`.

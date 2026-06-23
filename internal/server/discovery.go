@@ -17,6 +17,11 @@ func (s *Server) handleRootDSE(conn *protocol.Connection, msg *ldapmsg.Message) 
 	protocol.AddAttribute(&entry, "namingContexts", s.cfg.LDAP.BaseDN)
 	protocol.AddAttribute(&entry, "subschemaSubentry", "cn=Subschema")
 	protocol.AddAttribute(&entry, "supportedLDAPVersion", "3")
+	supportedExtensions := []string{protocol.WhoAmIOID}
+	if s.cfg.Server.TLS.StartTLSEnabled {
+		supportedExtensions = append(supportedExtensions, protocol.StartTLSOID)
+	}
+	protocol.AddAttribute(&entry, "supportedExtension", supportedExtensions...)
 	protocol.AddAttribute(&entry, "vendorName", "LDAPLite")
 	protocol.AddAttribute(&entry, "vendorVersion", s.version)
 
@@ -95,6 +100,34 @@ func (s *Server) handleExtended(ctx context.Context, conn *protocol.Connection, 
 		slog.Debug("Who am I response", "authzID", authzID)
 		resultCode = ldapmsg.ResultCodeSuccess
 		return conn.WriteResponse(msg.ID, resp)
+	}
+
+	if reqOID == protocol.StartTLSOID {
+		if !s.cfg.Server.TLS.StartTLSEnabled || s.tlsConfig == nil {
+			slog.Debug("StartTLS unavailable")
+			resultCode = ldapmsg.ResultCodeUnavailable
+			return conn.WriteResponse(msg.ID, protocol.NewExtendedResponse(ldapmsg.ResultCodeUnavailable))
+		}
+		if conn.IsTLS() {
+			slog.Debug("StartTLS rejected on TLS connection")
+			resultCode = ldapmsg.ResultCodeOperationsError
+			resp := protocol.NewExtendedResponse(ldapmsg.ResultCodeOperationsError)
+			resp.DiagnosticMessage = "connection already uses TLS"
+			return conn.WriteResponse(msg.ID, resp)
+		}
+		if conn.IsBound() {
+			slog.Debug("StartTLS rejected after bind")
+			resultCode = ldapmsg.ResultCodeOperationsError
+			resp := protocol.NewExtendedResponse(ldapmsg.ResultCodeOperationsError)
+			resp.DiagnosticMessage = "StartTLS must be requested before bind"
+			return conn.WriteResponse(msg.ID, resp)
+		}
+
+		resultCode = ldapmsg.ResultCodeSuccess
+		if err := conn.WriteResponse(msg.ID, protocol.NewExtendedResponse(ldapmsg.ResultCodeSuccess)); err != nil {
+			return err
+		}
+		return conn.StartTLS(s.tlsConfig)
 	}
 
 	// Unsupported extended operation

@@ -1,8 +1,8 @@
 # LDAPS TLS Sidecar Deployment
 
-LDAPLite intentionally keeps the LDAP listener plain by default. For clients
-that require `ldaps://`, run LDAPLite on a private listener and terminate TLS in
-a sidecar or reverse proxy that forwards raw TCP to LDAPLite.
+LDAPLite supports native LDAPS and StartTLS. This guide remains useful when you
+prefer to keep certificate handling in a sidecar or reverse proxy that forwards
+raw TCP to LDAPLite.
 
 The functional suite includes a TLS-terminating TCP proxy test that verifies an
 LDAPS client can bind and search through this pattern.
@@ -92,7 +92,6 @@ LDAPTLS_REQCERT=never ldapsearch \
 
 ## Current Limits
 
-- LDAPLite does not currently implement native LDAPS or StartTLS.
 - The sidecar must be a raw TCP proxy. Do not use an HTTP reverse proxy mode.
 - LDAP healthchecks and telemetry continue to target LDAPLite's plain listener
   unless your deployment adds separate sidecar healthchecks.

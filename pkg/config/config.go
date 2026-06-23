@@ -23,6 +23,14 @@ type ServerConfig struct {
 	BindAddress  string
 	ReadTimeout  int // seconds
 	WriteTimeout int // seconds
+	TLS          TLSConfig
+}
+
+type TLSConfig struct {
+	Enabled         bool
+	StartTLSEnabled bool
+	CertFile        string
+	KeyFile         string
 }
 
 type LDAPConfig struct {
@@ -78,6 +86,12 @@ func LoadFromEnv() (*Config, error) {
 			BindAddress:  getEnvString("LDAP_BIND_ADDRESS", "0.0.0.0"),
 			ReadTimeout:  getEnvInt("LDAP_READ_TIMEOUT", 30),
 			WriteTimeout: getEnvInt("LDAP_WRITE_TIMEOUT", 30),
+			TLS: TLSConfig{
+				Enabled:         getEnvBool("LDAP_TLS_ENABLED", false),
+				StartTLSEnabled: getEnvBool("LDAP_STARTTLS_ENABLED", false),
+				CertFile:        getEnvString("LDAP_TLS_CERT_FILE", ""),
+				KeyFile:         getEnvString("LDAP_TLS_KEY_FILE", ""),
+			},
 		},
 		LDAP: LDAPConfig{
 			BaseDN: getEnvString("LDAP_BASE_DN", "dc=example,dc=com"),
@@ -141,6 +155,10 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.LDAP.BaseDN) == "" {
 		return fmt.Errorf("LDAP_BASE_DN is required")
 	}
+	if (c.Server.TLS.Enabled || c.Server.TLS.StartTLSEnabled) &&
+		(strings.TrimSpace(c.Server.TLS.CertFile) == "" || strings.TrimSpace(c.Server.TLS.KeyFile) == "") {
+		return fmt.Errorf("LDAP_TLS_CERT_FILE and LDAP_TLS_KEY_FILE are required when LDAP_TLS_ENABLED or LDAP_STARTTLS_ENABLED is true")
+	}
 	return nil
 }
 
@@ -152,6 +170,8 @@ func (c *Config) Print() {
 		"database_path", c.Database.Path,
 		"log_level", c.Logging.Level,
 		"log_format", c.Logging.Format,
+		"tls_enabled", c.Server.TLS.Enabled,
+		"starttls_enabled", c.Server.TLS.StartTLSEnabled,
 		"allow_anonymous_bind", c.Security.AllowAnonymousBind,
 	)
 }

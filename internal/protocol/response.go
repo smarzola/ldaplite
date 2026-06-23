@@ -54,6 +54,8 @@ func CanonicalAttributeName(name string) string {
 		return "subschemaSubentry"
 	case "supportedldapversion":
 		return "supportedLDAPVersion"
+	case "supportedextension":
+		return "supportedExtension"
 	case "vendorname":
 		return "vendorName"
 	case "vendorversion":

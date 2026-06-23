@@ -65,7 +65,8 @@ directory operations as a hobby.
 - **Docker Support**: Distroless image, non-root user, health checks
 - **Simple Configuration**: Environment variables only, no config files required
 - **Direct Protocol Implementation**: Repo-owned LDAP BER encoding/decoding, no high-level framework overhead
-- **Reverse Proxy Friendly**: No TLS support by design - meant to run behind nginx/traefik
+- **Native TLS Options**: Supports implicit LDAPS and StartTLS with operator-provided certificates
+- **Reverse Proxy Friendly**: Can still run behind a TCP TLS sidecar or reverse proxy
 
 ### Web UI
 
@@ -206,6 +207,27 @@ ldapsearch -H ldap://localhost:3389 \
   "(modifyTimestamp>=20240101000000Z)"
 ```
 
+### TLS Smoke Tests
+
+For implicit LDAPS, start LDAPLite with `LDAP_TLS_ENABLED=true`,
+`LDAP_TLS_CERT_FILE=/path/to/ldap.crt`, and
+`LDAP_TLS_KEY_FILE=/path/to/ldap.key`, then use:
+
+```bash
+ldapwhoami -H ldaps://localhost:3389 \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
+  -w YourSecurePassword
+```
+
+For StartTLS, start LDAPLite with `LDAP_STARTTLS_ENABLED=true` and the same
+certificate/key variables, then use:
+
+```bash
+ldapwhoami -ZZ -H ldap://localhost:3389 \
+  -D "uid=admin,ou=users,dc=example,dc=com" \
+  -w YourSecurePassword
+```
+
 ## Configuration
 
 All configuration via environment variables. No config files needed.
@@ -225,6 +247,10 @@ All configuration via environment variables. No config files needed.
 | `LDAP_BIND_ADDRESS` | `0.0.0.0` | Network interface to bind to |
 | `LDAP_READ_TIMEOUT` | `30` | Read timeout in seconds |
 | `LDAP_WRITE_TIMEOUT` | `30` | Write timeout in seconds |
+| `LDAP_TLS_ENABLED` | `false` | Enable implicit TLS/LDAPS on the LDAP listener |
+| `LDAP_STARTTLS_ENABLED` | `false` | Enable the LDAP StartTLS extended operation |
+| `LDAP_TLS_CERT_FILE` | empty | PEM certificate file for LDAPS or StartTLS |
+| `LDAP_TLS_KEY_FILE` | empty | PEM private key file for LDAPS or StartTLS |
 
 ### Database Configuration
 
@@ -484,7 +510,7 @@ compiles them, while local runs are better for comparing before/after changes.
 See [docs/CLIENT_COMPATIBILITY_MATRIX.md](docs/CLIENT_COMPATIBILITY_MATRIX.md) for the LDAP client compatibility matrix.
 See [docs/integrations/](docs/integrations/) for LDAP consumer recipes.
 See [docs/LDAP_AUTHORIZATION.md](docs/LDAP_AUTHORIZATION.md) for read-only app bind users.
-See [docs/deployment/ldaps-tls-sidecar.md](docs/deployment/ldaps-tls-sidecar.md) for LDAPS sidecar deployment.
+See [docs/deployment/ldaps-tls-sidecar.md](docs/deployment/ldaps-tls-sidecar.md) for optional LDAPS sidecar deployment.
 
 - [Authelia](docs/integrations/authelia.md)
 - [Dex](docs/integrations/dex.md)
@@ -504,13 +530,11 @@ See [docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md](docs/CLIENT_COMPATIBILITY_PRO
   - Compatible with modern IdP systems
 - Enhanced ACLs for granular permissions
 - LDIF import/export commands from [docs/IMPORT_EXPORT_DESIGN.md](docs/IMPORT_EXPORT_DESIGN.md)
-- Native TLS/LDAPS support (sidecar deployment is documented)
 
 ## Limitations
 
 Current limitations (by design or priority):
 
-- **No TLS/SSL** - Use reverse proxy (Nginx, Traefik) for encryption
 - **No SASL** - Simple bind only (username/password)
 - **No Replication** - Single-instance only
 - **No Complex ACLs** - Admin has full access, users can bind
@@ -545,7 +569,7 @@ LDAPLite includes a black-box functional compatibility suite that starts the rea
 
 The suite covers an Active Directory-like first milestone for common LDAP clients: simple bind, subtree search, AD-facing attributes such as `sAMAccountName` and `userPrincipalName`, group `member` searches, password modification, deletion, hidden `userPassword`, operational timestamps, and LDAP result codes for invalid credentials, missing objects, password scheme violations, and object class violations.
 
-This is not full Active Directory compatibility. LDAPLite still intentionally excludes Kerberos, SASL/GSSAPI, LDAPS/TLS termination, Global Catalog, DirSync, paging controls, server-side sorting controls, the AD recursive matching rule, and complete Microsoft schema behavior.
+This is not full Active Directory compatibility. LDAPLite still intentionally excludes Kerberos, SASL/GSSAPI, Global Catalog, DirSync, paging controls, server-side sorting controls, the AD recursive matching rule, and complete Microsoft schema behavior.
 
 CI runs both the normal Go test suite and the AD-like functional compatibility suite for pull requests and pushes to `main`.
 

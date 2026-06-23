@@ -30,6 +30,10 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, "info", cfg.Logging.Level)
 	assert.Equal(t, "json", cfg.Logging.Format)
 	assert.False(t, cfg.WebUI.Enabled)
+	assert.False(t, cfg.Server.TLS.Enabled)
+	assert.False(t, cfg.Server.TLS.StartTLSEnabled)
+	assert.Equal(t, "", cfg.Server.TLS.CertFile)
+	assert.Equal(t, "", cfg.Server.TLS.KeyFile)
 	assert.False(t, cfg.Telemetry.Enabled)
 	assert.False(t, cfg.Telemetry.MetricsEnabled)
 	assert.Equal(t, "ldaplite", cfg.Telemetry.OTelServiceName)
@@ -37,6 +41,48 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, "0.0.0.0", cfg.Telemetry.MetricsBindAddress)
 	assert.Equal(t, 9090, cfg.Telemetry.MetricsPort)
 	assert.Equal(t, "/metrics", cfg.Telemetry.MetricsPath)
+}
+
+func TestLoadTLSConfig(t *testing.T) {
+	t.Setenv("LDAP_BASE_DN", "dc=test,dc=com")
+	t.Setenv("LDAP_TLS_ENABLED", "true")
+	t.Setenv("LDAP_STARTTLS_ENABLED", "true")
+	t.Setenv("LDAP_TLS_CERT_FILE", "/certs/ldap.crt")
+	t.Setenv("LDAP_TLS_KEY_FILE", "/certs/ldap.key")
+
+	cfg, err := LoadFromEnv()
+
+	assert.NoError(t, err)
+	assert.True(t, cfg.Server.TLS.Enabled)
+	assert.True(t, cfg.Server.TLS.StartTLSEnabled)
+	assert.Equal(t, "/certs/ldap.crt", cfg.Server.TLS.CertFile)
+	assert.Equal(t, "/certs/ldap.key", cfg.Server.TLS.KeyFile)
+}
+
+func TestValidateRequiresTLSCertificateFilesWhenTLSEnabled(t *testing.T) {
+	cfg := &Config{
+		LDAP: LDAPConfig{BaseDN: "dc=test,dc=com"},
+		Server: ServerConfig{TLS: TLSConfig{
+			Enabled: true,
+		}},
+	}
+
+	err := cfg.Validate()
+
+	assert.ErrorContains(t, err, "LDAP_TLS_CERT_FILE and LDAP_TLS_KEY_FILE are required")
+}
+
+func TestValidateRequiresTLSCertificateFilesWhenStartTLSEnabled(t *testing.T) {
+	cfg := &Config{
+		LDAP: LDAPConfig{BaseDN: "dc=test,dc=com"},
+		Server: ServerConfig{TLS: TLSConfig{
+			StartTLSEnabled: true,
+		}},
+	}
+
+	err := cfg.Validate()
+
+	assert.ErrorContains(t, err, "LDAP_TLS_CERT_FILE and LDAP_TLS_KEY_FILE are required")
 }
 
 func TestLoadFromEnvReturnsValidationError(t *testing.T) {

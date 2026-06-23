@@ -196,7 +196,7 @@ LDAP behavior:
 Compatibility testing:
 - Keep `tests/functional/` black-box: use a real server subprocess and real LDAP client library.
 - The AD-like suite is practical client compatibility, not full Active Directory emulation.
-- Out of scope unless explicitly requested: Kerberos, SASL/GSSAPI, TLS/LDAPS termination, Global Catalog, DirSync, paging controls, server-side sorting controls, AD recursive matching rule, and full Microsoft schema semantics.
+- Out of scope unless explicitly requested: Kerberos, SASL/GSSAPI, Global Catalog, DirSync, paging controls, server-side sorting controls, AD recursive matching rule, and full Microsoft schema semantics.
 
 ## Adding Features Safely
 
@@ -216,7 +216,7 @@ New object classes:
 
 ## Current Intentional Limits
 
-- No TLS/SSL in the server; use a reverse proxy or external TLS termination.
+- Native LDAPS and StartTLS use operator-provided PEM certificate/key files.
 - No SASL authentication.
 - No extensible matching or AD recursive matching rule.
 - No full schema extension system.

@@ -94,7 +94,6 @@ evidence instead of reusing the historical audit.
 The original audit should not be used to smuggle in broader LDAP product scope.
 These remain intentional limits unless the roadmap changes:
 
-- TLS/LDAPS termination inside the server.
 - SASL, Kerberos, or GSSAPI.
 - Full Active Directory schema semantics.
 - Global Catalog, DirSync, paging controls, server-side sorting controls, and

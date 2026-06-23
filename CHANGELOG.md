@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.13.0 - 2026-06-23
+
+### Native LDAP TLS
+
+- Added native implicit LDAPS support on the configured LDAP listener with
+  operator-provided PEM certificate and key files.
+- Added StartTLS extended operation support and RootDSE advertisement when
+  enabled.
+- Added functional coverage for native `ldaps://`, StartTLS, and the existing
+  TLS sidecar compatibility path.
+- Updated client compatibility docs and integration recipes to describe native
+  LDAPS/StartTLS as the preferred in-server encryption path.
+
 ## v0.12.1 - 2026-06-23
 
 ### LDAP Standards Alignment

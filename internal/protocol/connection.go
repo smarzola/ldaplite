@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ type Connection struct {
 	closed   bool
 	bound    bool
 	boundDN  string
+	tls      bool
 	handlers OperationHandlers
 }
 
@@ -210,6 +212,45 @@ func (c *Connection) WriteError(messageID ldapmsg.MessageID, resultCode ldapmsg.
 // RemoteAddr returns the remote address of the connection
 func (c *Connection) RemoteAddr() net.Addr {
 	return c.conn.RemoteAddr()
+}
+
+// IsTLS reports whether the connection is protected by TLS, either through an
+// implicit TLS listener or a successful StartTLS operation.
+func (c *Connection) IsTLS() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.tls
+}
+
+// MarkTLS marks an already TLS-wrapped connection as protected.
+func (c *Connection) MarkTLS() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tls = true
+}
+
+// StartTLS upgrades the existing LDAP connection after the StartTLS success
+// response has been sent.
+func (c *Connection) StartTLS(cfg *tls.Config) error {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return fmt.Errorf("connection closed")
+	}
+	if c.tls {
+		c.mu.Unlock()
+		return fmt.Errorf("connection already uses TLS")
+	}
+	tlsConn := tls.Server(c.conn, cfg)
+	c.conn = tlsConn
+	c.tls = true
+	c.mu.Unlock()
+
+	if err := tlsConn.Handshake(); err != nil {
+		_ = tlsConn.Close()
+		return fmt.Errorf("TLS handshake failed: %w", err)
+	}
+	return nil
 }
 
 // RemoteAddrString returns the remote address string, or an empty string when

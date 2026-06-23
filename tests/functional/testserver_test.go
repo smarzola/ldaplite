@@ -5,12 +5,14 @@ package functional
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -35,7 +37,14 @@ type testServer struct {
 }
 
 func startTestServer(t *testing.T) *testServer {
+	return startTestServerWithEnv(t, nil, "ldap")
+}
+
+func startTestServerWithEnv(t *testing.T, extraEnv map[string]string, scheme string) *testServer {
 	t.Helper()
+	if scheme == "" {
+		scheme = "ldap"
+	}
 
 	repoRoot := findRepoRoot(t)
 	tmpDir := t.TempDir()
@@ -55,7 +64,7 @@ func startTestServer(t *testing.T) *testServer {
 	logs := &bytes.Buffer{}
 	cmd := exec.CommandContext(ctx, binaryPath, "server")
 	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(),
+	env := append(os.Environ(),
 		"LDAP_BASE_DN="+baseDN,
 		"LDAP_ADMIN_PASSWORD="+adminPassword,
 		fmt.Sprintf("LDAP_DATABASE_PATH=%s", filepath.Join(tmpDir, "ldaplite.db")),
@@ -65,6 +74,10 @@ func startTestServer(t *testing.T) *testServer {
 		"LDAP_LOG_FORMAT=text",
 		"LDAP_WEB_UI_ENABLED=false",
 	)
+	for key, value := range extraEnv {
+		env = append(env, key+"="+value)
+	}
+	cmd.Env = env
 	cmd.Stdout = logs
 	cmd.Stderr = logs
 
@@ -75,7 +88,7 @@ func startTestServer(t *testing.T) *testServer {
 
 	done := make(chan struct{})
 	srv := &testServer{
-		URL:    fmt.Sprintf("ldap://127.0.0.1:%d", port),
+		URL:    fmt.Sprintf("%s://127.0.0.1:%d", scheme, port),
 		cmd:    cmd,
 		cancel: cancel,
 		logs:   logs,
@@ -131,7 +144,11 @@ func (s *testServer) waitReady(t *testing.T) {
 
 	var lastErr error
 	for {
-		conn, err := ldap.DialURL(s.URL, ldap.DialWithDialer(&net.Dialer{Timeout: 500 * time.Millisecond}))
+		dialOptions := []ldap.DialOpt{ldap.DialWithDialer(&net.Dialer{Timeout: 500 * time.Millisecond})}
+		if strings.HasPrefix(s.URL, "ldaps://") {
+			dialOptions = append(dialOptions, ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
+		}
+		conn, err := ldap.DialURL(s.URL, dialOptions...)
 		if err == nil {
 			conn.Close()
 			return
@@ -152,7 +169,11 @@ func (s *testServer) waitReady(t *testing.T) {
 func (s *testServer) dial(t *testing.T) *ldap.Conn {
 	t.Helper()
 
-	conn, err := ldap.DialURL(s.URL, ldap.DialWithDialer(&net.Dialer{Timeout: 2 * time.Second}))
+	dialOptions := []ldap.DialOpt{ldap.DialWithDialer(&net.Dialer{Timeout: 2 * time.Second})}
+	if strings.HasPrefix(s.URL, "ldaps://") {
+		dialOptions = append(dialOptions, ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
+	}
+	conn, err := ldap.DialURL(s.URL, dialOptions...)
 	if err != nil {
 		t.Fatalf("dial %s: %v\nlogs:\n%s", s.URL, err, s.logs.String())
 	}

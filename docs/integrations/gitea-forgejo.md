@@ -86,6 +86,6 @@ ldapsearch -H ldap://localhost:3389 \
 
 - Read-only app bind users must be members of
   `cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
-- LDAPLite does not currently terminate native LDAPS or StartTLS. Use private
-  networking, VPN, or the [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md) for production traffic.
+- Use native LDAPS/StartTLS or the [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md)
+  for production traffic.
 - Kerberos, SASL, and Windows SPNEGO/SSPI flows are out of scope for LDAPLite.

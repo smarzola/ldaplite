@@ -1,6 +1,6 @@
 # LDAPLite Roadmap
 
-Last updated: 2026-06-21
+Last updated: 2026-06-23
 
 This roadmap tracks current project direction after the security and interoperability review. Historical plans in this directory are useful design references, but this file is the current status source.
 
@@ -16,6 +16,7 @@ This roadmap tracks current project direction after the security and interoperab
 - LDAP Compare returns meaningful true, false, and no-such-object results for safe attributes.
 - Read-only LDAP service accounts through `cn=ldaplite.readonly,ou=groups,<baseDN>`.
 - Tested LDAPS deployment path using a TLS-terminating TCP sidecar.
+- Native LDAPS and StartTLS with operator-provided certificate/key files.
 - Canonical LDAP attribute casing for known response attributes.
 - Bind enforcement for normal searches and write operations.
 - Web UI same-origin protection and POST-only deletes.
