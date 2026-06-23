@@ -433,7 +433,7 @@ Status note, 2026-06-23:
 - Web UI admin authorization now checks `authz.UIAdmin` from the shared
   capability resolver instead of duplicating the admin group lookup in
   middleware.
-- Commit hash: `656929c`.
+- Commit hash: `4386d7e`.
 
 ## Milestone 2: Breaking Least-Privilege LDAP Write Policy
 
@@ -516,7 +516,7 @@ Status note, 2026-06-23:
 - Updated `docs/LDAP_AUTHORIZATION.md`,
   `docs/CLIENT_COMPATIBILITY_MATRIX.md`, and `docs/integrations/README.md` to
   describe the breaking least-privilege default and explicit app bind guidance.
-- Commit hash: `b37b5bc`.
+- Commit hash: `97517b5`.
 
 ## Milestone 3: Embedded shadcn Frontend Build Foundation
 
@@ -770,7 +770,7 @@ Status note, 2026-06-23:
   - `go test -v ./internal/authz ./internal/web/... ./internal/server`
   - `go test -v ./internal/web/... ./internal/server ./internal/store/... ./pkg/crypto/...`
   - `go test -tags=functional -v ./tests/functional/...`
-- Commit hash: pending checkpoint commit.
+- Commit hash: `b37b5bc`.
 
 ## Milestone 6: Browser Visual Validation, Documentation, And Final Regression
 
@@ -902,7 +902,7 @@ Status note, 2026-06-23:
   - `go test -v -race ./...`;
   - `go test -tags=functional -v ./tests/functional/...`;
   - `go vet ./...`.
-- Commit hash: pending checkpoint commit.
+- Commit hash: `656929c`.
 
 ## Final Verification
 
