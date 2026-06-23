@@ -433,7 +433,7 @@ Status note, 2026-06-23:
 - Web UI admin authorization now checks `authz.UIAdmin` from the shared
   capability resolver instead of duplicating the admin group lookup in
   middleware.
-- Commit hash: pending checkpoint commit.
+- Commit hash: `656929c`.
 
 ## Milestone 2: Breaking Least-Privilege LDAP Write Policy
 
