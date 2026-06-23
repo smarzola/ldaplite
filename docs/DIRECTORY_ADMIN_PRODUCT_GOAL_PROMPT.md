@@ -785,7 +785,7 @@ Status note, 2026-06-23:
   - `go test -tags=functional -v ./tests/functional/...`
   - `go build -o /private/tmp/ldaplite-m5 ./cmd/ldaplite`
   - Temporary single-binary server plus in-app Browser validation.
-- Commit hash: pending.
+- Commit hash: `31368a9`.
 
 ## Milestone 6: Copy, Accessibility, Visual Validation, Docs, And Final Regression
 
