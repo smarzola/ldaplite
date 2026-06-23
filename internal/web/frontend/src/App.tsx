@@ -7,6 +7,7 @@ import {
   FolderTree,
   KeyRound,
   Pencil,
+  Plus,
   RefreshCw,
   Search,
   Settings2,
@@ -18,9 +19,28 @@ import {
 } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Empty,
   EmptyDescription,
@@ -33,9 +53,6 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSeparator,
-  FieldSet,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
@@ -71,7 +88,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 
 type Session = {
@@ -99,16 +115,8 @@ type EntrySummary = {
   memberOf?: string[]
 }
 
-type Directory = {
-  baseDN: string
-  users: EntrySummary[]
-  groups: EntrySummary[]
-  ous: EntrySummary[]
-}
-
 type LoadState = {
   session?: Session
-  directory?: Directory
   loading: boolean
   error?: string
 }
@@ -143,6 +151,23 @@ type DirectoryDetailResponse = {
   baseDN: string
   entry: EntryDetail
 }
+
+type WorkflowType = "user" | "group" | "ou"
+
+type AdminWorkflow =
+  | { kind: "create"; entryType: WorkflowType }
+  | { kind: "edit"; entry: EntryDetail }
+  | { kind: "reset"; entry: EntrySummary }
+  | { kind: "members"; entry: EntryDetail }
+
+const protectedExtraAttributes = [
+  "createtimestamp",
+  "entryuuid",
+  "memberof",
+  "modifytimestamp",
+  "objectclass",
+  "userpassword",
+]
 
 type NavItem = {
   id: ViewId
@@ -187,7 +212,6 @@ export default function App() {
   }, [])
 
   const session = state.session
-  const directory = state.directory
   const navItems = useMemo(() => buildNavItems(session), [session])
   const accessLabel = accessBadgeLabel(session)
   const currentView = useMemo(
@@ -212,10 +236,12 @@ export default function App() {
       }
       setNotice({ kind: "success", text: success })
     } catch (error) {
+      const message = error instanceof Error ? error.message : "The request failed."
       setNotice({
         kind: "error",
-        text: error instanceof Error ? error.message : "The request failed.",
+        text: message,
       })
+      throw new Error(message)
     } finally {
       setMutating(false)
     }
@@ -299,9 +325,7 @@ export default function App() {
           ) : session ? (
             <AppView
               activeView={currentView}
-              directory={directory}
               mutating={mutating}
-              onNavigate={(view) => navigateToView(view, setActiveView)}
               onMutate={runMutation}
               onNotice={setNotice}
               session={session}
@@ -315,17 +339,13 @@ export default function App() {
 
 function AppView({
   activeView,
-  directory,
   mutating,
-  onNavigate,
   onMutate,
   onNotice,
   session,
 }: {
   activeView: ViewId
-  directory?: Directory
   mutating: boolean
-  onNavigate: (view: ViewId) => void
   onMutate: (path: string, method: string, payload: unknown, success: string, reload?: boolean) => Promise<void>
   onNotice: (notice: Notice) => void
   session: Session
@@ -343,8 +363,6 @@ function AppView({
     return (
       <AdminPanel
         baseDN={session.baseDN}
-        directory={directory}
-        disabled={mutating}
         onMutate={onMutate}
       />
     )
@@ -354,7 +372,7 @@ function AppView({
     return (
       <DirectorySearchView
         fixedType="users"
-        onNavigate={onNavigate}
+        onMutate={onMutate}
         onNotice={onNotice}
         session={session}
       />
@@ -365,7 +383,7 @@ function AppView({
     return (
       <DirectorySearchView
         fixedType="groups"
-        onNavigate={onNavigate}
+        onMutate={onMutate}
         onNotice={onNotice}
         session={session}
       />
@@ -376,7 +394,7 @@ function AppView({
     return (
       <DirectorySearchView
         fixedType="ous"
-        onNavigate={onNavigate}
+        onMutate={onMutate}
         onNotice={onNotice}
         session={session}
       />
@@ -384,18 +402,18 @@ function AppView({
   }
 
   return (
-    <DirectorySearchView onNavigate={onNavigate} onNotice={onNotice} session={session} />
+    <DirectorySearchView onMutate={onMutate} onNotice={onNotice} session={session} />
   )
 }
 
 function DirectorySearchView({
   fixedType,
-  onNavigate,
+  onMutate,
   onNotice,
   session,
 }: {
   fixedType?: Exclude<DirectorySearchType, "all">
-  onNavigate: (view: ViewId) => void
+  onMutate: (path: string, method: string, payload: unknown, success: string, reload?: boolean) => Promise<void>
   onNotice: (notice: Notice) => void
   session: Session
 }) {
@@ -417,8 +435,16 @@ function DirectorySearchView({
     error?: string
     loading: boolean
   }>({ loading: false })
+  const [workflow, setWorkflow] = useState<AdminWorkflow>()
+  const [deleteTarget, setDeleteTarget] = useState<EntrySummary>()
 
   const effectiveType = fixedType ?? entryType
+
+  function changeSearchQuery(value: string) {
+    setQuery(value)
+    setPage(1)
+    setSubmittedQuery(value.trim())
+  }
 
   useEffect(() => {
     setEntryType(fixedType ?? "all")
@@ -483,10 +509,16 @@ function DirectorySearchView({
     }
   }, [detailRetryKey, selectedEntry])
 
+  function runSearch() {
+    const input = document.getElementById("directory-search")
+    const nextQuery = input instanceof HTMLInputElement ? input.value : query
+    setPage(1)
+    setSubmittedQuery(nextQuery.trim())
+  }
+
   function submit(event: FormEvent) {
     event.preventDefault()
-    setPage(1)
-    setSubmittedQuery(query.trim())
+    runSearch()
   }
 
   async function copyDN(entry: EntrySummary) {
@@ -517,6 +549,21 @@ function DirectorySearchView({
     setSelectedEntry(undefined)
   }
 
+  async function runAdminMutation(path: string, method: string, payload: unknown, success: string) {
+    try {
+      await onMutate(path, method, payload, success)
+      setWorkflow(undefined)
+      setDeleteTarget(undefined)
+      if (deleteTarget && selectedEntry?.dn === deleteTarget.dn) {
+        setSelectedEntry(undefined)
+      }
+      setRetryKey((current) => current + 1)
+      setDetailRetryKey((current) => current + 1)
+    } catch {
+      setDetailRetryKey((current) => current + 1)
+    }
+  }
+
   const data = search.data
   const range = data ? resultRange(data) : ""
   const title = fixedType ? `${directoryTypeLabel(fixedType)} search` : "Directory search"
@@ -536,17 +583,24 @@ function DirectorySearchView({
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          {session.roles.admin ? (
+            <AdminCreateActions
+              fixedType={fixedType}
+              onCreate={(entryType) => setWorkflow({ kind: "create", entryType })}
+            />
+          ) : null}
+
           <form className="flex flex-col gap-3 lg:flex-row lg:items-end" onSubmit={submit}>
             <Field className="min-w-0 flex-1">
               <FieldLabel htmlFor="directory-search">Search directory</FieldLabel>
               <div className="flex gap-2">
                 <Input
                   id="directory-search"
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => changeSearchQuery(event.target.value)}
                   placeholder="uid, cn, mail, DN, group, OU"
                   value={query}
                 />
-                <Button type="submit">
+                <Button onClick={runSearch} type="button">
                   <Search data-icon="inline-start" />
                   Search
                 </Button>
@@ -648,7 +702,7 @@ function DirectorySearchView({
                 entries={data.entries}
                 onCopyDN={copyDN}
                 onSelect={setSelectedEntry}
-                onAdmin={() => onNavigate("admin")}
+                onAdmin={setSelectedEntry}
                 selectedDN={selectedEntry?.dn}
                 showAdminAction={session.roles.admin}
               />
@@ -677,16 +731,40 @@ function DirectorySearchView({
       <DirectoryDetailSheet
         detail={detail}
         entry={selectedEntry}
-        onAdmin={() => onNavigate("admin")}
         onCopyDN={copyDN}
         onCopyValue={copyDetailValue}
+        onDelete={(entry) => setDeleteTarget(entry)}
+        onEdit={(entry) => setWorkflow({ kind: "edit", entry })}
+        onManageMembers={(entry) => setWorkflow({ kind: "members", entry })}
         onOpenChange={(open) => {
           if (!open) {
             setSelectedEntry(undefined)
           }
         }}
         onRetry={() => setDetailRetryKey((current) => current + 1)}
+        onResetPassword={(entry) => setWorkflow({ kind: "reset", entry })}
         showAdminActions={session.roles.admin}
+      />
+
+      <AdminWorkflowDialog
+        baseDN={session.baseDN}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWorkflow(undefined)
+          }
+        }}
+        onSubmit={runAdminMutation}
+        workflow={workflow}
+      />
+
+      <DeleteEntryDialog
+        entry={deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(undefined)
+          }
+        }}
+        onSubmit={runAdminMutation}
       />
     </div>
   )
@@ -727,7 +805,7 @@ function SearchResults({
   showAdminAction,
 }: {
   entries: EntrySummary[]
-  onAdmin: () => void
+  onAdmin: (entry: EntrySummary) => void
   onCopyDN: (entry: EntrySummary) => void
   onSelect: (entry: EntrySummary) => void
   selectedDN?: string
@@ -813,7 +891,7 @@ function RowActions({
 }: {
   entry: EntrySummary
   isSelected: boolean
-  onAdmin: () => void
+  onAdmin: (entry: EntrySummary) => void
   onCopyDN: (entry: EntrySummary) => void
   onSelect: (entry: EntrySummary) => void
   showAdminAction: boolean
@@ -828,10 +906,10 @@ function RowActions({
         <Copy data-icon="inline-start" />
         Copy DN
       </Button>
-      {showAdminAction ? (
-        <Button onClick={onAdmin} size="sm" type="button" variant="ghost">
+      {showAdminAction && isAdminWorkflowEntry(entry.type) ? (
+        <Button onClick={() => onAdmin(entry)} size="sm" type="button" variant="ghost">
           <Settings2 data-icon="inline-start" />
-          Admin
+          Actions
         </Button>
       ) : null}
     </div>
@@ -901,11 +979,14 @@ function ResultPagination({
 function DirectoryDetailSheet({
   detail,
   entry,
-  onAdmin,
   onCopyDN,
   onCopyValue,
+  onDelete,
+  onEdit,
+  onManageMembers,
   onOpenChange,
   onRetry,
+  onResetPassword,
   showAdminActions,
 }: {
   detail: {
@@ -914,11 +995,14 @@ function DirectoryDetailSheet({
     loading: boolean
   }
   entry?: EntrySummary
-  onAdmin: () => void
   onCopyDN: (entry: EntrySummary) => void
   onCopyValue: (value: string, label: string) => void
+  onDelete: (entry: EntrySummary) => void
+  onEdit: (entry: EntryDetail) => void
+  onManageMembers: (entry: EntryDetail) => void
   onOpenChange: (open: boolean) => void
   onRetry: () => void
+  onResetPassword: (entry: EntrySummary) => void
   showAdminActions: boolean
 }) {
   const loadedEntry = detail.data?.entry
@@ -928,6 +1012,8 @@ function DirectoryDetailSheet({
   const objectClasses = loadedEntry?.attributes.objectclass ?? (displayEntry ? [displayEntry.objectClass] : [])
   const members = loadedEntry?.members ?? []
   const memberOf = loadedEntry?.memberOf ?? []
+  const canEdit = Boolean(loadedEntry && isAdminWorkflowEntry(loadedEntry.type))
+  const canDelete = Boolean(displayEntry && isAdminWorkflowEntry(displayEntry.type))
 
   return (
     <Sheet open={Boolean(entry)} onOpenChange={onOpenChange}>
@@ -982,26 +1068,30 @@ function DirectoryDetailSheet({
                 </Button>
                 {showAdminActions ? (
                   <>
-                    <Button onClick={onAdmin} size="sm" type="button" variant="outline">
-                      <Pencil data-icon="inline-start" />
-                      Edit entry
-                    </Button>
+                    {loadedEntry && canEdit ? (
+                      <Button onClick={() => onEdit(loadedEntry)} size="sm" type="button" variant="outline">
+                        <Pencil data-icon="inline-start" />
+                        Edit entry
+                      </Button>
+                    ) : null}
                     {displayEntry.type === "user" ? (
-                      <Button onClick={onAdmin} size="sm" type="button" variant="outline">
+                      <Button onClick={() => onResetPassword(displayEntry)} size="sm" type="button" variant="outline">
                         <KeyRound data-icon="inline-start" />
                         Reset password
                       </Button>
                     ) : null}
-                    {displayEntry.type === "group" ? (
-                      <Button onClick={onAdmin} size="sm" type="button" variant="outline">
+                    {displayEntry.type === "group" && loadedEntry ? (
+                      <Button onClick={() => onManageMembers(loadedEntry)} size="sm" type="button" variant="outline">
                         <Users data-icon="inline-start" />
                         Manage members
                       </Button>
                     ) : null}
-                    <Button onClick={onAdmin} size="sm" type="button" variant="destructive">
-                      <Trash2 data-icon="inline-start" />
-                      Delete entry
-                    </Button>
+                    {canDelete ? (
+                      <Button onClick={() => onDelete(displayEntry)} size="sm" type="button" variant="destructive">
+                        <Trash2 data-icon="inline-start" />
+                        Delete entry
+                      </Button>
+                    ) : null}
                   </>
                 ) : null}
               </div>
@@ -1110,6 +1200,15 @@ function DetailValue({
   )
 }
 
+function TargetDN({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-md border p-3">
+      <p className="text-sm font-medium">{label}</p>
+      <p className="break-all font-mono text-xs leading-relaxed text-muted-foreground">{value}</p>
+    </div>
+  )
+}
+
 function DetailList({
   empty = "None",
   label,
@@ -1151,6 +1250,524 @@ function DetailDatum({ label, value }: { label: string; value: string }) {
   )
 }
 
+function AdminCreateActions({
+  fixedType,
+  onCreate,
+}: {
+  fixedType?: Exclude<DirectorySearchType, "all">
+  onCreate: (entryType: WorkflowType) => void
+}) {
+  const types: WorkflowType[] = fixedType === "users"
+    ? ["user"]
+    : fixedType === "groups"
+      ? ["group"]
+      : fixedType === "ous"
+        ? ["ou"]
+        : ["user", "group", "ou"]
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {types.map((entryType) => (
+        <Button key={entryType} onClick={() => onCreate(entryType)} size="sm" type="button" variant="outline">
+          <Plus data-icon="inline-start" />
+          Create {workflowTypeLabel(entryType)}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
+function AdminWorkflowDialog({
+  baseDN,
+  onOpenChange,
+  onSubmit,
+  workflow,
+}: {
+  baseDN: string
+  onOpenChange: (open: boolean) => void
+  onSubmit: (path: string, method: string, payload: unknown, success: string) => Promise<void>
+  workflow?: AdminWorkflow
+}) {
+  const title = workflow ? workflowTitle(workflow) : "Admin workflow"
+  const description = workflow ? workflowDescription(workflow) : ""
+
+  return (
+    <Dialog open={Boolean(workflow)} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        {workflow ? (
+          <AdminWorkflowForm
+            baseDN={baseDN}
+            key={workflowKey(workflow)}
+            onCancel={() => onOpenChange(false)}
+            onSubmit={onSubmit}
+            workflow={workflow}
+          />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function AdminWorkflowForm({
+  baseDN,
+  onCancel,
+  onSubmit,
+  workflow,
+}: {
+  baseDN: string
+  onCancel: () => void
+  onSubmit: (path: string, method: string, payload: unknown, success: string) => Promise<void>
+  workflow: AdminWorkflow
+}) {
+  if (workflow.kind === "create") {
+    if (workflow.entryType === "user") {
+      return <CreateUserWorkflow baseDN={baseDN} onCancel={onCancel} onSubmit={onSubmit} />
+    }
+    if (workflow.entryType === "group") {
+      return <CreateGroupWorkflow baseDN={baseDN} onCancel={onCancel} onSubmit={onSubmit} />
+    }
+    return <CreateOUWorkflow baseDN={baseDN} onCancel={onCancel} onSubmit={onSubmit} />
+  }
+  if (workflow.kind === "edit") {
+    if (workflow.entry.type === "user") {
+      return <EditUserWorkflow entry={workflow.entry} onCancel={onCancel} onSubmit={onSubmit} />
+    }
+    if (workflow.entry.type === "group") {
+      return <EditGroupWorkflow entry={workflow.entry} onCancel={onCancel} onSubmit={onSubmit} />
+    }
+    return <EditOUWorkflow entry={workflow.entry} onCancel={onCancel} onSubmit={onSubmit} />
+  }
+  if (workflow.kind === "reset") {
+    return <ResetPasswordWorkflow entry={workflow.entry} onCancel={onCancel} onSubmit={onSubmit} />
+  }
+  return <ManageMembersWorkflow entry={workflow.entry} onCancel={onCancel} onSubmit={onSubmit} />
+}
+
+function CreateUserWorkflow({
+  baseDN,
+  onCancel,
+  onSubmit,
+}: {
+  baseDN: string
+  onCancel: () => void
+  onSubmit: (path: string, method: string, payload: unknown, success: string) => Promise<void>
+}) {
+  const [form, setForm] = useState({
+    parentDN: `ou=users,${baseDN}`,
+    uid: "",
+    cn: "",
+    sn: "",
+    givenName: "",
+    mail: "",
+    password: "",
+    attributes: "",
+  })
+  const [error, setError] = useState("")
+
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        const missing = requiredMessage([
+          ["Parent DN", form.parentDN],
+          ["UID", form.uid],
+          ["Common name", form.cn],
+          ["Surname", form.sn],
+          ["Initial password", form.password],
+        ])
+        if (missing) {
+          setError(missing)
+          return
+        }
+        void onSubmit("/api/users", "POST", { ...form, attributes: parseAttributes(form.attributes) }, "User created.")
+      }}
+    >
+      <WorkflowError message={error} />
+      <FieldGroup className="grid gap-4 md:grid-cols-2">
+        <TextField id="create-user-parent" label="Parent DN" value={form.parentDN} onChange={(parentDN) => setForm({ ...form, parentDN })} />
+        <TextField id="create-user-uid" label="UID" value={form.uid} onChange={(uid) => setForm({ ...form, uid })} />
+        <TextField id="create-user-cn" label="Common name" value={form.cn} onChange={(cn) => setForm({ ...form, cn })} />
+        <TextField id="create-user-sn" label="Surname" value={form.sn} onChange={(sn) => setForm({ ...form, sn })} />
+        <TextField id="create-user-given" label="Given name" value={form.givenName} onChange={(givenName) => setForm({ ...form, givenName })} />
+        <TextField id="create-user-mail" label="Email" value={form.mail} onChange={(mail) => setForm({ ...form, mail })} type="email" />
+        <TextField id="create-user-password" label="Initial password" value={form.password} onChange={(password) => setForm({ ...form, password })} type="password" />
+      </FieldGroup>
+      <AttributesField id="create-user-attributes" value={form.attributes} onChange={(attributes) => setForm({ ...form, attributes })} />
+      <WorkflowFooter onCancel={onCancel} submitLabel="Create user" />
+    </form>
+  )
+}
+
+function CreateGroupWorkflow({
+  baseDN,
+  onCancel,
+  onSubmit,
+}: {
+  baseDN: string
+  onCancel: () => void
+  onSubmit: (path: string, method: string, payload: unknown, success: string) => Promise<void>
+}) {
+  const [form, setForm] = useState({
+    parentDN: `ou=groups,${baseDN}`,
+    cn: "",
+    description: "",
+    members: "",
+    attributes: "",
+  })
+  const [error, setError] = useState("")
+
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        const missing = requiredMessage([
+          ["Parent DN", form.parentDN],
+          ["CN", form.cn],
+          ["Members", form.members],
+        ])
+        const memberError = validateMemberDNs(form.members)
+        if (missing || memberError) {
+          setError(missing || memberError)
+          return
+        }
+        void onSubmit(
+          "/api/groups",
+          "POST",
+          { ...form, members: lines(form.members), attributes: parseAttributes(form.attributes) },
+          "Group created."
+        )
+      }}
+    >
+      <WorkflowError message={error} />
+      <FieldGroup className="grid gap-4 md:grid-cols-2">
+        <TextField id="create-group-parent" label="Parent DN" value={form.parentDN} onChange={(parentDN) => setForm({ ...form, parentDN })} />
+        <TextField id="create-group-cn" label="CN" value={form.cn} onChange={(cn) => setForm({ ...form, cn })} />
+        <TextField id="create-group-description" label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
+      </FieldGroup>
+      <LinesField id="create-group-members" label="Members" value={form.members} onChange={(members) => setForm({ ...form, members })} />
+      <AttributesField id="create-group-attributes" value={form.attributes} onChange={(attributes) => setForm({ ...form, attributes })} />
+      <WorkflowFooter onCancel={onCancel} submitLabel="Create group" />
+    </form>
+  )
+}
+
+function CreateOUWorkflow({
+  baseDN,
+  onCancel,
+  onSubmit,
+}: {
+  baseDN: string
+  onCancel: () => void
+  onSubmit: (path: string, method: string, payload: unknown, success: string) => Promise<void>
+}) {
+  const [form, setForm] = useState({ parentDN: baseDN, ou: "", description: "", attributes: "" })
+  const [error, setError] = useState("")
+
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        const missing = requiredMessage([
+          ["Parent DN", form.parentDN],
+          ["OU", form.ou],
+        ])
+        if (missing) {
+          setError(missing)
+          return
+        }
+        void onSubmit("/api/ous", "POST", { ...form, attributes: parseAttributes(form.attributes) }, "OU created.")
+      }}
+    >
+      <WorkflowError message={error} />
+      <FieldGroup className="grid gap-4 md:grid-cols-2">
+        <TextField id="create-ou-parent" label="Parent DN" value={form.parentDN} onChange={(parentDN) => setForm({ ...form, parentDN })} />
+        <TextField id="create-ou-name" label="OU" value={form.ou} onChange={(ou) => setForm({ ...form, ou })} />
+        <TextField id="create-ou-description" label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
+      </FieldGroup>
+      <AttributesField id="create-ou-attributes" value={form.attributes} onChange={(attributes) => setForm({ ...form, attributes })} />
+      <WorkflowFooter onCancel={onCancel} submitLabel="Create OU" />
+    </form>
+  )
+}
+
+function EditUserWorkflow({
+  entry,
+  onCancel,
+  onSubmit,
+}: {
+  entry: EntryDetail
+  onCancel: () => void
+  onSubmit: (path: string, method: string, payload: unknown, success: string) => Promise<void>
+}) {
+  const [form, setForm] = useState({
+    cn: firstAttribute(entry, "cn") || entry.name,
+    sn: firstAttribute(entry, "sn"),
+    givenName: firstAttribute(entry, "givenname"),
+    mail: firstAttribute(entry, "mail") || entry.mail || "",
+    attributes: attributesToText(entry.attributes, ["uid", "cn", "sn", "givenname", "mail", ...protectedExtraAttributes]),
+  })
+  const [error, setError] = useState("")
+
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        const missing = requiredMessage([
+          ["Common name", form.cn],
+          ["Surname", form.sn],
+        ])
+        if (missing) {
+          setError(missing)
+          return
+        }
+        void onSubmit(
+          `/api/users?dn=${encodeURIComponent(entry.dn)}`,
+          "PUT",
+          { dn: entry.dn, ...form, attributes: parseAttributes(form.attributes) },
+          "User updated."
+        )
+      }}
+    >
+      <WorkflowError message={error} />
+      <TargetDN label="Target DN" value={entry.dn} />
+      <FieldGroup className="grid gap-4 md:grid-cols-2">
+        <TextField id="edit-user-cn" label="Common name" value={form.cn} onChange={(cn) => setForm({ ...form, cn })} />
+        <TextField id="edit-user-sn" label="Surname" value={form.sn} onChange={(sn) => setForm({ ...form, sn })} />
+        <TextField id="edit-user-given" label="Given name" value={form.givenName} onChange={(givenName) => setForm({ ...form, givenName })} />
+        <TextField id="edit-user-mail" label="Email" value={form.mail} onChange={(mail) => setForm({ ...form, mail })} type="email" />
+      </FieldGroup>
+      <AttributesField id="edit-user-attributes" value={form.attributes} onChange={(attributes) => setForm({ ...form, attributes })} />
+      <WorkflowFooter onCancel={onCancel} submitLabel="Save user" />
+    </form>
+  )
+}
+
+function EditGroupWorkflow({
+  entry,
+  onCancel,
+  onSubmit,
+}: {
+  entry: EntryDetail
+  onCancel: () => void
+  onSubmit: (path: string, method: string, payload: unknown, success: string) => Promise<void>
+}) {
+  const [form, setForm] = useState({
+    description: firstAttribute(entry, "description") || entry.description || "",
+    members: entry.members?.join("\n") ?? "",
+    attributes: attributesToText(entry.attributes, ["cn", "description", "member", ...protectedExtraAttributes]),
+  })
+  const [error, setError] = useState("")
+
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        const memberError = validateMemberDNs(form.members)
+        if (memberError) {
+          setError(memberError)
+          return
+        }
+        void onSubmit(
+          `/api/groups?dn=${encodeURIComponent(entry.dn)}`,
+          "PUT",
+          { dn: entry.dn, description: form.description, members: lines(form.members), attributes: parseAttributes(form.attributes) },
+          "Group updated."
+        )
+      }}
+    >
+      <WorkflowError message={error} />
+      <TargetDN label="Target DN" value={entry.dn} />
+      <TextField id="edit-group-description" label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
+      <LinesField id="edit-group-members" label="Members" value={form.members} onChange={(members) => setForm({ ...form, members })} />
+      <AttributesField id="edit-group-attributes" value={form.attributes} onChange={(attributes) => setForm({ ...form, attributes })} />
+      <WorkflowFooter onCancel={onCancel} submitLabel="Save group" />
+    </form>
+  )
+}
+
+function EditOUWorkflow({
+  entry,
+  onCancel,
+  onSubmit,
+}: {
+  entry: EntryDetail
+  onCancel: () => void
+  onSubmit: (path: string, method: string, payload: unknown, success: string) => Promise<void>
+}) {
+  const [form, setForm] = useState({
+    description: firstAttribute(entry, "description") || entry.description || "",
+    attributes: attributesToText(entry.attributes, ["ou", "description", ...protectedExtraAttributes]),
+  })
+
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void onSubmit(
+          `/api/ous?dn=${encodeURIComponent(entry.dn)}`,
+          "PUT",
+          { dn: entry.dn, description: form.description, attributes: parseAttributes(form.attributes) },
+          "OU updated."
+        )
+      }}
+    >
+      <TargetDN label="Target DN" value={entry.dn} />
+      <TextField id="edit-ou-description" label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
+      <AttributesField id="edit-ou-attributes" value={form.attributes} onChange={(attributes) => setForm({ ...form, attributes })} />
+      <WorkflowFooter onCancel={onCancel} submitLabel="Save OU" />
+    </form>
+  )
+}
+
+function ResetPasswordWorkflow({
+  entry,
+  onCancel,
+  onSubmit,
+}: {
+  entry: EntrySummary
+  onCancel: () => void
+  onSubmit: (path: string, method: string, payload: unknown, success: string) => Promise<void>
+}) {
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        if (!password.trim()) {
+          setError("New password is required.")
+          return
+        }
+        void onSubmit("/api/users/password", "POST", { dn: entry.dn, password }, "Password reset.")
+      }}
+    >
+      <WorkflowError message={error} />
+      <TargetDN label="User DN" value={entry.dn} />
+      <TextField id="reset-password-value" label="New password" value={password} onChange={setPassword} type="password" />
+      <WorkflowFooter onCancel={onCancel} submitLabel="Reset password" />
+    </form>
+  )
+}
+
+function ManageMembersWorkflow({
+  entry,
+  onCancel,
+  onSubmit,
+}: {
+  entry: EntryDetail
+  onCancel: () => void
+  onSubmit: (path: string, method: string, payload: unknown, success: string) => Promise<void>
+}) {
+  const [members, setMembers] = useState(entry.members?.join("\n") ?? "")
+  const [error, setError] = useState("")
+
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        const memberError = validateMemberDNs(members)
+        if (memberError) {
+          setError(memberError)
+          return
+        }
+        void onSubmit(
+          `/api/groups?dn=${encodeURIComponent(entry.dn)}`,
+          "PUT",
+          {
+            dn: entry.dn,
+            description: firstAttribute(entry, "description") || entry.description || "",
+            members: lines(members),
+            attributes: parseAttributes(attributesToText(entry.attributes, ["cn", "description", "member", ...protectedExtraAttributes])),
+          },
+          "Members updated."
+        )
+      }}
+    >
+      <WorkflowError message={error} />
+      <TargetDN label="Group DN" value={entry.dn} />
+      <LinesField id="manage-members-values" label="Members" value={members} onChange={setMembers} />
+      <FieldDescription>Each member DN must point to an existing directory entry. The server validates references before saving.</FieldDescription>
+      <WorkflowFooter onCancel={onCancel} submitLabel="Save members" />
+    </form>
+  )
+}
+
+function DeleteEntryDialog({
+  entry,
+  onOpenChange,
+  onSubmit,
+}: {
+  entry?: EntrySummary
+  onOpenChange: (open: boolean) => void
+  onSubmit: (path: string, method: string, payload: unknown, success: string) => Promise<void>
+}) {
+  return (
+    <AlertDialog open={Boolean(entry)} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogMedia>
+            <Trash2 />
+          </AlertDialogMedia>
+          <AlertDialogTitle>Delete entry</AlertDialogTitle>
+          <AlertDialogDescription>
+            {entry ? `Delete ${entry.dn}? This cannot be undone and may fail if child entries still exist.` : ""}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (entry) {
+                void onSubmit(deletePath(entry), "DELETE", undefined, "Entry deleted.")
+              }
+            }}
+            variant="destructive"
+          >
+            Delete entry
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+function WorkflowError({ message }: { message: string }) {
+  if (!message) {
+    return null
+  }
+  return (
+    <Alert variant="destructive">
+      <AlertCircle />
+      <AlertTitle>Check the form</AlertTitle>
+      <AlertDescription>{message}</AlertDescription>
+    </Alert>
+  )
+}
+
+function WorkflowFooter({ onCancel, submitLabel }: { onCancel: () => void; submitLabel: string }) {
+  return (
+    <DialogFooter>
+      <Button onClick={onCancel} type="button" variant="outline">
+        Cancel
+      </Button>
+      <Button type="submit">{submitLabel}</Button>
+    </DialogFooter>
+  )
+}
+
 function AccountPanel({
   disabled,
   onMutate,
@@ -1170,7 +1787,9 @@ function AccountPanel({
       { password },
       "Your password was changed.",
       false
-    ).then(() => setPassword(""))
+    )
+      .then(() => setPassword(""))
+      .catch(() => undefined)
   }
 
   return (
@@ -1211,308 +1830,45 @@ function AccountPanel({
 
 function AdminPanel({
   baseDN,
-  directory,
-  disabled,
   onMutate,
 }: {
   baseDN: string
-  directory?: Directory
-  disabled: boolean
   onMutate: (path: string, method: string, payload: unknown, success: string, reload?: boolean) => Promise<void>
 }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Directory administration</CardTitle>
-        <CardDescription>Create and maintain users, groups, organizational units, and passwords.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Tabs defaultValue="users">
-          <TabsList>
-            <TabsTrigger value="users">Users</TabsTrigger>
-            <TabsTrigger value="groups">Groups</TabsTrigger>
-            <TabsTrigger value="ous">OUs</TabsTrigger>
-          </TabsList>
-          <TabsContent value="users" className="pt-4">
-            <UserForms baseDN={baseDN} disabled={disabled} directory={directory} onMutate={onMutate} />
-          </TabsContent>
-          <TabsContent value="groups" className="pt-4">
-            <GroupForms baseDN={baseDN} disabled={disabled} directory={directory} onMutate={onMutate} />
-          </TabsContent>
-          <TabsContent value="ous" className="pt-4">
-            <OUForms baseDN={baseDN} disabled={disabled} directory={directory} onMutate={onMutate} />
-          </TabsContent>
-        </Tabs>
-      </CardContent>
-    </Card>
-  )
-}
+  const [workflow, setWorkflow] = useState<AdminWorkflow>()
 
-function UserForms({
-  baseDN,
-  directory,
-  disabled,
-  onMutate,
-}: {
-  baseDN: string
-  directory?: Directory
-  disabled: boolean
-  onMutate: (path: string, method: string, payload: unknown, success: string, reload?: boolean) => Promise<void>
-}) {
-  const userDN = directory?.users[0]?.dn ?? `uid=admin,ou=users,${baseDN}`
-  const [create, setCreate] = useState({
-    parentDN: `ou=users,${baseDN}`,
-    uid: "",
-    cn: "",
-    sn: "",
-    mail: "",
-    password: "",
-    attributes: "",
-  })
-  const [update, setUpdate] = useState({
-    dn: userDN,
-    cn: "",
-    sn: "",
-    givenName: "",
-    mail: "",
-    attributes: "",
-  })
-  const [reset, setReset] = useState({ dn: userDN, password: "" })
-  const [deleteDN, setDeleteDN] = useState(userDN)
+  async function runAdminMutation(path: string, method: string, payload: unknown, success: string) {
+    try {
+      await onMutate(path, method, payload, success)
+      setWorkflow(undefined)
+    } catch {
+      // Keep the dialog open so the global error notice remains actionable.
+    }
+  }
 
   return (
-    <div className="flex flex-col gap-6">
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void onMutate(
-            "/api/users",
-            "POST",
-            { ...create, attributes: parseAttributes(create.attributes) },
-            "User created."
-          )
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Start an admin workflow</CardTitle>
+          <CardDescription>Create entries here. Use search results and entry details to edit, reset, manage members, or delete.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AdminCreateActions onCreate={(entryType) => setWorkflow({ kind: "create", entryType })} />
+        </CardContent>
+      </Card>
+
+      <AdminWorkflowDialog
+        baseDN={baseDN}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWorkflow(undefined)
+          }
         }}
-      >
-        <FieldSet>
-          <FieldLegend>Create user</FieldLegend>
-          <FieldGroup className="grid gap-4 md:grid-cols-2">
-            <TextField id="create-user-parent" label="Parent DN" value={create.parentDN} onChange={(parentDN) => setCreate({ ...create, parentDN })} />
-            <TextField id="create-user-uid" label="UID" value={create.uid} onChange={(uid) => setCreate({ ...create, uid })} />
-            <TextField id="create-user-cn" label="Common name" value={create.cn} onChange={(cn) => setCreate({ ...create, cn })} />
-            <TextField id="create-user-sn" label="Surname" value={create.sn} onChange={(sn) => setCreate({ ...create, sn })} />
-            <TextField id="create-user-mail" label="Email" value={create.mail} onChange={(mail) => setCreate({ ...create, mail })} type="email" />
-            <TextField id="create-user-password" label="Initial password" value={create.password} onChange={(password) => setCreate({ ...create, password })} type="password" />
-          </FieldGroup>
-          <AttributesField id="create-user-attributes" value={create.attributes} onChange={(attributes) => setCreate({ ...create, attributes })} />
-        </FieldSet>
-        <Button disabled={disabled} type="submit">Create user</Button>
-      </form>
-
-      <FieldSeparator>Update</FieldSeparator>
-
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void onMutate(
-            `/api/users?dn=${encodeURIComponent(update.dn)}`,
-            "PUT",
-            { ...update, attributes: parseAttributes(update.attributes) },
-            "User updated."
-          )
-        }}
-      >
-        <FieldSet>
-          <FieldLegend>Edit user</FieldLegend>
-          <FieldGroup className="grid gap-4 md:grid-cols-2">
-            <TextField id="update-user-dn" label="Target DN" value={update.dn} onChange={(dn) => setUpdate({ ...update, dn })} />
-            <TextField id="update-user-cn" label="Common name" value={update.cn} onChange={(cn) => setUpdate({ ...update, cn })} />
-            <TextField id="update-user-sn" label="Surname" value={update.sn} onChange={(sn) => setUpdate({ ...update, sn })} />
-            <TextField id="update-user-given" label="Given name" value={update.givenName} onChange={(givenName) => setUpdate({ ...update, givenName })} />
-            <TextField id="update-user-mail" label="Email" value={update.mail} onChange={(mail) => setUpdate({ ...update, mail })} type="email" />
-          </FieldGroup>
-          <AttributesField id="update-user-attributes" value={update.attributes} onChange={(attributes) => setUpdate({ ...update, attributes })} />
-        </FieldSet>
-        <Button disabled={disabled} type="submit">Save user</Button>
-      </form>
-
-      <FieldSeparator>Password</FieldSeparator>
-
-      <form
-        className="grid gap-4 md:grid-cols-[1fr_1fr_auto]"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void onMutate("/api/users/password", "POST", reset, "Password reset.").then(() =>
-            setReset({ ...reset, password: "" })
-          )
-        }}
-      >
-        <TextField id="reset-user-dn" label="User DN" value={reset.dn} onChange={(dn) => setReset({ ...reset, dn })} />
-        <TextField id="reset-user-password" label="New password" value={reset.password} onChange={(password) => setReset({ ...reset, password })} type="password" />
-        <Button className="self-end" disabled={disabled || reset.password === ""} type="submit">Reset</Button>
-      </form>
-
-      <DeleteForm disabled={disabled} dn={deleteDN} id="delete-user-dn" label="Delete user" onChange={setDeleteDN} onSubmit={() => onMutate(`/api/users?dn=${encodeURIComponent(deleteDN)}`, "DELETE", undefined, "User deleted.")} />
-    </div>
-  )
-}
-
-function GroupForms({
-  baseDN,
-  directory,
-  disabled,
-  onMutate,
-}: {
-  baseDN: string
-  directory?: Directory
-  disabled: boolean
-  onMutate: (path: string, method: string, payload: unknown, success: string, reload?: boolean) => Promise<void>
-}) {
-  const memberDN = directory?.users[0]?.dn ?? `uid=admin,ou=users,${baseDN}`
-  const groupDN = directory?.groups[0]?.dn ?? `cn=ldaplite.admin,ou=groups,${baseDN}`
-  const [create, setCreate] = useState({
-    parentDN: `ou=groups,${baseDN}`,
-    cn: "",
-    description: "",
-    members: memberDN,
-    attributes: "",
-  })
-  const [update, setUpdate] = useState({
-    dn: groupDN,
-    description: "",
-    members: memberDN,
-    attributes: "",
-  })
-  const [deleteDN, setDeleteDN] = useState(groupDN)
-
-  return (
-    <div className="flex flex-col gap-6">
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void onMutate(
-            "/api/groups",
-            "POST",
-            { ...create, members: lines(create.members), attributes: parseAttributes(create.attributes) },
-            "Group created."
-          )
-        }}
-      >
-        <FieldSet>
-          <FieldLegend>Create group</FieldLegend>
-          <FieldGroup className="grid gap-4 md:grid-cols-2">
-            <TextField id="create-group-parent" label="Parent DN" value={create.parentDN} onChange={(parentDN) => setCreate({ ...create, parentDN })} />
-            <TextField id="create-group-cn" label="CN" value={create.cn} onChange={(cn) => setCreate({ ...create, cn })} />
-            <TextField id="create-group-description" label="Description" value={create.description} onChange={(description) => setCreate({ ...create, description })} />
-          </FieldGroup>
-          <LinesField id="create-group-members" label="Members" value={create.members} onChange={(members) => setCreate({ ...create, members })} />
-          <AttributesField id="create-group-attributes" value={create.attributes} onChange={(attributes) => setCreate({ ...create, attributes })} />
-        </FieldSet>
-        <Button disabled={disabled} type="submit">Create group</Button>
-      </form>
-
-      <FieldSeparator>Update</FieldSeparator>
-
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void onMutate(
-            `/api/groups?dn=${encodeURIComponent(update.dn)}`,
-            "PUT",
-            { ...update, members: lines(update.members), attributes: parseAttributes(update.attributes) },
-            "Group updated."
-          )
-        }}
-      >
-        <FieldSet>
-          <FieldLegend>Edit group membership</FieldLegend>
-          <FieldGroup className="grid gap-4 md:grid-cols-2">
-            <TextField id="update-group-dn" label="Group DN" value={update.dn} onChange={(dn) => setUpdate({ ...update, dn })} />
-            <TextField id="update-group-description" label="Description" value={update.description} onChange={(description) => setUpdate({ ...update, description })} />
-          </FieldGroup>
-          <LinesField id="update-group-members" label="Members" value={update.members} onChange={(members) => setUpdate({ ...update, members })} />
-          <AttributesField id="update-group-attributes" value={update.attributes} onChange={(attributes) => setUpdate({ ...update, attributes })} />
-        </FieldSet>
-        <Button disabled={disabled} type="submit">Save group</Button>
-      </form>
-
-      <DeleteForm disabled={disabled} dn={deleteDN} id="delete-group-dn" label="Delete group" onChange={setDeleteDN} onSubmit={() => onMutate(`/api/groups?dn=${encodeURIComponent(deleteDN)}`, "DELETE", undefined, "Group deleted.")} />
-    </div>
-  )
-}
-
-function OUForms({
-  baseDN,
-  directory,
-  disabled,
-  onMutate,
-}: {
-  baseDN: string
-  directory?: Directory
-  disabled: boolean
-  onMutate: (path: string, method: string, payload: unknown, success: string, reload?: boolean) => Promise<void>
-}) {
-  const ouDN = directory?.ous[0]?.dn ?? `ou=users,${baseDN}`
-  const [create, setCreate] = useState({ parentDN: baseDN, ou: "", description: "", attributes: "" })
-  const [update, setUpdate] = useState({ dn: ouDN, description: "", attributes: "" })
-  const [deleteDN, setDeleteDN] = useState(ouDN)
-
-  return (
-    <div className="flex flex-col gap-6">
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void onMutate(
-            "/api/ous",
-            "POST",
-            { ...create, attributes: parseAttributes(create.attributes) },
-            "OU created."
-          )
-        }}
-      >
-        <FieldSet>
-          <FieldLegend>Create OU</FieldLegend>
-          <FieldGroup className="grid gap-4 md:grid-cols-2">
-            <TextField id="create-ou-parent" label="Parent DN" value={create.parentDN} onChange={(parentDN) => setCreate({ ...create, parentDN })} />
-            <TextField id="create-ou-name" label="OU" value={create.ou} onChange={(ou) => setCreate({ ...create, ou })} />
-            <TextField id="create-ou-description" label="Description" value={create.description} onChange={(description) => setCreate({ ...create, description })} />
-          </FieldGroup>
-          <AttributesField id="create-ou-attributes" value={create.attributes} onChange={(attributes) => setCreate({ ...create, attributes })} />
-        </FieldSet>
-        <Button disabled={disabled} type="submit">Create OU</Button>
-      </form>
-
-      <FieldSeparator>Update</FieldSeparator>
-
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void onMutate(
-            `/api/ous?dn=${encodeURIComponent(update.dn)}`,
-            "PUT",
-            { ...update, attributes: parseAttributes(update.attributes) },
-            "OU updated."
-          )
-        }}
-      >
-        <FieldSet>
-          <FieldLegend>Edit OU</FieldLegend>
-          <FieldGroup className="grid gap-4 md:grid-cols-2">
-            <TextField id="update-ou-dn" label="OU DN" value={update.dn} onChange={(dn) => setUpdate({ ...update, dn })} />
-            <TextField id="update-ou-description" label="Description" value={update.description} onChange={(description) => setUpdate({ ...update, description })} />
-          </FieldGroup>
-          <AttributesField id="update-ou-attributes" value={update.attributes} onChange={(attributes) => setUpdate({ ...update, attributes })} />
-        </FieldSet>
-        <Button disabled={disabled} type="submit">Save OU</Button>
-      </form>
-
-      <DeleteForm disabled={disabled} dn={deleteDN} id="delete-ou-dn" label="Delete OU" onChange={setDeleteDN} onSubmit={() => onMutate(`/api/ous?dn=${encodeURIComponent(deleteDN)}`, "DELETE", undefined, "OU deleted.")} />
-    </div>
+        onSubmit={runAdminMutation}
+        workflow={workflow}
+      />
+    </>
   )
 }
 
@@ -1581,48 +1937,10 @@ function AttributesField({
   )
 }
 
-function DeleteForm({
-  disabled,
-  dn,
-  id,
-  label,
-  onChange,
-  onSubmit,
-}: {
-  disabled: boolean
-  dn: string
-  id: string
-  label: string
-  onChange: (value: string) => void
-  onSubmit: () => Promise<void>
-}) {
-  return (
-    <form
-      className="flex flex-col gap-4"
-      onSubmit={(event) => {
-        event.preventDefault()
-        void onSubmit()
-      }}
-    >
-      <FieldSet>
-        <FieldLegend>{label}</FieldLegend>
-        <TextField id={id} label="DN" value={dn} onChange={onChange} />
-        <FieldDescription>Deletion is immediate and may fail when child entries still exist.</FieldDescription>
-      </FieldSet>
-      <Button disabled={disabled || dn === ""} type="submit" variant="destructive">
-        {label}
-      </Button>
-    </form>
-  )
-}
-
 async function loadConsole(): Promise<LoadState> {
   try {
     const session = await fetchJSON<Session>("/api/session")
-    const directory = session.roles.directoryRead
-      ? await fetchJSON<Directory>("/api/directory")
-      : undefined
-    return { session, directory, loading: false }
+    return { session, loading: false }
   } catch (error) {
     return {
       loading: false,
@@ -1897,6 +2215,17 @@ function directoryTypeLabel(type: DirectorySearchType) {
   }
 }
 
+function workflowTypeLabel(type: WorkflowType) {
+  switch (type) {
+    case "user":
+      return "user"
+    case "group":
+      return "group"
+    case "ou":
+      return "OU"
+  }
+}
+
 function entryTypeLabel(type: DirectoryEntryType) {
   switch (type) {
     case "user":
@@ -1908,6 +2237,46 @@ function entryTypeLabel(type: DirectoryEntryType) {
     default:
       return "Entry"
   }
+}
+
+function isAdminWorkflowEntry(type: DirectoryEntryType): type is WorkflowType {
+  return type === "user" || type === "group" || type === "ou"
+}
+
+function workflowTitle(workflow: AdminWorkflow) {
+  if (workflow.kind === "create") {
+    return `Create ${workflowTypeLabel(workflow.entryType)}`
+  }
+  if (workflow.kind === "edit") {
+    return `Edit ${entryTypeLabel(workflow.entry.type).toLowerCase()}`
+  }
+  if (workflow.kind === "reset") {
+    return "Reset password"
+  }
+  return "Manage group members"
+}
+
+function workflowDescription(workflow: AdminWorkflow) {
+  if (workflow.kind === "create") {
+    return "Add a new entry below an existing parent DN."
+  }
+  if (workflow.kind === "edit") {
+    return "Update editable attributes for this entry. Protected attributes are rejected by the server."
+  }
+  if (workflow.kind === "reset") {
+    return "Set a new password for the selected user."
+  }
+  return "Add or remove member DNs for this group."
+}
+
+function workflowKey(workflow: AdminWorkflow) {
+  if (workflow.kind === "create") {
+    return `${workflow.kind}-${workflow.entryType}`
+  }
+  if (workflow.kind === "edit" || workflow.kind === "members") {
+    return `${workflow.kind}-${workflow.entry.dn}`
+  }
+  return `${workflow.kind}-${workflow.entry.dn}`
 }
 
 function entrySummaryText(entry: EntrySummary) {
@@ -1922,6 +2291,42 @@ function entrySummaryText(entry: EntrySummary) {
     return entry.description || "No description"
   }
   return entry.description || entry.objectClass
+}
+
+function requiredMessage(fields: Array<[string, string]>) {
+  const missing = fields.find(([, value]) => value.trim() === "")
+  return missing ? `${missing[0]} is required.` : ""
+}
+
+function validateMemberDNs(value: string) {
+  const invalid = lines(value).find((dn) => !dn.includes("=") || !dn.includes(","))
+  return invalid ? `Member DN is not valid: ${invalid}` : ""
+}
+
+function firstAttribute(entry: EntryDetail, name: string) {
+  return entry.attributes[name.toLowerCase()]?.[0] ?? entry.attributes[name]?.[0] ?? ""
+}
+
+function attributesToText(attributes: Record<string, string[]>, excluded: string[]) {
+  const excludedSet = new Set(excluded.map((name) => name.toLowerCase()))
+  return Object.entries(attributes)
+    .filter(([name]) => !excludedSet.has(name.toLowerCase()))
+    .flatMap(([name, values]) => values.map((value) => `${name}: ${value}`))
+    .join("\n")
+}
+
+function deletePath(entry: EntrySummary) {
+  const encoded = encodeURIComponent(entry.dn)
+  if (entry.type === "user") {
+    return `/api/users?dn=${encoded}`
+  }
+  if (entry.type === "group") {
+    return `/api/groups?dn=${encoded}`
+  }
+  if (entry.type === "ou") {
+    return `/api/ous?dn=${encoded}`
+  }
+  return `/api/directory/entry?dn=${encoded}`
 }
 
 function parentDN(dn: string) {

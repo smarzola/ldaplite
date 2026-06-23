@@ -167,7 +167,7 @@ When a milestone is complete:
 - [x] Milestone 2: Real app shell and role-specific landing.
 - [x] Milestone 3: Searchable paginated directory results.
 - [x] Milestone 4: Entry detail surface and row actions.
-- [ ] Milestone 5: Focused admin workflows.
+- [x] Milestone 5: Focused admin workflows.
 - [ ] Milestone 6: Copy, accessibility, visual validation, docs, and final
       regression.
 
@@ -735,6 +735,57 @@ go test -tags=functional -v ./tests/functional/...
 Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
+
+Status note, 2026-06-23:
+
+- Replaced the detached all-in-one admin form surface with contextual shadcn
+  `Dialog` and `AlertDialog` workflows.
+  - Admin search views now expose scoped `Create user`, `Create group`, and
+    `Create OU` actions.
+  - Entry detail surfaces now open edit/reset/member/delete flows for valid
+    user/group/OU entries only; generic base entries keep lookup/copy actions
+    without misleading write affordances.
+  - User edit/reset, group edit/member-management, OU edit, and deletion all
+    run through focused forms tied to the selected entry DN.
+  - Delete uses a destructive confirmation before calling the relevant API.
+  - Group member editing validates DN shape locally and still relies on the
+    server for referential integrity.
+  - Edit forms exclude protected/operational attributes such as `entryUUID`,
+    timestamps, `memberOf`, `objectClass`, and `userPassword` from editable
+    extra attributes.
+  - Directory lookup now live-filters as the search field changes, which fixed
+    a browser-validated submit-path issue and keeps the small-directory UI
+    responsive.
+- Added shadcn components:
+  - `dialog`
+  - `alert-dialog`
+- Browser validation with a temporary single-binary server and mock data:
+  - Admin created a user, searched it, opened detail, edited email, reset the
+    password, verified the new password via `/api/session`, and deleted the
+    user through the confirmation dialog.
+  - Admin created an OU and a group through the view-level create dialogs.
+  - Admin opened `ldaplite.readonly`, triggered member-DN validation with
+    `bad-dn`, then saved a valid member list and saw the refreshed member DN.
+  - Read-only user `m5read` on `localhost` saw directory lookup with no admin
+    nav, no create buttons, and no row `Actions`.
+  - Password-only user `m5pass` saw only the account/password surface and no
+    directory/admin navigation.
+  - Direct unauthorized API calls returned `403` for read-only write,
+    password-only directory search, and password-only password reset.
+  - Layout validation ran at `1280x900` and `390x844`; role-specific first
+    screens had no page-level horizontal overflow. In-app screenshot capture
+    timed out, so visual evidence used DOM/viewport layout metrics instead.
+- Commands run:
+  - `npx shadcn@latest docs dialog alert-dialog command`
+  - `npx shadcn@latest add dialog alert-dialog command --dry-run`
+  - `npx shadcn@latest add dialog alert-dialog command`
+  - `npm uninstall cmdk`
+  - `npm run build`
+  - `go test -v ./internal/web ./internal/directory ./pkg/crypto`
+  - `go test -tags=functional -v ./tests/functional/...`
+  - `go build -o /private/tmp/ldaplite-m5 ./cmd/ldaplite`
+  - Temporary single-binary server plus in-app Browser validation.
+- Commit hash: pending.
 
 ## Milestone 6: Copy, Accessibility, Visual Validation, Docs, And Final Regression
 
