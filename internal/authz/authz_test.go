@@ -61,13 +61,14 @@ func TestCapabilities(t *testing.T) {
 			},
 		},
 		{
-			name:  "password group user is not broader than default policy yet",
+			name:  "password group user gets account-only ui access",
 			actor: BoundUser(testPasswordDN),
 			groups: membershipMap(testPasswordDN, map[string]bool{
 				"cn=ldaplite.password,ou=groups,dc=example,dc=com": true,
 			}),
-			want: []Capability{DirectoryRead, UIRead, PasswordChangeSelf},
+			want: []Capability{UIRead, PasswordChangeSelf},
 			wantNot: []Capability{
+				DirectoryRead,
 				DirectoryWrite,
 				DirectoryManageGroups,
 				PasswordResetAny,
@@ -161,9 +162,9 @@ func TestCanWrite(t *testing.T) {
 	}{
 		{name: "unbound denied", want: false},
 		{name: "anonymous denied", actor: Actor{Bound: true}, want: false},
-		{name: "authenticated non admin denied", actor: BoundUser(testUserDN), want: false, wantChecks: 1},
+		{name: "authenticated non admin denied", actor: BoundUser(testUserDN), want: false, wantChecks: 2},
 		{name: "admin allowed", actor: BoundUser(testAdminDN), admin: true, want: true, wantChecks: 1},
-		{name: "read only denied", actor: BoundUser(testReadOnlyDN), want: false, wantChecks: 1},
+		{name: "read only denied", actor: BoundUser(testReadOnlyDN), want: false, wantChecks: 2},
 		{
 			name:       "membership error returned",
 			actor:      BoundUser(testUserDN),

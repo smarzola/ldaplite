@@ -76,6 +76,12 @@ func (s *Server) setupRoutes() {
 	adminProtected := func(handler http.HandlerFunc) http.Handler {
 		return auth.RequireCapability(authz.UIAdmin, middleware.RequireSameOrigin(handler))
 	}
+	passwordSelfProtected := func(handler http.HandlerFunc) http.Handler {
+		return auth.RequireCapability(authz.PasswordChangeSelf, middleware.RequireSameOrigin(handler))
+	}
+	passwordResetProtected := func(handler http.HandlerFunc) http.Handler {
+		return auth.RequireCapability(authz.PasswordResetAny, middleware.RequireSameOrigin(handler))
+	}
 
 	// Serve static CSS (no auth required)
 	s.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(mustSubFS(staticFS, "static")))))
@@ -106,6 +112,11 @@ func (s *Server) setupRoutes() {
 	// API routes
 	s.mux.Handle("/api/session", readProtected(apiHandler.Session))
 	s.mux.Handle("/api/directory", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(apiHandler.Directory)))
+	s.mux.Handle("/api/users", adminProtected(apiHandler.Users))
+	s.mux.Handle("/api/groups", adminProtected(apiHandler.Groups))
+	s.mux.Handle("/api/ous", adminProtected(apiHandler.OUs))
+	s.mux.Handle("/api/account/password", passwordSelfProtected(apiHandler.ChangeOwnPassword))
+	s.mux.Handle("/api/users/password", passwordResetProtected(apiHandler.ResetPassword))
 
 	// User routes
 	s.mux.Handle("/users", readProtected(userHandler.List))

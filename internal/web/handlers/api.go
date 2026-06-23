@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/smarzola/ldaplite/internal/authz"
+	"github.com/smarzola/ldaplite/internal/directory"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/internal/web/middleware"
@@ -15,8 +16,9 @@ import (
 )
 
 type APIHandler struct {
-	store store.Store
-	cfg   *config.Config
+	store   store.Store
+	cfg     *config.Config
+	service *directory.Service
 }
 
 type sessionResponse struct {
@@ -53,7 +55,11 @@ type entrySummary struct {
 }
 
 func NewAPIHandler(st store.Store, cfg *config.Config) *APIHandler {
-	return &APIHandler{store: st, cfg: cfg}
+	return &APIHandler{
+		store:   st,
+		cfg:     cfg,
+		service: directory.NewService(st, cfg),
+	}
 }
 
 func (h *APIHandler) Session(w http.ResponseWriter, r *http.Request) {

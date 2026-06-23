@@ -117,13 +117,13 @@ func TestCanWriteAccessPolicy(t *testing.T) {
 			name:       "authenticated non-admin write rejected",
 			bindDN:     strPtr("uid=jane,ou=users,dc=example,dc=com"),
 			want:       false,
-			wantChecks: 1,
+			wantChecks: 2,
 		},
 		{
 			name:       "read-only group member write rejected by default",
 			bindDN:     strPtr("uid=app,ou=users,dc=example,dc=com"),
 			want:       false,
-			wantChecks: 1,
+			wantChecks: 2,
 		},
 		{
 			name:       "membership check error returned",
@@ -186,7 +186,7 @@ func TestCanModifyAccessPolicy(t *testing.T) {
 			targetDN:   "uid=jane,ou=users,dc=example,dc=com",
 			changes:    replaceChange("mail", "jane@example.com"),
 			want:       false,
-			wantChecks: 1,
+			wantChecks: 2,
 		},
 		{
 			name:       "non-admin can replace own password",
@@ -194,7 +194,7 @@ func TestCanModifyAccessPolicy(t *testing.T) {
 			targetDN:   "UID=JANE,OU=USERS,DC=EXAMPLE,DC=COM",
 			changes:    replaceChange("userPassword", "NewPassword123!"),
 			want:       true,
-			wantChecks: 1,
+			wantChecks: 2,
 		},
 		{
 			name:       "non-admin cannot replace another user password",
@@ -202,7 +202,7 @@ func TestCanModifyAccessPolicy(t *testing.T) {
 			targetDN:   "uid=bob,ou=users,dc=example,dc=com",
 			changes:    replaceChange("userPassword", "NewPassword123!"),
 			want:       false,
-			wantChecks: 1,
+			wantChecks: 2,
 		},
 		{
 			name:     "non-admin cannot mix own password with ordinary attribute",
@@ -213,7 +213,7 @@ func TestCanModifyAccessPolicy(t *testing.T) {
 				replaceChange("mail", "jane@example.com")...,
 			),
 			want:       false,
-			wantChecks: 1,
+			wantChecks: 2,
 		},
 		{
 			name:       "non-admin cannot add own password value",
@@ -221,7 +221,7 @@ func TestCanModifyAccessPolicy(t *testing.T) {
 			targetDN:   "uid=jane,ou=users,dc=example,dc=com",
 			changes:    addChange("userPassword", "NewPassword123!"),
 			want:       false,
-			wantChecks: 1,
+			wantChecks: 2,
 		},
 		{
 			name:       "membership check error returned",
@@ -408,10 +408,17 @@ func (s *authzStore) GetUserPasswordHashByDN(ctx context.Context, dn string) (st
 
 func (s *authzStore) IsUserInGroup(ctx context.Context, userDN, groupDN string) (bool, error) {
 	s.checks++
-	if want := "cn=ldaplite.admin,ou=groups,dc=example,dc=com"; groupDN != want {
-		return false, fmt.Errorf("groupDN = %q, want %q", groupDN, want)
+	if s.err != nil {
+		return false, s.err
 	}
-	return s.admin, s.err
+	switch groupDN {
+	case "cn=ldaplite.admin,ou=groups,dc=example,dc=com":
+		return s.admin, nil
+	case "cn=ldaplite.password,ou=groups,dc=example,dc=com":
+		return false, nil
+	default:
+		return false, fmt.Errorf("unexpected groupDN = %q", groupDN)
+	}
 }
 
 func replaceChange(attr string, values ...string) []ldapmsg.ModifyChange {

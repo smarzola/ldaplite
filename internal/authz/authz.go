@@ -70,22 +70,31 @@ func (a *Authorizer) Capabilities(ctx context.Context, actor Actor) (Set, error)
 		return NewSet(), nil
 	}
 
-	capabilities := NewSet(DirectoryRead, PasswordChangeSelf, UIRead)
-
 	isAdmin, err := a.IsAdmin(ctx, actor.DN)
 	if err != nil {
 		return nil, err
 	}
 	if isAdmin {
-		capabilities.Add(
+		return NewSet(
+			DirectoryRead,
 			DirectoryWrite,
 			DirectoryManageGroups,
+			PasswordChangeSelf,
 			PasswordResetAny,
+			UIRead,
 			UIAdmin,
-		)
+		), nil
 	}
 
-	return capabilities, nil
+	isPasswordOnly, err := a.isMember(ctx, actor.DN, a.PasswordGroupDN())
+	if err != nil {
+		return nil, err
+	}
+	if isPasswordOnly {
+		return NewSet(PasswordChangeSelf, UIRead), nil
+	}
+
+	return NewSet(DirectoryRead, PasswordChangeSelf, UIRead), nil
 }
 
 func (a *Authorizer) IsAdmin(ctx context.Context, userDN string) (bool, error) {

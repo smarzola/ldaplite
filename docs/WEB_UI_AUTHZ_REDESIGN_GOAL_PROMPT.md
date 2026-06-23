@@ -230,7 +230,7 @@ When a milestone is complete:
 - [x] Milestone 2: Breaking least-privilege LDAP write policy.
 - [x] Milestone 3: Embedded shadcn frontend build foundation.
 - [x] Milestone 4: Role-aware Web UI API and shell.
-- [ ] Milestone 5: Directory management and password flows.
+- [x] Milestone 5: Directory management and password flows.
 - [ ] Milestone 6: Browser visual validation, documentation, and final
       regression.
 
@@ -736,6 +736,41 @@ go test -tags=functional -v ./tests/functional/...
 Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
+
+Status note, 2026-06-23:
+
+- Added a shared `internal/directory.Service` for Web UI mutations so user,
+  group, OU, membership, attribute, delete, self-password-change, and
+  admin-password-reset flows reuse the same password hashing, protected
+  attribute, parent-placement, and group-member validation behavior.
+- Added JSON write APIs for `/api/users`, `/api/groups`, `/api/ous`,
+  `/api/account/password`, and `/api/users/password`, with admin or
+  self-password capability gates plus same-origin protection.
+- Made `cn=ldaplite.password,ou=groups,<baseDN>` a real account-only role:
+  `ui.read` and `password.changeSelf` are allowed, directory read/write/admin
+  are denied, and admin membership still has precedence.
+- Expanded the React/shadcn UI with input, textarea, field, and tabs-based
+  forms for user/group/OU CRUD, group membership editing, protected extra
+  attributes, password reset, and self-service password changes.
+- Browser validation against the built embedded binary exercised:
+  - admin desktop `1280x800`: create users, create role groups, reset another
+    user's password, update group membership, create/update/delete OU,
+    delete group, delete user, no horizontal overflow;
+  - read-only mobile `390x844`: directory tables visible, admin nav and admin
+    operations absent, no horizontal overflow;
+  - password-only mobile `390x844`: account-only copy and badge visible, no
+    directory tables, no admin nav/admin operations, self-password change
+    succeeds without forcing a stale Basic Auth session reload, no horizontal
+    overflow.
+- Direct API/data checks confirmed deleted test user/group/OU were absent and
+  role groups remained.
+- Verification passed:
+  - `npm run build`
+  - `make build`
+  - `go test -v ./internal/authz ./internal/web/... ./internal/server`
+  - `go test -v ./internal/web/... ./internal/server ./internal/store/... ./pkg/crypto/...`
+  - `go test -tags=functional -v ./tests/functional/...`
+- Commit hash: pending checkpoint commit.
 
 ## Milestone 6: Browser Visual Validation, Documentation, And Final Regression
 
