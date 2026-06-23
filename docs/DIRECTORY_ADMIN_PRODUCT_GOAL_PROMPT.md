@@ -163,7 +163,7 @@ When a milestone is complete:
    milestone.
 
 - [x] Milestone 0: UX baseline, IA, and component plan.
-- [ ] Milestone 1: Search/list API contract and tests.
+- [x] Milestone 1: Search/list API contract and tests.
 - [ ] Milestone 2: Real app shell and role-specific landing.
 - [ ] Milestone 3: Searchable paginated directory results.
 - [ ] Milestone 4: Entry detail surface and row actions.
@@ -356,6 +356,38 @@ go test -v -race ./internal/web
 Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
+
+Status note, 2026-06-23:
+
+- Added `GET /api/directory/search` behind `DirectoryRead`.
+  - Query params: `q`, `type`, `page`, and `pageSize`.
+  - Type values normalize to `all`, `users`, `groups`, and `ous`.
+  - Page defaults are `page=1` and `pageSize=25`; page size is capped at 100.
+  - Results are sorted deterministically by DN and return `total` plus
+    `totalPages`.
+  - Search uses existing store filtering for object class/type and then a small
+    in-memory operator query over DN, RDN, object class, uid, cn, mail, ou,
+    description, member, and memberOf.
+- Added `GET /api/directory/entry?dn=...` behind `DirectoryRead`.
+  - Detail responses include DN, type, object class, display name, summary
+    fields, attributes, members, memberOf, and create/update timestamps.
+  - Detail lookup rejects DNs outside the configured base and returns 404 for
+    missing entries.
+  - `userPassword` is redacted from both persisted and computed attributes.
+- Kept `/api/directory` available for the current frontend until the UI moves
+  to the new search/detail contract in later milestones.
+- Added HTTP tests covering:
+  - read-only search by common fields;
+  - type filters for users, groups, and OUs;
+  - deterministic pagination metadata/results;
+  - safe detail response with `memberOf`;
+  - password redaction from detail JSON;
+  - password-only `403` for both search and detail APIs.
+- Commands run:
+  - `go test -v ./internal/web`
+  - `go test -v ./internal/web ./internal/store/... ./internal/schema ./internal/models`
+  - `go test -v -race ./internal/web`
+- Commit hash: pending.
 
 ## Milestone 2: Real App Shell And Role-Specific Landing
 

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/smarzola/ldaplite/internal/authz"
 	"github.com/smarzola/ldaplite/internal/directory"
+	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/internal/web/middleware"
@@ -46,12 +48,43 @@ type directoryResponse struct {
 
 type entrySummary struct {
 	DN          string   `json:"dn"`
+	Type        string   `json:"type"`
 	ObjectClass string   `json:"objectClass"`
 	Name        string   `json:"name"`
 	Description string   `json:"description,omitempty"`
 	Mail        string   `json:"mail,omitempty"`
 	Members     []string `json:"members,omitempty"`
 	MemberOf    []string `json:"memberOf,omitempty"`
+}
+
+type directorySearchResponse struct {
+	BaseDN     string         `json:"baseDN"`
+	Query      string         `json:"query"`
+	Type       string         `json:"type"`
+	Page       int            `json:"page"`
+	PageSize   int            `json:"pageSize"`
+	Total      int            `json:"total"`
+	TotalPages int            `json:"totalPages"`
+	Entries    []entrySummary `json:"entries"`
+}
+
+type directoryDetailResponse struct {
+	BaseDN string      `json:"baseDN"`
+	Entry  entryDetail `json:"entry"`
+}
+
+type entryDetail struct {
+	DN          string              `json:"dn"`
+	Type        string              `json:"type"`
+	ObjectClass string              `json:"objectClass"`
+	Name        string              `json:"name"`
+	Description string              `json:"description,omitempty"`
+	Mail        string              `json:"mail,omitempty"`
+	Members     []string            `json:"members,omitempty"`
+	MemberOf    []string            `json:"memberOf,omitempty"`
+	Attributes  map[string][]string `json:"attributes"`
+	CreatedAt   string              `json:"createdAt,omitempty"`
+	UpdatedAt   string              `json:"updatedAt,omitempty"`
 }
 
 func NewAPIHandler(st store.Store, cfg *config.Config) *APIHandler {
@@ -81,6 +114,103 @@ func (h *APIHandler) Session(w http.ResponseWriter, r *http.Request) {
 			PasswordSelf:   capabilities.Has(authz.PasswordChangeSelf),
 			PasswordReset:  capabilities.Has(authz.PasswordResetAny),
 		},
+	})
+}
+
+func (h *APIHandler) DirectorySearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	entryType := normalizeDirectoryType(r.URL.Query().Get("type"))
+	if entryType == "" {
+		http.Error(w, "Unsupported directory type", http.StatusBadRequest)
+		return
+	}
+	page, pageSize, ok := parsePagination(w, r)
+	if !ok {
+		return
+	}
+
+	entries, err := h.store.SearchEntriesWithOptions(r.Context(), store.SearchOptions{
+		BaseDN:          h.cfg.LDAP.BaseDN,
+		Filter:          directoryTypeFilter(entryType),
+		Scope:           store.SearchScopeWholeSubtree,
+		IncludeMemberOf: true,
+	})
+	if err != nil {
+		http.Error(w, "Failed to search directory", http.StatusInternalServerError)
+		return
+	}
+
+	summaries := make([]entrySummary, 0, len(entries))
+	for _, entry := range entries {
+		if !matchesDirectoryQuery(entry, query) {
+			continue
+		}
+		summaries = append(summaries, summarizeEntry(entry))
+	}
+	sort.Slice(summaries, func(i, j int) bool {
+		return strings.ToLower(summaries[i].DN) < strings.ToLower(summaries[j].DN)
+	})
+
+	total := len(summaries)
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+	start := (page - 1) * pageSize
+	if start > total {
+		start = total
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+
+	writeJSON(w, directorySearchResponse{
+		BaseDN:     h.cfg.LDAP.BaseDN,
+		Query:      query,
+		Type:       entryType,
+		Page:       page,
+		PageSize:   pageSize,
+		Total:      total,
+		TotalPages: totalPages,
+		Entries:    summaries[start:end],
+	})
+}
+
+func (h *APIHandler) DirectoryEntry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	dn := strings.TrimSpace(r.URL.Query().Get("dn"))
+	if dn == "" {
+		http.Error(w, "DN parameter required", http.StatusBadRequest)
+		return
+	}
+	if !ldapdn.WithinBase(dn, h.cfg.LDAP.BaseDN) {
+		http.Error(w, "Entry not found", http.StatusNotFound)
+		return
+	}
+
+	entry, err := h.store.GetEntryWithOptions(r.Context(), dn, store.EntryOptions{IncludeMemberOf: true})
+	if err != nil {
+		http.Error(w, "Failed to load entry", http.StatusInternalServerError)
+		return
+	}
+	if entry == nil {
+		http.Error(w, "Entry not found", http.StatusNotFound)
+		return
+	}
+
+	writeJSON(w, directoryDetailResponse{
+		BaseDN: h.cfg.LDAP.BaseDN,
+		Entry:  detailEntry(entry),
 	})
 }
 
@@ -139,6 +269,7 @@ func (h *APIHandler) searchSummaries(ctx context.Context, filter string) ([]entr
 func summarizeEntry(entry *models.Entry) entrySummary {
 	summary := entrySummary{
 		DN:          entry.DN,
+		Type:        directoryEntryType(entry),
 		ObjectClass: entry.ObjectClass,
 		Description: entry.GetAttribute("description"),
 		Members:     entry.GetAttributes("member"),
@@ -157,6 +288,136 @@ func summarizeEntry(entry *models.Entry) entrySummary {
 		summary.Name = entry.GetRDN()
 	}
 	return summary
+}
+
+func detailEntry(entry *models.Entry) entryDetail {
+	summary := summarizeEntry(entry)
+	detail := entryDetail{
+		DN:          summary.DN,
+		Type:        summary.Type,
+		ObjectClass: summary.ObjectClass,
+		Name:        summary.Name,
+		Description: summary.Description,
+		Mail:        summary.Mail,
+		Members:     summary.Members,
+		MemberOf:    summary.MemberOf,
+		Attributes:  safeAttributes(entry),
+	}
+	if !entry.CreatedAt.IsZero() {
+		detail.CreatedAt = entry.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+	}
+	if !entry.UpdatedAt.IsZero() {
+		detail.UpdatedAt = entry.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+	}
+	return detail
+}
+
+func safeAttributes(entry *models.Entry) map[string][]string {
+	attrs := make(map[string][]string)
+	for name, values := range entry.Attributes {
+		if strings.EqualFold(name, "userPassword") {
+			continue
+		}
+		attrs[strings.ToLower(name)] = append([]string(nil), values...)
+	}
+	for name, values := range entry.ComputedAttributes {
+		if strings.EqualFold(name, "userPassword") {
+			continue
+		}
+		attrs[strings.ToLower(name)] = append([]string(nil), values...)
+	}
+	return attrs
+}
+
+func parsePagination(w http.ResponseWriter, r *http.Request) (int, int, bool) {
+	page := 1
+	if raw := strings.TrimSpace(r.URL.Query().Get("page")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 {
+			http.Error(w, "Page must be a positive integer", http.StatusBadRequest)
+			return 0, 0, false
+		}
+		page = value
+	}
+
+	pageSize := 25
+	if raw := strings.TrimSpace(r.URL.Query().Get("pageSize")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 100 {
+			http.Error(w, "Page size must be between 1 and 100", http.StatusBadRequest)
+			return 0, 0, false
+		}
+		pageSize = value
+	}
+
+	return page, pageSize, true
+}
+
+func normalizeDirectoryType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "all":
+		return "all"
+	case "user", "users":
+		return "users"
+	case "group", "groups":
+		return "groups"
+	case "ou", "ous", "organizationalunit", "organizationalunits", "organizational-units":
+		return "ous"
+	default:
+		return ""
+	}
+}
+
+func directoryTypeFilter(entryType string) string {
+	switch entryType {
+	case "users":
+		return "(objectClass=inetOrgPerson)"
+	case "groups":
+		return "(objectClass=groupOfNames)"
+	case "ous":
+		return "(objectClass=organizationalUnit)"
+	default:
+		return "(objectClass=*)"
+	}
+}
+
+func directoryEntryType(entry *models.Entry) string {
+	switch {
+	case entry.IsUser():
+		return "user"
+	case entry.IsGroup():
+		return "group"
+	case entry.IsOrganizationalUnit():
+		return "ou"
+	default:
+		return "entry"
+	}
+}
+
+func matchesDirectoryQuery(entry *models.Entry, query string) bool {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return true
+	}
+
+	values := []string{
+		entry.DN,
+		entry.ObjectClass,
+		entry.GetRDN(),
+		entry.GetAttribute("uid"),
+		entry.GetAttribute("cn"),
+		entry.GetAttribute("mail"),
+		entry.GetAttribute("ou"),
+		entry.GetAttribute("description"),
+	}
+	values = append(values, entry.GetAttributes("member")...)
+	values = append(values, entry.GetAttributes("memberOf")...)
+	for _, value := range values {
+		if strings.Contains(strings.ToLower(value), query) {
+			return true
+		}
+	}
+	return false
 }
 
 func capabilityStrings(capabilities authz.Set) []string {

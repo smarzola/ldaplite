@@ -111,6 +111,8 @@ func (s *Server) setupRoutes() {
 
 	// API routes
 	s.mux.Handle("/api/session", readProtected(apiHandler.Session))
+	s.mux.Handle("/api/directory/search", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(apiHandler.DirectorySearch)))
+	s.mux.Handle("/api/directory/entry", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(apiHandler.DirectoryEntry)))
 	s.mux.Handle("/api/directory", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(apiHandler.Directory)))
 	s.mux.Handle("/api/users", adminProtected(apiHandler.Users))
 	s.mux.Handle("/api/groups", adminProtected(apiHandler.Groups))

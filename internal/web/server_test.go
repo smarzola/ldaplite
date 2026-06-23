@@ -246,6 +246,217 @@ func TestNonAdminCanReadDirectoryAPIButCannotReachWriteRoute(t *testing.T) {
 	}
 }
 
+func TestDirectorySearchAPISupportsQueryTypeFilterAndPagination(t *testing.T) {
+	srv, st := setupTestServer(t)
+	defer st.Close()
+
+	createTestUser(t, st, "regularuser", "RegularPassword123!")
+	createTestUserWithAttrs(t, st, "anna", "AnnaPassword123!", map[string][]string{
+		"cn":          {"Anna Operator"},
+		"sn":          {"Operator"},
+		"mail":        {"anna@example.com"},
+		"description": {"Directory operator"},
+	})
+	createTestUserWithAttrs(t, st, "brian", "BrianPassword123!", map[string][]string{
+		"cn":   {"Brian Builder"},
+		"sn":   {"Builder"},
+		"mail": {"brian@example.com"},
+	})
+	createTestGroup(t, st, "ops-team", "uid=anna,ou=users,dc=test,dc=com")
+	createTestOU(t, st, "engineering", "Engineering directory entries")
+
+	searchReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/api/directory/search?type=users&q=anna%40example.com&page=1&pageSize=10", nil)
+	searchReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	searchRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(searchRR, searchReq)
+
+	if searchRR.Code != http.StatusOK {
+		t.Fatalf("search status = %d, want %d; body=%s", searchRR.Code, http.StatusOK, searchRR.Body.String())
+	}
+	var search directorySearchTestResponse
+	if err := json.Unmarshal(searchRR.Body.Bytes(), &search); err != nil {
+		t.Fatalf("failed to decode search response: %v", err)
+	}
+	if search.BaseDN != "dc=test,dc=com" {
+		t.Fatalf("baseDN = %q, want dc=test,dc=com", search.BaseDN)
+	}
+	if search.Type != "users" || search.Query != "anna@example.com" {
+		t.Fatalf("search echo = type %q query %q, want users anna@example.com", search.Type, search.Query)
+	}
+	if search.Total != 1 || len(search.Entries) != 1 {
+		t.Fatalf("search entries = total %d len %d, want 1/1: %+v", search.Total, len(search.Entries), search.Entries)
+	}
+	if got := search.Entries[0]; got.Name != "anna" || got.Type != "user" || got.Mail != "anna@example.com" {
+		t.Fatalf("entry = %+v, want anna user with mail", got)
+	}
+
+	groupReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/api/directory/search?type=groups&q=ops-team", nil)
+	groupReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	groupRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(groupRR, groupReq)
+
+	if groupRR.Code != http.StatusOK {
+		t.Fatalf("group search status = %d, want %d; body=%s", groupRR.Code, http.StatusOK, groupRR.Body.String())
+	}
+	var groupSearch directorySearchTestResponse
+	if err := json.Unmarshal(groupRR.Body.Bytes(), &groupSearch); err != nil {
+		t.Fatalf("failed to decode group search response: %v", err)
+	}
+	if groupSearch.Total != 1 || groupSearch.Entries[0].Name != "ops-team" || groupSearch.Entries[0].Type != "group" {
+		t.Fatalf("group search = %+v, want ops-team group", groupSearch)
+	}
+
+	ouReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/api/directory/search?type=ous&q=engineering", nil)
+	ouReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	ouRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(ouRR, ouReq)
+
+	if ouRR.Code != http.StatusOK {
+		t.Fatalf("ou search status = %d, want %d; body=%s", ouRR.Code, http.StatusOK, ouRR.Body.String())
+	}
+	var ouSearch directorySearchTestResponse
+	if err := json.Unmarshal(ouRR.Body.Bytes(), &ouSearch); err != nil {
+		t.Fatalf("failed to decode ou search response: %v", err)
+	}
+	if ouSearch.Total != 1 || ouSearch.Entries[0].Name != "engineering" || ouSearch.Entries[0].Type != "ou" {
+		t.Fatalf("ou search = %+v, want engineering ou", ouSearch)
+	}
+
+	pageOneReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/api/directory/search?type=users&page=1&pageSize=1", nil)
+	pageOneReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	pageOneRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(pageOneRR, pageOneReq)
+
+	if pageOneRR.Code != http.StatusOK {
+		t.Fatalf("page one status = %d, want %d; body=%s", pageOneRR.Code, http.StatusOK, pageOneRR.Body.String())
+	}
+	var pageOne directorySearchTestResponse
+	if err := json.Unmarshal(pageOneRR.Body.Bytes(), &pageOne); err != nil {
+		t.Fatalf("failed to decode page one response: %v", err)
+	}
+	if pageOne.Page != 1 || pageOne.PageSize != 1 || pageOne.TotalPages < 2 || len(pageOne.Entries) != 1 {
+		t.Fatalf("page one metadata = %+v, want one result and at least two pages", pageOne)
+	}
+
+	pageTwoReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/api/directory/search?type=users&page=2&pageSize=1", nil)
+	pageTwoReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	pageTwoRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(pageTwoRR, pageTwoReq)
+
+	if pageTwoRR.Code != http.StatusOK {
+		t.Fatalf("page two status = %d, want %d; body=%s", pageTwoRR.Code, http.StatusOK, pageTwoRR.Body.String())
+	}
+	var pageTwo directorySearchTestResponse
+	if err := json.Unmarshal(pageTwoRR.Body.Bytes(), &pageTwo); err != nil {
+		t.Fatalf("failed to decode page two response: %v", err)
+	}
+	if len(pageTwo.Entries) != 1 || pageTwo.Entries[0].DN == pageOne.Entries[0].DN {
+		t.Fatalf("pagination was not deterministic: page1=%+v page2=%+v", pageOne.Entries, pageTwo.Entries)
+	}
+}
+
+func TestDirectoryDetailAPIReturnsSafeAttributesAndMemberships(t *testing.T) {
+	srv, st := setupTestServer(t)
+	defer st.Close()
+
+	createTestUser(t, st, "regularuser", "RegularPassword123!")
+	createTestUserWithAttrs(t, st, "detailuser", "DetailPassword123!", map[string][]string{
+		"cn":          {"Detail User"},
+		"sn":          {"User"},
+		"mail":        {"detail@example.com"},
+		"description": {"Visible directory detail"},
+	})
+	createTestGroup(t, st, "detail-readers", "uid=detailuser,ou=users,dc=test,dc=com")
+
+	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/api/directory/entry?dn="+url.QueryEscape("uid=detailuser,ou=users,dc=test,dc=com"), nil)
+	req.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	rr := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if strings.Contains(strings.ToLower(rr.Body.String()), "userpassword") || strings.Contains(rr.Body.String(), "DetailPassword123") || strings.Contains(rr.Body.String(), "ARGON2") {
+		t.Fatalf("detail API leaked password material: %s", rr.Body.String())
+	}
+
+	var detail struct {
+		BaseDN string `json:"baseDN"`
+		Entry  struct {
+			DN          string              `json:"dn"`
+			Type        string              `json:"type"`
+			Name        string              `json:"name"`
+			Mail        string              `json:"mail"`
+			MemberOf    []string            `json:"memberOf"`
+			Attributes  map[string][]string `json:"attributes"`
+			ObjectClass string              `json:"objectClass"`
+		} `json:"entry"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("failed to decode detail response: %v", err)
+	}
+	if detail.BaseDN != "dc=test,dc=com" {
+		t.Fatalf("baseDN = %q, want dc=test,dc=com", detail.BaseDN)
+	}
+	if detail.Entry.DN != "uid=detailuser,ou=users,dc=test,dc=com" || detail.Entry.Type != "user" || detail.Entry.Name != "detailuser" {
+		t.Fatalf("entry identity = %+v, want detailuser user", detail.Entry)
+	}
+	if detail.Entry.Mail != "detail@example.com" || detail.Entry.ObjectClass != "inetOrgPerson" {
+		t.Fatalf("entry summary = %+v, want mail and inetOrgPerson", detail.Entry)
+	}
+	if !containsString(detail.Entry.MemberOf, "cn=detail-readers,ou=groups,dc=test,dc=com") {
+		t.Fatalf("memberOf missing detail-readers: %+v", detail.Entry.MemberOf)
+	}
+	if _, ok := detail.Entry.Attributes["userpassword"]; ok {
+		t.Fatalf("safe attributes included userpassword: %+v", detail.Entry.Attributes)
+	}
+	if got := detail.Entry.Attributes["mail"]; len(got) != 1 || got[0] != "detail@example.com" {
+		t.Fatalf("attributes[mail] = %+v, want detail@example.com", got)
+	}
+}
+
+func TestPasswordOnlyUserCannotReachDirectorySearchOrDetailAPIs(t *testing.T) {
+	srv, st := setupTestServer(t)
+	defer st.Close()
+
+	createTestUser(t, st, "passworduser", "PasswordOnly123!")
+	createTestGroup(t, st, "ldaplite.password", "uid=passworduser,ou=users,dc=test,dc=com")
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{
+			name: "search",
+			path: "/api/directory/search?q=admin",
+		},
+		{
+			name: "detail",
+			path: "/api/directory/entry?dn=" + url.QueryEscape("uid=admin,ou=users,dc=test,dc=com"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test"+tt.path, nil)
+			req.Header.Set("Authorization", basicAuth("passworduser:PasswordOnly123!"))
+			rr := httptest.NewRecorder()
+
+			srv.mux.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusForbidden, rr.Body.String())
+			}
+		})
+	}
+}
+
 func TestAdminDirectoryWriteAPI(t *testing.T) {
 	srv, st := setupTestServer(t)
 	defer st.Close()
@@ -515,6 +726,11 @@ func basicAuth(credentials string) string {
 
 func createTestUser(t *testing.T, st store.Store, uid, password string) {
 	t.Helper()
+	createTestUserWithAttrs(t, st, uid, password, nil)
+}
+
+func createTestUserWithAttrs(t *testing.T, st store.Store, uid, password string, attrs map[string][]string) {
+	t.Helper()
 
 	hasher := crypto.NewPasswordHasher(config.Argon2Config{
 		Memory:      64,
@@ -533,6 +749,9 @@ func createTestUser(t *testing.T, st store.Store, uid, password string) {
 	user.SetAttribute("cn", uid)
 	user.SetAttribute("sn", uid)
 	user.SetAttribute("userPassword", hashedPassword)
+	for name, values := range attrs {
+		user.SetAttributes(name, values)
+	}
 
 	if err := st.CreateEntry(context.Background(), user); err != nil {
 		t.Fatalf("CreateEntry(%s) failed: %v", uid, err)
@@ -548,6 +767,20 @@ func createTestGroup(t *testing.T, st store.Store, cn string, members ...string)
 
 	if err := st.CreateEntry(context.Background(), group); err != nil {
 		t.Fatalf("CreateEntry(%s) failed: %v", cn, err)
+	}
+}
+
+func createTestOU(t *testing.T, st store.Store, ou, description string) {
+	t.Helper()
+
+	entry := models.NewEntry("ou="+ou+",dc=test,dc=com", "organizationalUnit")
+	entry.SetAttribute("ou", ou)
+	if description != "" {
+		entry.SetAttribute("description", description)
+	}
+
+	if err := st.CreateEntry(context.Background(), entry); err != nil {
+		t.Fatalf("CreateEntry(%s) failed: %v", ou, err)
 	}
 }
 
@@ -606,4 +839,21 @@ func directoryHasUser(users []struct {
 		}
 	}
 	return false
+}
+
+type directorySearchTestResponse struct {
+	BaseDN     string `json:"baseDN"`
+	Query      string `json:"query"`
+	Type       string `json:"type"`
+	Page       int    `json:"page"`
+	PageSize   int    `json:"pageSize"`
+	Total      int    `json:"total"`
+	TotalPages int    `json:"totalPages"`
+	Entries    []struct {
+		DN     string   `json:"dn"`
+		Type   string   `json:"type"`
+		Name   string   `json:"name"`
+		Mail   string   `json:"mail"`
+		Member []string `json:"members"`
+	} `json:"entries"`
 }
