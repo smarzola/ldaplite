@@ -351,7 +351,7 @@ Status note, 2026-06-23:
   - Self-critique: avoid a marketing hero, gradient-heavy landing page, or
     overly cardy SaaS dashboard; this should feel like a careful directory
     workbench.
-- Commit hash: pending checkpoint commit.
+- Commit: `fb4ed54`.
 
 ## Milestone 1: Shared Capability Authorization Layer
 
