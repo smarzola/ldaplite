@@ -480,6 +480,10 @@ compiles them, while local runs are better for comparing before/after changes.
 - **Constant-time verification** to prevent timing attacks
 - **Configurable cost parameters** for future-proofing
 
+## Integration Guides
+
+- [Pocket ID](docs/integrations/pocket-id.md)
+
 ## Roadmap
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for current project status and planned work.

@@ -11,6 +11,7 @@ This roadmap tracks current project direction after the security and interoperab
 - SQL-compiled LDAP filters with in-memory fallback for unsupported cases.
 - Operational attributes: `objectClass`, `createTimestamp`, `modifyTimestamp`, and computed `memberOf`.
 - Stable generated entry identifiers: operational `entryUUID` plus `uuid` compatibility alias.
+- Pocket ID LDAP sync compatibility recipe and functional coverage.
 - Canonical LDAP attribute casing for known response attributes.
 - Bind enforcement for normal searches and write operations.
 - Web UI same-origin protection and POST-only deletes.
