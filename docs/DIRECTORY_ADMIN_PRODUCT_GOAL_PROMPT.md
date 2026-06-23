@@ -165,7 +165,7 @@ When a milestone is complete:
 - [x] Milestone 0: UX baseline, IA, and component plan.
 - [x] Milestone 1: Search/list API contract and tests.
 - [x] Milestone 2: Real app shell and role-specific landing.
-- [ ] Milestone 3: Searchable paginated directory results.
+- [x] Milestone 3: Searchable paginated directory results.
 - [ ] Milestone 4: Entry detail surface and row actions.
 - [ ] Milestone 5: Focused admin workflows.
 - [ ] Milestone 6: Copy, accessibility, visual validation, docs, and final
@@ -539,6 +539,53 @@ go test -v ./internal/web
 Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
+
+Status note, 2026-06-23:
+
+- Replaced the static grouped directory tables with a search-first results
+  surface backed by `GET /api/directory/search`.
+  - `Directory`, `Users`, `Groups`, and `OUs` now share the same lookup
+    component, with scoped views fixing the type filter where appropriate.
+  - The unscoped `Directory` view supports text search, type filtering, page
+    size selection, pagination, result counts/ranges, reset, loading skeletons,
+    empty state, and retryable error state.
+  - Result rows show type, name, DN, summary, and row actions. Readable users
+    get `View` and `Copy DN`; admins also get the contextual `Admin` action.
+  - Mobile uses stacked rows while desktop uses a dense table layout.
+- Added shadcn components:
+  - `select`
+  - `pagination`
+- Browser validation with a temporary single-binary server and mock data:
+  - Admin search for `alice` returned the matching user and the group where
+    Alice is a member.
+  - Admin search by `alice@example.com`, `search-team`, and `engineering`
+    covered mail, group, and OU text.
+  - Type filter `Groups` scoped the `alice` query to `search-team` and removed
+    the user row.
+  - Pagination moved from `Page 1 of 2` / `Showing 1-10 of 18` to
+    `Page 2 of 2` / `Showing 11-18 of 18`.
+  - `View` selected the Alice row, and `Copy DN` placed
+    `uid=alice,ou=users,dc=example,dc=com` on the browser clipboard.
+  - Read-only user `reader` could search and use `View` / `Copy DN`, while
+    `Admin` navigation and row actions were absent.
+  - Empty search `zz-no-results` showed `No entries found` with guidance.
+  - After stopping the backend, submitting another search showed
+    `Search failed` with `Retry`.
+  - Mobile viewport `390x844` showed stacked DN/action rows and the desktop
+    table rendered at zero size.
+  - Loading state uses the shadcn `Skeleton` branch in `ResultSkeleton`; browser
+    attempts to pause the search request were blocked by the in-app browser
+    runtime or settled directly to the error state, so the transient skeleton
+    was verified by source/build rather than a captured visual frame.
+- Commands run:
+  - `npx shadcn@latest docs select pagination`
+  - `npx shadcn@latest add select pagination --dry-run`
+  - `npx shadcn@latest add select pagination`
+  - `npm run build`
+  - `go test -v ./internal/web`
+  - `go build -o /private/tmp/ldaplite-m3 ./cmd/ldaplite`
+  - Temporary single-binary server plus in-app Browser validation.
+- Commit hash: pending.
 
 ## Milestone 4: Entry Detail Surface And Row Actions
 

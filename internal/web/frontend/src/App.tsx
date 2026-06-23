@@ -1,9 +1,13 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react"
+import { type FormEvent, type MouseEvent, useEffect, useMemo, useState } from "react"
 import {
   AlertCircle,
+  Copy,
   Database,
+  Eye,
   FolderTree,
   KeyRound,
+  RefreshCw,
+  Search,
   Settings2,
   ShieldCheck,
   UserRound,
@@ -32,6 +36,22 @@ import {
   FieldSet,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -61,6 +81,7 @@ type Session = {
 
 type EntrySummary = {
   dn: string
+  type: DirectoryEntryType
   objectClass: string
   name: string
   description?: string
@@ -89,6 +110,19 @@ type Notice = {
 }
 
 type ViewId = "directory" | "users" | "groups" | "ous" | "admin" | "account"
+type DirectorySearchType = "all" | "users" | "groups" | "ous"
+type DirectoryEntryType = "entry" | "user" | "group" | "ou"
+
+type DirectorySearchResponse = {
+  baseDN: string
+  query: string
+  type: DirectorySearchType
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+  entries: EntrySummary[]
+}
 
 type NavItem = {
   id: ViewId
@@ -247,7 +281,9 @@ export default function App() {
               activeView={currentView}
               directory={directory}
               mutating={mutating}
+              onNavigate={(view) => navigateToView(view, setActiveView)}
               onMutate={runMutation}
+              onNotice={setNotice}
               session={session}
             />
           ) : null}
@@ -261,13 +297,17 @@ function AppView({
   activeView,
   directory,
   mutating,
+  onNavigate,
   onMutate,
+  onNotice,
   session,
 }: {
   activeView: ViewId
   directory?: Directory
   mutating: boolean
+  onNavigate: (view: ViewId) => void
   onMutate: (path: string, method: string, payload: unknown, success: string, reload?: boolean) => Promise<void>
+  onNotice: (notice: Notice) => void
   session: Session
 }) {
   if (activeView === "account") {
@@ -292,85 +332,287 @@ function AppView({
 
   if (activeView === "users") {
     return (
-      <ScopedDirectoryCard
-        description="Browse user accounts under the configured base DN."
-        directory={directory}
-        kind="users"
-        title="Users"
+      <DirectorySearchView
+        fixedType="users"
+        onNavigate={onNavigate}
+        onNotice={onNotice}
+        session={session}
       />
     )
   }
 
   if (activeView === "groups") {
     return (
-      <ScopedDirectoryCard
-        description="Browse groups and membership counts."
-        directory={directory}
-        kind="groups"
-        title="Groups"
+      <DirectorySearchView
+        fixedType="groups"
+        onNavigate={onNavigate}
+        onNotice={onNotice}
+        session={session}
       />
     )
   }
 
   if (activeView === "ous") {
     return (
-      <ScopedDirectoryCard
-        description="Browse organizational units under the configured base DN."
-        directory={directory}
-        kind="ous"
-        title="Organizational units"
+      <DirectorySearchView
+        fixedType="ous"
+        onNavigate={onNavigate}
+        onNotice={onNotice}
+        session={session}
       />
     )
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-1">
-            <CardTitle>Directory</CardTitle>
-            <CardDescription>Browse users, groups, and organizational units.</CardDescription>
-          </div>
-          <Badge variant={session.roles.admin ? "default" : "secondary"}>
-            {accessBadgeLabel(session)}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <DirectoryTables directory={directory} />
-      </CardContent>
-    </Card>
+    <DirectorySearchView onNavigate={onNavigate} onNotice={onNotice} session={session} />
   )
 }
 
-function ScopedDirectoryCard({
-  description,
-  directory,
-  kind,
-  title,
+function DirectorySearchView({
+  fixedType,
+  onNavigate,
+  onNotice,
+  session,
 }: {
-  description: string
-  directory?: Directory
-  kind: "users" | "groups" | "ous"
-  title: string
+  fixedType?: Exclude<DirectorySearchType, "all">
+  onNavigate: (view: ViewId) => void
+  onNotice: (notice: Notice) => void
+  session: Session
 }) {
-  const entries = directory?.[kind] ?? []
-  const detail = kind === "users" ? "mail" : kind === "groups" ? "members" : "description"
+  const [query, setQuery] = useState("")
+  const [submittedQuery, setSubmittedQuery] = useState("")
+  const [entryType, setEntryType] = useState<DirectorySearchType>(fixedType ?? "all")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [retryKey, setRetryKey] = useState(0)
+  const [search, setSearch] = useState<{
+    data?: DirectorySearchResponse
+    error?: string
+    loading: boolean
+  }>({ loading: true })
+  const [selectedEntry, setSelectedEntry] = useState<EntrySummary>()
+
+  const effectiveType = fixedType ?? entryType
+
+  useEffect(() => {
+    setEntryType(fixedType ?? "all")
+    setPage(1)
+    setSelectedEntry(undefined)
+  }, [fixedType])
+
+  useEffect(() => {
+    let cancelled = false
+    const params = new URLSearchParams()
+    params.set("q", submittedQuery)
+    params.set("type", effectiveType)
+    params.set("page", String(page))
+    params.set("pageSize", String(pageSize))
+
+    setSearch((current) => ({ data: current.data, loading: true }))
+    void fetchJSON<DirectorySearchResponse>(`/api/directory/search?${params.toString()}`)
+      .then((data) => {
+        if (!cancelled) {
+          setSearch({ data, loading: false })
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setSearch({
+            error: error instanceof Error ? error.message : "Unable to search directory.",
+            loading: false,
+          })
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [effectiveType, page, pageSize, retryKey, submittedQuery])
+
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    setPage(1)
+    setSubmittedQuery(query.trim())
+  }
+
+  async function copyDN(entry: EntrySummary) {
+    try {
+      await copyText(entry.dn)
+      onNotice({ kind: "success", text: "DN copied." })
+    } catch {
+      onNotice({ kind: "error", text: "Could not copy the DN." })
+    }
+  }
+
+  function resetSearch() {
+    setQuery("")
+    setSubmittedQuery("")
+    if (!fixedType) {
+      setEntryType("all")
+    }
+    setPage(1)
+    setSelectedEntry(undefined)
+  }
+
+  const data = search.data
+  const range = data ? resultRange(data) : ""
+  const title = fixedType ? `${directoryTypeLabel(fixedType)} search` : "Directory search"
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {directory ? (
-          <EntryTable entries={entries} title={title} detail={detail} />
-        ) : (
-          <NoDirectoryAccess />
-        )}
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-1">
+              <CardTitle>{title}</CardTitle>
+              <CardDescription>
+                Find entries by DN, uid, cn, mail, OU, group, description, or membership.
+              </CardDescription>
+            </div>
+            {data ? <Badge variant="secondary">{data.total} result{data.total === 1 ? "" : "s"}</Badge> : null}
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <form className="flex flex-col gap-3 lg:flex-row lg:items-end" onSubmit={submit}>
+            <Field className="min-w-0 flex-1">
+              <FieldLabel htmlFor="directory-search">Search directory</FieldLabel>
+              <div className="flex gap-2">
+                <Input
+                  id="directory-search"
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="uid, cn, mail, DN, group, OU"
+                  value={query}
+                />
+                <Button type="submit">
+                  <Search data-icon="inline-start" />
+                  Search
+                </Button>
+              </div>
+            </Field>
+
+            {!fixedType ? (
+              <Field>
+                <FieldLabel>Type</FieldLabel>
+                <Select
+                  onValueChange={(value) => {
+                    setEntryType(value as DirectorySearchType)
+                    setPage(1)
+                    setSelectedEntry(undefined)
+                  }}
+                  value={entryType}
+                >
+                  <SelectTrigger aria-label="Entry type" className="w-40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="all">All entries</SelectItem>
+                      <SelectItem value="users">Users</SelectItem>
+                      <SelectItem value="groups">Groups</SelectItem>
+                      <SelectItem value="ous">OUs</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            ) : null}
+
+            <Field>
+              <FieldLabel>Page size</FieldLabel>
+              <Select
+                onValueChange={(value) => {
+                  setPageSize(Number(value))
+                  setPage(1)
+                }}
+                value={String(pageSize)}
+              >
+                <SelectTrigger aria-label="Page size" className="w-28">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="5">5</SelectItem>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          </form>
+
+          {submittedQuery || effectiveType !== "all" ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {submittedQuery ? <Badge variant="secondary">Query: {submittedQuery}</Badge> : null}
+              <Badge variant="secondary">Type: {directoryTypeLabel(effectiveType)}</Badge>
+              <Button onClick={resetSearch} size="sm" type="button" variant="ghost">
+                <RefreshCw data-icon="inline-start" />
+                Reset
+              </Button>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {search.error ? (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertTitle>Search failed</AlertTitle>
+          <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>{search.error}</span>
+            <Button onClick={() => setRetryKey((current) => current + 1)} size="sm" type="button" variant="outline">
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-1">
+              <CardTitle>Results</CardTitle>
+              <CardDescription>{range || "Search results will appear here."}</CardDescription>
+            </div>
+            {data ? <Badge variant="secondary">Page {data.page} of {Math.max(data.totalPages, 1)}</Badge> : null}
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {search.loading ? (
+            <ResultSkeleton />
+          ) : data && data.entries.length > 0 ? (
+            <>
+              <SearchResults
+                entries={data.entries}
+                onCopyDN={copyDN}
+                onSelect={setSelectedEntry}
+                onAdmin={() => onNavigate("admin")}
+                selectedDN={selectedEntry?.dn}
+                showAdminAction={session.roles.admin}
+              />
+              <ResultPagination
+                page={data.page}
+                pageSize={data.pageSize}
+                total={data.total}
+                totalPages={data.totalPages}
+                onPageChange={setPage}
+              />
+            </>
+          ) : (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Search />
+                </EmptyMedia>
+                <EmptyTitle>No entries found</EmptyTitle>
+                <EmptyDescription>Change the search text, type filter, or page size.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
+        </CardContent>
+      </Card>
+
+      {selectedEntry ? <SelectedEntryCard entry={selectedEntry} onCopyDN={copyDN} /> : null}
+    </div>
   )
 }
 
@@ -394,6 +636,222 @@ function SessionCard({ session }: { session: Session }) {
               {label}
             </Badge>
           ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function SearchResults({
+  entries,
+  onAdmin,
+  onCopyDN,
+  onSelect,
+  selectedDN,
+  showAdminAction,
+}: {
+  entries: EntrySummary[]
+  onAdmin: () => void
+  onCopyDN: (entry: EntrySummary) => void
+  onSelect: (entry: EntrySummary) => void
+  selectedDN?: string
+  showAdminAction: boolean
+}) {
+  return (
+    <>
+      <div className="flex flex-col gap-3 md:hidden">
+        {entries.map((entry) => (
+          <div className="flex flex-col gap-3 border-b border-border pb-3 last:border-b-0 last:pb-0" key={entry.dn}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium">{entry.name || entry.dn}</p>
+                  <Badge variant="secondary">{entryTypeLabel(entry.type)}</Badge>
+                </div>
+                <p className="mt-1 break-all font-mono text-xs leading-relaxed text-muted-foreground">
+                  {entry.dn}
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">{entrySummaryText(entry)}</p>
+            <RowActions
+              entry={entry}
+              isSelected={selectedDN === entry.dn}
+              onAdmin={onAdmin}
+              onCopyDN={onCopyDN}
+              onSelect={onSelect}
+              showAdminAction={showAdminAction}
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden md:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>DN</TableHead>
+              <TableHead>Summary</TableHead>
+              <TableHead className="w-52">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entries.map((entry) => (
+              <TableRow data-state={selectedDN === entry.dn ? "selected" : undefined} key={entry.dn}>
+                <TableCell className="font-medium">{entry.name || entry.dn}</TableCell>
+                <TableCell>
+                  <Badge variant="secondary">{entryTypeLabel(entry.type)}</Badge>
+                </TableCell>
+                <TableCell className="max-w-80 truncate font-mono text-xs text-muted-foreground">
+                  {entry.dn}
+                </TableCell>
+                <TableCell>{entrySummaryText(entry)}</TableCell>
+                <TableCell>
+                  <RowActions
+                    entry={entry}
+                    isSelected={selectedDN === entry.dn}
+                    onAdmin={onAdmin}
+                    onCopyDN={onCopyDN}
+                    onSelect={onSelect}
+                    showAdminAction={showAdminAction}
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </>
+  )
+}
+
+function RowActions({
+  entry,
+  isSelected,
+  onAdmin,
+  onCopyDN,
+  onSelect,
+  showAdminAction,
+}: {
+  entry: EntrySummary
+  isSelected: boolean
+  onAdmin: () => void
+  onCopyDN: (entry: EntrySummary) => void
+  onSelect: (entry: EntrySummary) => void
+  showAdminAction: boolean
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button onClick={() => onSelect(entry)} size="sm" type="button" variant={isSelected ? "default" : "outline"}>
+        <Eye data-icon="inline-start" />
+        View
+      </Button>
+      <Button onClick={() => onCopyDN(entry)} size="sm" type="button" variant="outline">
+        <Copy data-icon="inline-start" />
+        Copy DN
+      </Button>
+      {showAdminAction ? (
+        <Button onClick={onAdmin} size="sm" type="button" variant="ghost">
+          <Settings2 data-icon="inline-start" />
+          Admin
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
+function ResultPagination({
+  onPageChange,
+  page,
+  pageSize,
+  total,
+  totalPages,
+}: {
+  onPageChange: (page: number) => void
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}) {
+  if (total <= pageSize && totalPages <= 1) {
+    return null
+  }
+
+  const pages = visiblePages(page, Math.max(totalPages, 1))
+  const canPrevious = page > 1
+  const canNext = totalPages > 0 && page < totalPages
+
+  function pageLink(targetPage: number) {
+    return {
+      href: `#page-${targetPage}`,
+      onClick: (event: MouseEvent<HTMLAnchorElement>) => {
+        event.preventDefault()
+        onPageChange(targetPage)
+      },
+    }
+  }
+
+  return (
+    <Pagination>
+      <PaginationContent>
+        <PaginationItem>
+          <PaginationPrevious
+            aria-disabled={!canPrevious}
+            className={!canPrevious ? "pointer-events-none opacity-50" : undefined}
+            {...pageLink(Math.max(1, page - 1))}
+          />
+        </PaginationItem>
+        {pages.map((targetPage) => (
+          <PaginationItem key={targetPage}>
+            <PaginationLink isActive={targetPage === page} {...pageLink(targetPage)}>
+              {targetPage}
+            </PaginationLink>
+          </PaginationItem>
+        ))}
+        <PaginationItem>
+          <PaginationNext
+            aria-disabled={!canNext}
+            className={!canNext ? "pointer-events-none opacity-50" : undefined}
+            {...pageLink(canNext ? page + 1 : page)}
+          />
+        </PaginationItem>
+      </PaginationContent>
+    </Pagination>
+  )
+}
+
+function SelectedEntryCard({
+  entry,
+  onCopyDN,
+}: {
+  entry: EntrySummary
+  onCopyDN: (entry: EntrySummary) => void
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-1">
+            <CardTitle>{entry.name || entry.dn}</CardTitle>
+            <CardDescription>{entryTypeLabel(entry.type)} selected from search results.</CardDescription>
+          </div>
+          <Badge variant="secondary">{entry.objectClass}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-medium">DN</p>
+          <p className="break-all font-mono text-xs leading-relaxed text-muted-foreground">{entry.dn}</p>
+        </div>
+        <Separator />
+        <p className="text-sm text-muted-foreground">{entrySummaryText(entry)}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => onCopyDN(entry)} size="sm" type="button" variant="outline">
+            <Copy data-icon="inline-start" />
+            Copy DN
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -1099,104 +1557,95 @@ function ShellSkeleton() {
   )
 }
 
-function DirectoryTables({ directory }: { directory?: Directory }) {
-  if (!directory) {
-    return <NoDirectoryAccess />
-  }
-
-  return (
-    <div className="flex flex-col gap-6">
-      <EntryTable title="Users" entries={directory.users} detail="mail" />
-      <EntryTable title="Groups" entries={directory.groups} detail="members" />
-      <EntryTable title="Organizational units" entries={directory.ous} detail="description" />
-    </div>
-  )
-}
-
-function NoDirectoryAccess() {
-  return (
-    <Empty>
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <Database />
-        </EmptyMedia>
-        <EmptyTitle>No directory access</EmptyTitle>
-        <EmptyDescription>This account can only use account-level actions.</EmptyDescription>
-      </EmptyHeader>
-    </Empty>
-  )
-}
-
-function EntryTable({
-  title,
-  entries,
-  detail,
-}: {
-  title: string
-  entries: EntrySummary[]
-  detail: "mail" | "members" | "description"
-}) {
+function ResultSkeleton() {
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-medium">{title}</h2>
-        <Badge variant="secondary">{entries.length}</Badge>
-      </div>
-      {entries.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <Database />
-            </EmptyMedia>
-            <EmptyTitle>No {title.toLowerCase()} found</EmptyTitle>
-            <EmptyDescription>Create entries through an admin-capable session.</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <>
-          <div className="flex flex-col gap-3 sm:hidden">
-            {entries.map((entry) => (
-              <div className="border-b border-border pb-3 last:border-b-0 last:pb-0" key={entry.dn}>
-                <p className="text-sm font-medium">{entry.name}</p>
-                <p className="mt-1 break-all font-mono text-xs leading-relaxed text-muted-foreground">
-                  {entry.dn}
-                </p>
-              </div>
-            ))}
-          </div>
-          <div className="hidden sm:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>DN</TableHead>
-                  <TableHead>Detail</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {entries.map((entry) => (
-                  <TableRow key={entry.dn}>
-                    <TableCell className="font-medium">{entry.name}</TableCell>
-                    <TableCell className="max-w-72 truncate font-mono text-xs text-muted-foreground">
-                      {entry.dn}
-                    </TableCell>
-                    <TableCell>{entryDetail(entry, detail)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </>
-      )}
+      <Skeleton className="h-12" />
+      <Skeleton className="h-12" />
+      <Skeleton className="h-12" />
+      <Skeleton className="h-12" />
     </div>
   )
 }
 
-function entryDetail(entry: EntrySummary, detail: "mail" | "members" | "description") {
-  if (detail === "members") {
-    return entry.members?.length ? `${entry.members.length} member${entry.members.length === 1 ? "" : "s"}` : "No members"
+function resultRange(data: DirectorySearchResponse) {
+  if (data.total === 0) {
+    return "No results"
   }
-  return entry[detail] || "Not set"
+  const start = (data.page - 1) * data.pageSize + 1
+  const end = Math.min(data.page * data.pageSize, data.total)
+  return `Showing ${start}-${end} of ${data.total}`
+}
+
+function visiblePages(page: number, totalPages: number) {
+  const start = Math.max(1, page - 2)
+  const end = Math.min(totalPages, start + 4)
+  const adjustedStart = Math.max(1, end - 4)
+  const pages: number[] = []
+  for (let value = adjustedStart; value <= end; value += 1) {
+    pages.push(value)
+  }
+  return pages
+}
+
+function directoryTypeLabel(type: DirectorySearchType) {
+  switch (type) {
+    case "users":
+      return "Users"
+    case "groups":
+      return "Groups"
+    case "ous":
+      return "OUs"
+    default:
+      return "All entries"
+  }
+}
+
+function entryTypeLabel(type: DirectoryEntryType) {
+  switch (type) {
+    case "user":
+      return "User"
+    case "group":
+      return "Group"
+    case "ou":
+      return "OU"
+    default:
+      return "Entry"
+  }
+}
+
+function entrySummaryText(entry: EntrySummary) {
+  if (entry.type === "user") {
+    return entry.mail || entry.description || "No email set"
+  }
+  if (entry.type === "group") {
+    const count = entry.members?.length ?? 0
+    return `${count} member${count === 1 ? "" : "s"}`
+  }
+  if (entry.type === "ou") {
+    return entry.description || "No description"
+  }
+  return entry.description || entry.objectClass
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+
+  const textarea = document.createElement("textarea")
+  textarea.value = value
+  textarea.setAttribute("readonly", "")
+  textarea.style.position = "fixed"
+  textarea.style.left = "-9999px"
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand("copy")
+  document.body.removeChild(textarea)
+  if (!copied) {
+    throw new Error("copy failed")
+  }
 }
 
 function lines(value: string) {
