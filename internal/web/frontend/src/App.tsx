@@ -6,10 +6,12 @@ import {
   Eye,
   FolderTree,
   KeyRound,
+  Pencil,
   RefreshCw,
   Search,
   Settings2,
   ShieldCheck,
+  Trash2,
   UserRound,
   Users,
   type LucideIcon,
@@ -53,6 +55,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -122,6 +131,17 @@ type DirectorySearchResponse = {
   total: number
   totalPages: number
   entries: EntrySummary[]
+}
+
+type EntryDetail = EntrySummary & {
+  attributes: Record<string, string[]>
+  createdAt?: string
+  updatedAt?: string
+}
+
+type DirectoryDetailResponse = {
+  baseDN: string
+  entry: EntryDetail
 }
 
 type NavItem = {
@@ -391,6 +411,12 @@ function DirectorySearchView({
     loading: boolean
   }>({ loading: true })
   const [selectedEntry, setSelectedEntry] = useState<EntrySummary>()
+  const [detailRetryKey, setDetailRetryKey] = useState(0)
+  const [detail, setDetail] = useState<{
+    data?: DirectoryDetailResponse
+    error?: string
+    loading: boolean
+  }>({ loading: false })
 
   const effectiveType = fixedType ?? entryType
 
@@ -429,6 +455,34 @@ function DirectorySearchView({
     }
   }, [effectiveType, page, pageSize, retryKey, submittedQuery])
 
+  useEffect(() => {
+    if (!selectedEntry) {
+      setDetail({ loading: false })
+      return
+    }
+
+    let cancelled = false
+    setDetail((current) => ({ data: current.data, loading: true }))
+    void fetchJSON<DirectoryDetailResponse>(`/api/directory/entry?dn=${encodeURIComponent(selectedEntry.dn)}`)
+      .then((data) => {
+        if (!cancelled) {
+          setDetail({ data, loading: false })
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setDetail({
+            error: error instanceof Error ? error.message : "Unable to load entry details.",
+            loading: false,
+          })
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [detailRetryKey, selectedEntry])
+
   function submit(event: FormEvent) {
     event.preventDefault()
     setPage(1)
@@ -441,6 +495,15 @@ function DirectorySearchView({
       onNotice({ kind: "success", text: "DN copied." })
     } catch {
       onNotice({ kind: "error", text: "Could not copy the DN." })
+    }
+  }
+
+  async function copyDetailValue(value: string, label: string) {
+    try {
+      await copyText(value)
+      onNotice({ kind: "success", text: `${label} copied.` })
+    } catch {
+      onNotice({ kind: "error", text: `Could not copy ${label.toLowerCase()}.` })
     }
   }
 
@@ -611,7 +674,20 @@ function DirectorySearchView({
         </CardContent>
       </Card>
 
-      {selectedEntry ? <SelectedEntryCard entry={selectedEntry} onCopyDN={copyDN} /> : null}
+      <DirectoryDetailSheet
+        detail={detail}
+        entry={selectedEntry}
+        onAdmin={() => onNavigate("admin")}
+        onCopyDN={copyDN}
+        onCopyValue={copyDetailValue}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedEntry(undefined)
+          }
+        }}
+        onRetry={() => setDetailRetryKey((current) => current + 1)}
+        showAdminActions={session.roles.admin}
+      />
     </div>
   )
 }
@@ -822,39 +898,256 @@ function ResultPagination({
   )
 }
 
-function SelectedEntryCard({
+function DirectoryDetailSheet({
+  detail,
   entry,
+  onAdmin,
   onCopyDN,
+  onCopyValue,
+  onOpenChange,
+  onRetry,
+  showAdminActions,
 }: {
-  entry: EntrySummary
+  detail: {
+    data?: DirectoryDetailResponse
+    error?: string
+    loading: boolean
+  }
+  entry?: EntrySummary
+  onAdmin: () => void
   onCopyDN: (entry: EntrySummary) => void
+  onCopyValue: (value: string, label: string) => void
+  onOpenChange: (open: boolean) => void
+  onRetry: () => void
+  showAdminActions: boolean
+}) {
+  const loadedEntry = detail.data?.entry
+  const displayEntry = loadedEntry ?? entry
+  const parent = displayEntry ? parentDN(displayEntry.dn) : ""
+  const rows = loadedEntry ? attributeRows(loadedEntry.attributes) : []
+  const objectClasses = loadedEntry?.attributes.objectclass ?? (displayEntry ? [displayEntry.objectClass] : [])
+  const members = loadedEntry?.members ?? []
+  const memberOf = loadedEntry?.memberOf ?? []
+
+  return (
+    <Sheet open={Boolean(entry)} onOpenChange={onOpenChange}>
+      <SheetContent className="overflow-y-auto data-[side=right]:w-full sm:max-w-2xl" side="right">
+        <SheetHeader className="border-b">
+          <div className="flex flex-col gap-3 pr-8">
+            <div className="flex flex-wrap items-center gap-2">
+              {displayEntry ? <Badge variant="secondary">{entryTypeLabel(displayEntry.type)}</Badge> : null}
+              {displayEntry ? <Badge variant="secondary">{displayEntry.objectClass}</Badge> : null}
+            </div>
+            <div className="flex flex-col gap-1">
+              <SheetTitle>{displayEntry?.name || "Entry details"}</SheetTitle>
+              <SheetDescription>
+                {displayEntry ? entrySummaryText(displayEntry) : "Loading directory entry."}
+              </SheetDescription>
+            </div>
+          </div>
+        </SheetHeader>
+
+        {detail.loading ? (
+          <div className="flex flex-col gap-3 p-4">
+            <Skeleton className="h-16" />
+            <Skeleton className="h-32" />
+            <Skeleton className="h-48" />
+          </div>
+        ) : detail.error ? (
+          <div className="p-4">
+            <Alert variant="destructive">
+              <AlertCircle />
+              <AlertTitle>Could not load details</AlertTitle>
+              <AlertDescription className="flex flex-col gap-3">
+                <span>{detail.error}</span>
+                <Button onClick={onRetry} size="sm" type="button" variant="outline">
+                  Retry
+                </Button>
+              </AlertDescription>
+            </Alert>
+          </div>
+        ) : displayEntry ? (
+          <div className="flex flex-col gap-5 p-4">
+            <section className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-medium">DN</p>
+                <p className="break-all font-mono text-xs leading-relaxed text-muted-foreground">
+                  {displayEntry.dn}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => onCopyDN(displayEntry)} size="sm" type="button" variant="outline">
+                  <Copy data-icon="inline-start" />
+                  Copy DN
+                </Button>
+                {showAdminActions ? (
+                  <>
+                    <Button onClick={onAdmin} size="sm" type="button" variant="outline">
+                      <Pencil data-icon="inline-start" />
+                      Edit entry
+                    </Button>
+                    {displayEntry.type === "user" ? (
+                      <Button onClick={onAdmin} size="sm" type="button" variant="outline">
+                        <KeyRound data-icon="inline-start" />
+                        Reset password
+                      </Button>
+                    ) : null}
+                    {displayEntry.type === "group" ? (
+                      <Button onClick={onAdmin} size="sm" type="button" variant="outline">
+                        <Users data-icon="inline-start" />
+                        Manage members
+                      </Button>
+                    ) : null}
+                    <Button onClick={onAdmin} size="sm" type="button" variant="destructive">
+                      <Trash2 data-icon="inline-start" />
+                      Delete entry
+                    </Button>
+                  </>
+                ) : null}
+              </div>
+            </section>
+
+            <Separator />
+
+            <section className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium">Directory path</h2>
+              <div className="flex flex-col gap-2 rounded-md border p-3">
+                {dnLineage(displayEntry.dn).map((part, index) => (
+                  <div className="flex items-start gap-2" key={`${part}-${index}`}>
+                    <Badge className="mt-0.5" variant={index === 0 ? "default" : "secondary"}>
+                      {index === 0 ? "Entry" : "Parent"}
+                    </Badge>
+                    <p className="break-all font-mono text-xs leading-relaxed text-muted-foreground">{part}</p>
+                  </div>
+                ))}
+              </div>
+              {parent ? (
+                <DetailValue label="Parent DN" value={parent} onCopy={(value) => onCopyValue(value, "Parent DN")} />
+              ) : null}
+            </section>
+
+            <section className="grid gap-3 sm:grid-cols-2">
+              <DetailList label="Object classes" values={objectClasses} onCopy={onCopyValue} />
+              <DetailList label="Member of" empty="No group memberships" values={memberOf} onCopy={onCopyValue} />
+              <DetailList label="Members" empty="No members" values={members} onCopy={onCopyValue} />
+              <div className="flex flex-col gap-3 rounded-md border p-3">
+                <h2 className="text-sm font-medium">Operational</h2>
+                <DetailDatum label="Created" value={formatTimestamp(loadedEntry?.createdAt)} />
+                <DetailDatum label="Modified" value={formatTimestamp(loadedEntry?.updatedAt)} />
+              </div>
+            </section>
+
+            <section className="flex flex-col gap-3">
+              <h2 className="text-sm font-medium">Attributes</h2>
+              {rows.length > 0 ? (
+                <div className="overflow-hidden rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Attribute</TableHead>
+                        <TableHead>Value</TableHead>
+                        <TableHead className="w-24">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map((row) => (
+                        <TableRow key={`${row.name}-${row.value}`}>
+                          <TableCell className="font-mono text-xs">{row.name}</TableCell>
+                          <TableCell className="break-all font-mono text-xs text-muted-foreground">
+                            {row.value}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              aria-label={`Copy ${row.name}`}
+                              onClick={() => onCopyValue(row.value, row.name)}
+                              size="icon-sm"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <Copy />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyTitle>No safe attributes</EmptyTitle>
+                    <EmptyDescription>This entry has no displayable attributes.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
+            </section>
+          </div>
+        ) : null}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function DetailValue({
+  label,
+  onCopy,
+  value,
+}: {
+  label: string
+  onCopy: (value: string) => void
+  value: string
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex flex-col gap-1">
-            <CardTitle>{entry.name || entry.dn}</CardTitle>
-            <CardDescription>{entryTypeLabel(entry.type)} selected from search results.</CardDescription>
-          </div>
-          <Badge variant="secondary">{entry.objectClass}</Badge>
+    <div className="flex flex-col gap-2 rounded-md border p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-medium">{label}</p>
+        <Button aria-label={`Copy ${label}`} onClick={() => onCopy(value)} size="icon-sm" type="button" variant="ghost">
+          <Copy />
+        </Button>
+      </div>
+      <p className="break-all font-mono text-xs leading-relaxed text-muted-foreground">{value}</p>
+    </div>
+  )
+}
+
+function DetailList({
+  empty = "None",
+  label,
+  onCopy,
+  values,
+}: {
+  empty?: string
+  label: string
+  onCopy: (value: string, label: string) => void
+  values: string[]
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-md border p-3">
+      <h2 className="text-sm font-medium">{label}</h2>
+      {values.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {values.map((value) => (
+            <div className="flex items-start justify-between gap-2" key={value}>
+              <p className="break-all font-mono text-xs leading-relaxed text-muted-foreground">{value}</p>
+              <Button aria-label={`Copy ${label}`} onClick={() => onCopy(value, label)} size="icon-sm" type="button" variant="ghost">
+                <Copy />
+              </Button>
+            </div>
+          ))}
         </div>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium">DN</p>
-          <p className="break-all font-mono text-xs leading-relaxed text-muted-foreground">{entry.dn}</p>
-        </div>
-        <Separator />
-        <p className="text-sm text-muted-foreground">{entrySummaryText(entry)}</p>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => onCopyDN(entry)} size="sm" type="button" variant="outline">
-            <Copy data-icon="inline-start" />
-            Copy DN
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+      ) : (
+        <p className="text-sm text-muted-foreground">{empty}</p>
+      )}
+    </div>
+  )
+}
+
+function DetailDatum({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="font-mono text-xs">{value}</p>
+    </div>
   )
 }
 
@@ -1372,6 +1665,9 @@ function errorMessage(status: number) {
   if (status === 403) {
     return "This account is not allowed to access that console surface."
   }
+  if (status === 404) {
+    return "That entry no longer exists or is outside the directory base."
+  }
   return `Request failed with HTTP ${status}.`
 }
 
@@ -1626,6 +1922,45 @@ function entrySummaryText(entry: EntrySummary) {
     return entry.description || "No description"
   }
   return entry.description || entry.objectClass
+}
+
+function parentDN(dn: string) {
+  const [, parent = ""] = dn.split(/,(.*)/s)
+  return parent
+}
+
+function dnLineage(dn: string) {
+  const parts: string[] = []
+  let current = dn
+  while (current) {
+    parts.push(current)
+    current = parentDN(current)
+  }
+  return parts
+}
+
+function attributeRows(attributes: Record<string, string[]>) {
+  return Object.entries(attributes)
+    .filter(([name]) => name.toLowerCase() !== "userpassword")
+    .flatMap(([name, values]) => values.map((value) => ({ name, value })))
+    .sort((left, right) => {
+      const nameCompare = left.name.localeCompare(right.name)
+      if (nameCompare !== 0) {
+        return nameCompare
+      }
+      return left.value.localeCompare(right.value)
+    })
+}
+
+function formatTimestamp(value?: string) {
+  if (!value) {
+    return "Not recorded"
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString()
 }
 
 async function copyText(value: string) {

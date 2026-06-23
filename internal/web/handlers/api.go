@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -200,6 +201,10 @@ func (h *APIHandler) DirectoryEntry(w http.ResponseWriter, r *http.Request) {
 
 	entry, err := h.store.GetEntryWithOptions(r.Context(), dn, store.EntryOptions{IncludeMemberOf: true})
 	if err != nil {
+		if errors.Is(err, store.ErrNoSuchObject) {
+			http.Error(w, "Entry not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, "Failed to load entry", http.StatusInternalServerError)
 		return
 	}

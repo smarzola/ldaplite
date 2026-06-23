@@ -419,6 +419,16 @@ func TestDirectoryDetailAPIReturnsSafeAttributesAndMemberships(t *testing.T) {
 	if got := detail.Entry.Attributes["mail"]; len(got) != 1 || got[0] != "detail@example.com" {
 		t.Fatalf("attributes[mail] = %+v, want detail@example.com", got)
 	}
+
+	missingReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/api/directory/entry?dn="+url.QueryEscape("uid=missing,ou=users,dc=test,dc=com"), nil)
+	missingReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	missingRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(missingRR, missingReq)
+
+	if missingRR.Code != http.StatusNotFound {
+		t.Fatalf("missing detail status = %d, want %d; body=%s", missingRR.Code, http.StatusNotFound, missingRR.Body.String())
+	}
 }
 
 func TestPasswordOnlyUserCannotReachDirectorySearchOrDetailAPIs(t *testing.T) {

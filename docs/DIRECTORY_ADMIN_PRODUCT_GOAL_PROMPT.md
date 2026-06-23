@@ -166,7 +166,7 @@ When a milestone is complete:
 - [x] Milestone 1: Search/list API contract and tests.
 - [x] Milestone 2: Real app shell and role-specific landing.
 - [x] Milestone 3: Searchable paginated directory results.
-- [ ] Milestone 4: Entry detail surface and row actions.
+- [x] Milestone 4: Entry detail surface and row actions.
 - [ ] Milestone 5: Focused admin workflows.
 - [ ] Milestone 6: Copy, accessibility, visual validation, docs, and final
       regression.
@@ -639,6 +639,50 @@ go test -v ./internal/web
 Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
+
+Status note, 2026-06-23:
+
+- Replaced the temporary selected-entry card with a shadcn `Sheet` detail
+  surface opened from search result rows.
+  - The sheet fetches `GET /api/directory/entry?dn=...` when opened, so search
+    state and pagination stay intact behind the detail surface.
+  - Detail loading, stale/missing-entry error, and retry states are handled in
+    the sheet.
+  - Details show type, name, full DN, parent DN, DN lineage, object classes,
+    safe attributes, members, `memberOf`, and created/modified timestamps when
+    present.
+  - Copy actions are available for DN, parent DN, relationship values, and
+    attribute values.
+  - Read-only detail sheets expose lookup/copy actions only.
+  - Admin detail sheets expose contextual shortcuts for `Edit entry`,
+    `Reset password` on users, `Manage members` on groups, and `Delete entry`.
+- Tightened `GET /api/directory/entry` to return `404` for missing entries and
+  mapped that to useful UI copy for stale/deleted result rows.
+- Added shadcn component:
+  - `sheet`
+- Browser validation with a temporary single-binary server and mock data:
+  - Admin opened Alice from search results; focus entered the sheet, URL/search
+    state remained on `/app/?view=directory`, and the sheet showed DN, parent
+    DN, object class, attributes, `memberOf`, and no `userPassword`.
+  - Copied Alice's `telephonenumber` attribute value to the browser clipboard.
+  - Closed the sheet and verified Alice search/results remained in place.
+  - Admin opened `search-team`; the sheet showed both member DNs and
+    `Manage members`, while user-only `Reset password` was absent.
+  - Read-only user `reader` opened Alice detail with `Copy DN` and `memberOf`
+    visible, with no admin nav or write actions.
+  - A deleted `ghost` result row opened a detail sheet showing
+    `Could not load details`, the missing-entry message, and `Retry`.
+  - Mobile viewport `390x844` opened a full-width sheet with attributes and
+    copy actions visible and no page horizontal overflow.
+- Commands run:
+  - `npx shadcn@latest docs sheet`
+  - `npx shadcn@latest add sheet --dry-run`
+  - `npx shadcn@latest add sheet`
+  - `npm run build`
+  - `go test -v ./internal/web`
+  - `go build -o /private/tmp/ldaplite-m4 ./cmd/ldaplite`
+  - Temporary single-binary server plus in-app Browser validation.
+- Commit hash: pending.
 
 ## Milestone 5: Focused Admin Workflows
 
