@@ -302,7 +302,7 @@ Status note, 2026-06-23:
   - `npx shadcn@latest add sidebar sheet dialog dropdown-menu command pagination select toggle-group sonner alert-dialog tooltip input-group --dry-run`
   - Temporary local server plus in-app Browser observation for current UI.
   - Verification: `npm run build`
-- Commit hash: pending.
+- Commit hash: `89b2479`.
 
 ## Milestone 1: Search/List API Contract And Tests
 
