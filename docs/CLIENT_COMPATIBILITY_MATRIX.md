@@ -42,7 +42,7 @@ Confirmed current strengths:
 Confirmed current gaps:
 
 - No native TLS/LDAPS/StartTLS; use the tested TLS sidecar deployment path.
-- No LDIF/CSV/bootstrap import/export path yet.
+- LDIF import/export command design is documented; implementation is pending.
 
 ## Consumer Matrix
 

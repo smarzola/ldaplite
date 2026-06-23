@@ -38,7 +38,7 @@ This roadmap tracks current project direction after the security and interoperab
 - SCIM 2.0 or REST provisioning API after the service layer is in place (#7).
 - User and group templates in the Web UI as structured presets over the attribute system (#8).
 - Web UI password reset/change flow (#10).
-- LDIF/CSV import and export tools.
+- Implement LDIF import/export commands from [docs/IMPORT_EXPORT_DESIGN.md](IMPORT_EXPORT_DESIGN.md).
 
 ## GitHub Issue Cleanup
 

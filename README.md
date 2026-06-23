@@ -503,7 +503,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for current project status and planned wo
   - JSON payloads for easier integration
   - Compatible with modern IdP systems
 - Enhanced ACLs for granular permissions
-- Import/export tools (LDIF, CSV)
+- LDIF import/export commands from [docs/IMPORT_EXPORT_DESIGN.md](docs/IMPORT_EXPORT_DESIGN.md)
 - Native TLS/LDAPS support (sidecar deployment is documented)
 
 ## Limitations

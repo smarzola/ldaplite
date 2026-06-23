@@ -115,7 +115,7 @@ complete:
 - [x] Milestone 4: Correct LDAP Compare behavior.
 - [x] Milestone 5: Service-account/read-only bind strategy.
 - [x] Milestone 6: TLS/LDAPS deployment path.
-- [ ] Milestone 7: Bootstrap/import/export path.
+- [x] Milestone 7: Bootstrap/import/export path.
 - [ ] Milestone 8: Final docs, roadmap update, full regression, and release
   readiness summary.
 
