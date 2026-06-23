@@ -487,7 +487,7 @@ Status note, 2026-06-23:
   - `npm run build`
   - `go test -v ./internal/web`
   - Temporary single-binary build and in-app Browser role validation.
-- Commit hash: pending.
+- Commit hash: `f5919d1`.
 
 ## Milestone 3: Searchable Paginated Directory Results
 
