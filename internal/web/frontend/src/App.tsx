@@ -128,17 +128,17 @@ export default function App() {
   }
 
   return (
-    <main className="min-h-svh bg-background text-foreground">
-      <div className="mx-auto flex min-h-svh w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-5 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="flex flex-col gap-2">
+    <main className="min-h-svh overflow-x-hidden bg-background text-foreground">
+      <div className="mx-auto flex min-h-svh w-full max-w-[100vw] min-w-0 flex-col gap-6 px-4 py-6 sm:px-6 lg:max-w-6xl lg:px-8">
+        <header className="flex min-w-0 flex-col gap-5 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0 flex flex-col gap-2">
             <p className="font-mono text-xs uppercase tracking-normal text-muted-foreground">
               {session?.baseDN ?? "Loading directory"}
             </p>
             <div className="flex flex-col gap-1">
               <h1 className="text-2xl font-semibold tracking-normal">LDAPLite directory console</h1>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                Role-aware operations for users, groups, OUs, and account access.
+              <p className="max-w-2xl break-words text-sm leading-relaxed text-muted-foreground">
+                Role-aware users, groups, OUs, and account access.
               </p>
             </div>
           </div>
@@ -230,8 +230,8 @@ function CapabilityRail({ loading, session }: { loading: boolean; session?: Sess
         ) : (
           <div className="flex flex-col gap-2">
             {capabilityLabels.map(([key, label]) => (
-              <div key={key} className="flex items-center justify-between gap-3">
-                <span className="text-sm">{label}</span>
+              <div key={key} className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                <span className="min-w-0 text-sm">{label}</span>
                 <Badge variant={session?.roles[key] ? "default" : "secondary"}>
                   {session?.roles[key] ? "Allowed" : "Denied"}
                 </Badge>
@@ -889,26 +889,40 @@ function EntryTable({
           </EmptyHeader>
         </Empty>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>DN</TableHead>
-              <TableHead className="hidden sm:table-cell">Detail</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        <>
+          <div className="flex flex-col gap-3 sm:hidden">
             {entries.map((entry) => (
-              <TableRow key={entry.dn}>
-                <TableCell className="font-medium">{entry.name}</TableCell>
-                <TableCell className="max-w-40 truncate font-mono text-xs text-muted-foreground sm:max-w-72">
+              <div className="border-b border-border pb-3 last:border-b-0 last:pb-0" key={entry.dn}>
+                <p className="text-sm font-medium">{entry.name}</p>
+                <p className="mt-1 break-all font-mono text-xs leading-relaxed text-muted-foreground">
                   {entry.dn}
-                </TableCell>
-                <TableCell className="hidden sm:table-cell">{entryDetail(entry, detail)}</TableCell>
-              </TableRow>
+                </p>
+              </div>
             ))}
-          </TableBody>
-        </Table>
+          </div>
+          <div className="hidden sm:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>DN</TableHead>
+                  <TableHead>Detail</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {entries.map((entry) => (
+                  <TableRow key={entry.dn}>
+                    <TableCell className="font-medium">{entry.name}</TableCell>
+                    <TableCell className="max-w-72 truncate font-mono text-xs text-muted-foreground">
+                      {entry.dn}
+                    </TableCell>
+                    <TableCell>{entryDetail(entry, detail)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
     </div>
   )

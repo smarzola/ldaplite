@@ -63,6 +63,23 @@ func TestMutatingRoutesRejectCrossOriginWithValidAuth(t *testing.T) {
 	}
 }
 
+func TestRootRedirectsToEmbeddedApp(t *testing.T) {
+	srv, st := setupTestServer(t)
+	defer st.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/", nil)
+	rr := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusFound)
+	}
+	if got := rr.Header().Get("Location"); got != "/app/" {
+		t.Fatalf("Location = %q, want /app/", got)
+	}
+}
+
 func TestAPISessionReturnsRoleAwareCapabilities(t *testing.T) {
 	srv, st := setupTestServer(t)
 	defer st.Close()

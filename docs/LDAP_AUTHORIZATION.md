@@ -63,10 +63,38 @@ member: uid=appbind,ou=users,dc=example,dc=com
 Use `uid=appbind,ou=users,dc=example,dc=com` as the bind DN in applications
 that only need directory reads.
 
+## Built-In Capability Groups
+
+LDAPLite keeps authorization intentionally coarse and group-based:
+
+- `cn=ldaplite.admin,ou=groups,<baseDN>` grants directory write,
+  group-management, password-reset, and full Web UI administration capability.
+- `cn=ldaplite.readonly,ou=groups,<baseDN>` is the recommended marker for
+  application bind users that should only read directory data. Authenticated
+  users are already read-only by default, but this group keeps service-account
+  intent visible.
+- `cn=ldaplite.password,ou=groups,<baseDN>` grants account-only Web UI access
+  for self-service password changes when the user is not also an admin or
+  ordinary directory-read user. Admin membership takes precedence when a user is
+  in multiple built-in groups.
+
+## Web UI Roles
+
+The embedded Web UI resolves capabilities on the server and shows only the
+surfaces the actor can use:
+
+- Admin users can inspect and mutate users, groups, OUs, group membership,
+  extra attributes, and password resets.
+- Read-only users can inspect directory summaries but cannot reach mutating
+  Web UI/API endpoints.
+- Password-only users can open the account surface and change their own
+  password, but cannot access directory tables or administration actions.
+
+Hidden controls are not the security boundary. Mutating Web UI/API routes are
+also protected by server-side capabilities and same-origin checks.
+
 ## Non-Goals
 
 - This is not a full ACL system.
 - It does not grant per-subtree or per-attribute permissions.
-- Web UI role-specific views are being redesigned; the current admin Web UI
-  still requires `cn=ldaplite.admin,ou=groups,<baseDN>`.
 - It does not make anonymous bind writable.

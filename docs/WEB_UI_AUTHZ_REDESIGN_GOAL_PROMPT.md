@@ -231,7 +231,7 @@ When a milestone is complete:
 - [x] Milestone 3: Embedded shadcn frontend build foundation.
 - [x] Milestone 4: Role-aware Web UI API and shell.
 - [x] Milestone 5: Directory management and password flows.
-- [ ] Milestone 6: Browser visual validation, documentation, and final
+- [x] Milestone 6: Browser visual validation, documentation, and final
       regression.
 
 ## Milestone 0: Baseline Audit And Design Direction
@@ -516,7 +516,7 @@ Status note, 2026-06-23:
 - Updated `docs/LDAP_AUTHORIZATION.md`,
   `docs/CLIENT_COMPATIBILITY_MATRIX.md`, and `docs/integrations/README.md` to
   describe the breaking least-privilege default and explicit app bind guidance.
-- Commit hash: pending checkpoint commit.
+- Commit hash: `b37b5bc`.
 
 ## Milestone 3: Embedded shadcn Frontend Build Foundation
 
@@ -853,6 +853,56 @@ Browser validation:
 Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
+
+Status note, 2026-06-23:
+
+- Updated user-facing and agent-facing docs for the breaking authorization
+  model and the final Web UI architecture:
+  - `README.md` now describes the role-aware React/shadcn UI, least-privilege
+    directory writes, and build-time-only frontend toolchain.
+  - `docs/LDAP_AUTHORIZATION.md` now documents `ldaplite.admin`,
+    `ldaplite.readonly`, `ldaplite.password`, Web UI role behavior, and
+    server-side capability enforcement.
+  - `docs/ROADMAP.md` marks the shared directory service, role-aware Web UI,
+    password reset, and self-service flows as completed.
+  - `AGENTS.md` now names the Vite/React/Tailwind/shadcn embedded Web UI stack.
+- Switched the root Web UI redirect to `/app/` and added
+  `TestRootRedirectsToEmbeddedApp`.
+- Browser/visual validation ran against `./bin/ldaplite server` with a
+  temporary SQLite database at `/private/tmp/ldaplite-ui-final-m6.db`.
+- In-app Browser validation covered admin, read-only, and password-only
+  sessions at desktop and mobile widths. The final strict mobile metric check
+  used `390x844` and confirmed `scrollWidth=390`, `clientWidth=390`, no
+  overflowing elements, admin banner present, and no browser console errors.
+- The in-app Browser screenshot primitive repeatedly failed with
+  `Timed out running CDP command "Page.captureScreenshot"`. Supplemental
+  headless Chrome screenshots were captured from the same built embedded binary:
+  - `/private/tmp/ldaplite-browser-validation-m6/screenshots/admin-desktop.png`
+  - `/private/tmp/ldaplite-browser-validation-m6/screenshots/read-only-desktop.png`
+  - `/private/tmp/ldaplite-browser-validation-m6/screenshots/password-only-desktop.png`
+  - `/private/tmp/ldaplite-browser-validation-m6/screenshots/admin-mobile.png`
+  - `/private/tmp/ldaplite-browser-validation-m6/screenshots/read-only-mobile.png`
+  - `/private/tmp/ldaplite-browser-validation-m6/screenshots/password-only-mobile.png`
+- Visual review found and fixed mobile polish issues before completion:
+  directory DN rows now render as mobile stacked rows, the page shell is clamped
+  to the viewport, capability badges stack on narrow screens, and the header
+  copy was shortened to avoid brittle clipping.
+- Direct final denial checks against the running binary passed:
+  - read-only `POST /api/users` returned `403`;
+  - password-only `GET /api/directory` returned `403`;
+  - password-only direct `GET /users/new` returned `403`;
+  - authenticated `GET /` redirected with `302` to `/app/`.
+- Final verification passed:
+  - `npm ci` (passed with low-severity audit warnings and allow-scripts
+    warnings for `esbuild@0.27.7` and `fsevents@2.3.3`);
+  - `npm run build`;
+  - `make build` (passed; Go emitted a non-fatal module stat-cache permission
+    warning while creating `bin/ldaplite`);
+  - `test -z "$(gofmt -l .)"`;
+  - `go test -v -race ./...`;
+  - `go test -tags=functional -v ./tests/functional/...`;
+  - `go vet ./...`.
+- Commit hash: pending checkpoint commit.
 
 ## Final Verification
 

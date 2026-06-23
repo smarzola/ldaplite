@@ -95,7 +95,7 @@ func (s *Server) setupRoutes() {
 	// Root redirect
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
-			http.Redirect(w, r, "/users", http.StatusFound)
+			http.Redirect(w, r, "/app/", http.StatusFound)
 			return
 		}
 		http.NotFound(w, r)
