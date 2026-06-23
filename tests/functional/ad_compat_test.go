@@ -301,6 +301,22 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 		assertLDAPResultCode(t, conn.Modify(modEntryUUID), ldap.LDAPResultUnwillingToPerform)
 	})
 
+	t.Run("compare compatibility", func(t *testing.T) {
+		conn := srv.dial(t)
+		bindAdmin(t, conn)
+
+		assertCompareResult(t, conn, janeDN, "uid", "jane", true)
+		assertCompareResult(t, conn, janeDN, "cn", "jane doe", true)
+		assertCompareResult(t, conn, janeDN, "objectClass", "inetOrgPerson", true)
+		assertCompareResult(t, conn, janeDN, "memberOf", groupDN, true)
+		assertCompareResult(t, conn, janeDN, "uid", "missing", false)
+		assertCompareResult(t, conn, janeDN, "missingAttribute", "value", false)
+		assertCompareResult(t, conn, janeDN, "userPassword", "NewPassword123!", false)
+
+		_, err := conn.Compare("uid=missing,"+usersOUDN, "uid", "missing")
+		assertLDAPResultCode(t, err, ldap.LDAPResultNoSuchObject)
+	})
+
 	t.Run("delete compatibility", func(t *testing.T) {
 		conn := srv.dial(t)
 		bindAdmin(t, conn)
@@ -352,6 +368,17 @@ func assertBindSucceeds(t *testing.T, srv *testServer, dn, password string) {
 	t.Helper()
 	if err := bindErr(t, srv, dn, password); err != nil {
 		t.Fatalf("bind %s: %v", dn, err)
+	}
+}
+
+func assertCompareResult(t *testing.T, conn *ldap.Conn, dn, attr, value string, want bool) {
+	t.Helper()
+	got, err := conn.Compare(dn, attr, value)
+	if err != nil {
+		t.Fatalf("compare %s %s=%q: %v", dn, attr, value, err)
+	}
+	if got != want {
+		t.Fatalf("compare %s %s=%q = %v, want %v", dn, attr, value, got, want)
 	}
 }
 

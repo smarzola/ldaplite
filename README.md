@@ -28,7 +28,7 @@ directory operations as a hobby.
   - Bind with simple authentication
   - Search with SQL-optimized filters
   - Add, Modify, Delete operations
-  - Compare operations (basic)
+  - Compare operations with true/false/no-such-object result semantics
   - RootDSE and Schema queries
 
 - **Object Classes** (RFC 2256, RFC 2798):

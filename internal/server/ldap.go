@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/smarzola/ldaplite/internal/audit"
+	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/protocol"
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 	"github.com/smarzola/ldaplite/internal/store"
@@ -261,7 +262,7 @@ func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg 
 func (s *Server) handleCompare(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
 	start := time.Now()
 	compareReq := msg.Op.(ldapmsg.CompareRequest)
-	resultCode := ldapmsg.ResultCodeCompareFalse
+	resultCode := ldapmsg.ResultCodeOperationsError
 	ctx, span := telemetry.StartLDAPSpan(ctx, "compare")
 	defer func() {
 		telemetry.EndLDAPSpan(span, int(resultCode))
@@ -275,8 +276,60 @@ func (s *Server) handleCompare(ctx context.Context, conn *protocol.Connection, m
 		})
 	}()
 
-	slog.Debug("Compare request")
-	return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(ldapmsg.ResultCodeCompareFalse))
+	slog.Debug("Compare request", "dn", compareReq.Entry, "attribute", compareReq.AVA.Attribute)
+
+	if !s.canSearch(conn, compareReq.Entry) {
+		slog.Info("Compare rejected - bind required", "dn", compareReq.Entry)
+		resultCode = ldapmsg.ResultCodeInsufficientAccessRights
+		return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(resultCode))
+	}
+
+	entry, err := s.store.GetEntryWithOptions(ctx, compareReq.Entry, store.EntryOptions{IncludeMemberOf: true})
+	if err != nil {
+		slog.Error("Compare get entry error", "dn", compareReq.Entry, "error", err)
+		resultCode = ldapmsg.ResultCodeOperationsError
+		return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(resultCode))
+	}
+	if entry == nil {
+		resultCode = ldapmsg.ResultCodeNoSuchObject
+		return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(resultCode))
+	}
+
+	if compareEntryAttribute(entry, compareReq.AVA.Attribute, compareReq.AVA.Value) {
+		resultCode = ldapmsg.ResultCodeCompareTrue
+	} else {
+		resultCode = ldapmsg.ResultCodeCompareFalse
+	}
+	return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(resultCode))
+}
+
+func compareEntryAttribute(entry *models.Entry, attrName, assertionValue string) bool {
+	for _, value := range compareAttributeValues(entry, attrName) {
+		if strings.EqualFold(value, assertionValue) {
+			return true
+		}
+	}
+	return false
+}
+
+func compareAttributeValues(entry *models.Entry, attrName string) []string {
+	switch strings.ToLower(attrName) {
+	case "userpassword":
+		return nil
+	case "objectclass":
+		if entry.ObjectClass != "" {
+			return []string{entry.ObjectClass}
+		}
+	case "createtimestamp", "modifytimestamp":
+		timestamp := entry.CreatedAt
+		if strings.EqualFold(attrName, "modifyTimestamp") {
+			timestamp = entry.UpdatedAt
+		}
+		if !timestamp.IsZero() {
+			return []string{models.FormatLDAPTimestamp(timestamp)}
+		}
+	}
+	return entry.GetAttributes(attrName)
 }
 
 // handleUnbind handles unbind operations

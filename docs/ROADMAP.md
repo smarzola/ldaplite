@@ -13,6 +13,7 @@ This roadmap tracks current project direction after the security and interoperab
 - Stable generated entry identifiers: operational `entryUUID` plus `uuid` compatibility alias.
 - Pocket ID LDAP sync compatibility recipe and functional coverage.
 - LDAP integration recipes for Authelia, Dex, Gitea/Forgejo, Grafana, and Nextcloud.
+- LDAP Compare returns meaningful true, false, and no-such-object results for safe attributes.
 - Canonical LDAP attribute casing for known response attributes.
 - Bind enforcement for normal searches and write operations.
 - Web UI same-origin protection and POST-only deletes.

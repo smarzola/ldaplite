@@ -112,7 +112,7 @@ complete:
 - [x] Milestone 1: Stable generated IDs for users and groups.
 - [x] Milestone 2: Pocket ID compatibility test and integration recipe.
 - [x] Milestone 3: Integration recipe pack for common LDAP consumers.
-- [ ] Milestone 4: Correct LDAP Compare behavior.
+- [x] Milestone 4: Correct LDAP Compare behavior.
 - [ ] Milestone 5: Service-account/read-only bind strategy.
 - [ ] Milestone 6: TLS/LDAPS deployment path.
 - [ ] Milestone 7: Bootstrap/import/export path.

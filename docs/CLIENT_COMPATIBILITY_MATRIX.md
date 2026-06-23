@@ -31,12 +31,13 @@ Confirmed current strengths:
 - Pocket ID has a tested functional compatibility path and integration recipe.
 - Integration recipes exist for Authelia, Dex, Gitea/Forgejo, Grafana, and
   Nextcloud.
+- LDAP Compare returns meaningful compareTrue, compareFalse, and noSuchObject
+  results for safe attributes.
 - Audit-grade structured logs, optional OpenTelemetry tracing, and
   Prometheus-compatible metrics are implemented and documented.
 
 Confirmed current gaps:
 
-- LDAP Compare currently returns false and needs real assertion handling.
 - LDAP write authorization is coarse: any authenticated non-anonymous user can
   write.
 - No native TLS/LDAPS/StartTLS; deployment guidance currently relies on an
