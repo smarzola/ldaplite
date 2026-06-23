@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.12.0 - 2026-06-23
+
+### LDAP Client Compatibility
+
+- Added stable `entryUUID` values plus a `uuid` compatibility alias for clients that key synced users and groups by immutable IDs.
+- Added LDAP Compare operation support, including compare result codes and functional coverage for client-visible behavior.
+- Added Pocket ID compatibility coverage for user and group synchronization expectations.
+- Added read-only LDAP service account authorization using `cn=ldaplite.readonly,ou=groups,<baseDN>`.
+- Added documented LDAPS sidecar deployment guidance and TLS compatibility coverage.
+
+### Documentation
+
+- Added a client compatibility matrix, client-readiness summary, and integration recipes for Pocket ID, Authelia, Dex, Gitea/Forgejo, Grafana, and Nextcloud.
+- Added an LDIF import/export design document for the next provisioning milestone.
+
 ## v0.11.0 - 2026-06-22
 
 ### Telemetry
