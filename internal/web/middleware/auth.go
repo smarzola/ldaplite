@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/smarzola/ldaplite/internal/audit"
+	"github.com/smarzola/ldaplite/internal/authz"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/smarzola/ldaplite/pkg/crypto"
@@ -94,34 +95,14 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 		}
 		audit.SetActorDN(ctx, userDN)
 
-		// Search for the admin group entry to get its actual DN
-		adminGroups, err := a.store.SearchEntriesWithOptions(ctx, store.SearchOptions{
-			BaseDN:          a.cfg.LDAP.BaseDN,
-			Filter:          "(&(objectClass=groupOfNames)(cn=ldaplite.admin))",
-			Scope:           store.SearchScopeWholeSubtree,
-			IncludeMemberOf: false,
-		})
+		capabilities, err := authz.New(a.cfg.LDAP.BaseDN, a.store).Capabilities(ctx, authz.BoundUser(userDN))
 		if err != nil {
-			slog.Error("Failed to search for admin group", "error", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
-		if len(adminGroups) == 0 {
-			slog.Error("Admin group not found", "expected_cn", "ldaplite.admin")
-			http.Error(w, "Internal server error: admin group not configured", http.StatusInternalServerError)
-			return
-		}
-		adminGroupDN := adminGroups[0].DN
-
-		// Check admin group membership
-		isMember, err := a.store.IsUserInGroup(ctx, userDN, adminGroupDN)
-		if err != nil {
-			slog.Error("Failed to check group membership", "user_dn", userDN, "error", err)
+			slog.Error("Failed to resolve capabilities", "user_dn", userDN, "error", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
-		if !isMember {
+		if !capabilities.Has(authz.UIAdmin) {
 			slog.Warn("Access denied: user not in admin group", "user_dn", userDN)
 			audit.LogWeb(ctx, audit.WebEvent{
 				Event:      audit.EventWebAuthorizationDeny,

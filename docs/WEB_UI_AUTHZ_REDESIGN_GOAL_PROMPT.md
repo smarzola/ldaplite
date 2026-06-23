@@ -226,7 +226,7 @@ When a milestone is complete:
    milestone.
 
 - [x] Milestone 0: Baseline audit and design direction.
-- [ ] Milestone 1: Shared capability authorization layer.
+- [x] Milestone 1: Shared capability authorization layer.
 - [ ] Milestone 2: Breaking least-privilege LDAP write policy.
 - [ ] Milestone 3: Embedded shadcn frontend build foundation.
 - [ ] Milestone 4: Role-aware Web UI API and shell.
@@ -405,6 +405,35 @@ go test -v ./internal/store/...
 Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
+
+Status note, 2026-06-23:
+
+- Commands run:
+  - `gofmt -w internal/authz/authz.go internal/authz/authz_test.go internal/server/ldap.go internal/web/middleware/auth.go`
+  - `go test -v ./internal/authz ./internal/server ./internal/web/...` failed
+    in the sandbox because Go could not write to `~/Library/Caches/go-build`.
+  - `go test -v ./internal/authz ./internal/server ./internal/web/...` passed
+    when rerun with access to the Go build cache.
+  - `go test -v ./internal/store/...` passed when run with access to the Go
+    build cache.
+- Implemented `internal/authz` with coarse capabilities:
+  `directory.read`, `directory.write`, `directory.manageGroups`,
+  `password.changeSelf`, `password.resetAny`, `ui.read`, and `ui.admin`.
+- Added group DN helpers for `ldaplite.admin`, `ldaplite.readonly`, and
+  `ldaplite.password`.
+- Default authenticated users receive read, UI-read, and self-password
+  capabilities.
+- Admin membership grants all capabilities.
+- Explicit read-only users receive default read capabilities under the new
+  model, while the temporary `CanWriteLegacy` bridge preserves the old LDAP
+  write behavior until Milestone 2.
+- Unit tests cover unbound, anonymous, normal authenticated, explicit read-only,
+  password-group, admin, nested-admin, and membership-error cases.
+- LDAP `canWrite` now routes through `internal/authz.CanWriteLegacy`.
+- Web UI admin authorization now checks `authz.UIAdmin` from the shared
+  capability resolver instead of duplicating the admin group lookup in
+  middleware.
+- Commit hash: pending checkpoint commit.
 
 ## Milestone 2: Breaking Least-Privilege LDAP Write Policy
 
