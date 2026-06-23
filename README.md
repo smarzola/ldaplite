@@ -57,6 +57,7 @@ directory operations as a hobby.
 - **Recursive Hierarchy Traversal**: Efficient SQL CTEs for searching deep directory trees
 - **Structured Logging**: JSON or text format with configurable levels
 - **Telemetry**: Audit-grade structured logs plus optional OpenTelemetry metrics/tracing and Prometheus-compatible scraping
+- **Read-only service accounts**: Members of `cn=ldaplite.readonly,ou=groups,<baseDN>` can bind/search/compare but cannot write
 
 ### Storage & Deployment
 
@@ -483,6 +484,7 @@ compiles them, while local runs are better for comparing before/after changes.
 ## Integration Guides
 
 See [docs/integrations/](docs/integrations/) for LDAP consumer recipes.
+See [docs/LDAP_AUTHORIZATION.md](docs/LDAP_AUTHORIZATION.md) for read-only app bind users.
 
 - [Authelia](docs/integrations/authelia.md)
 - [Dex](docs/integrations/dex.md)

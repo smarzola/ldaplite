@@ -21,5 +21,5 @@ Shared assumptions:
 - Stable IDs are exposed as `entryUUID` and `uuid`.
 - Native LDAPS/StartTLS is not implemented yet; use private networking or a
   TLS sidecar/proxy where encryption is required.
-- Read-only service accounts are not implemented yet; recipes use admin bind
-  until that milestone lands.
+- For app bind users, create a user under `ou=users,<baseDN>` and add it to
+  `cn=ldaplite.readonly,ou=groups,<baseDN>`.

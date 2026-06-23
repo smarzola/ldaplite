@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	usersOUDN  = "ou=users," + baseDN
-	groupsOUDN = "ou=groups," + baseDN
-	janeDN     = "uid=jane," + usersOUDN
-	groupDN    = "cn=engineering," + groupsOUDN
+	usersOUDN       = "ou=users," + baseDN
+	groupsOUDN      = "ou=groups," + baseDN
+	janeDN          = "uid=jane," + usersOUDN
+	groupDN         = "cn=engineering," + groupsOUDN
+	readOnlyGroupDN = "cn=ldaplite.readonly," + groupsOUDN
 )
 
 func TestADLikeCompatibilityMilestone(t *testing.T) {
@@ -317,6 +318,37 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 		assertLDAPResultCode(t, err, ldap.LDAPResultNoSuchObject)
 	})
 
+	t.Run("read-only service account authorization", func(t *testing.T) {
+		adminConn := srv.dial(t)
+		bindAdmin(t, adminConn)
+		createReadOnlyServiceAccountFixture(t, adminConn)
+
+		conn := srv.dial(t)
+		if err := conn.Bind("uid=appbind,"+usersOUDN, "AppBindPassword123!"); err != nil {
+			t.Fatalf("bind read-only service account: %v", err)
+		}
+
+		res := search(t, conn, "(uid=jane)", []string{"uid", "mail"})
+		assertDNs(t, res, []string{janeDN})
+
+		deniedAdd := ldap.NewAddRequest("uid=denied,"+usersOUDN, nil)
+		deniedAdd.Attribute("objectClass", []string{"inetOrgPerson"})
+		deniedAdd.Attribute("uid", []string{"denied"})
+		deniedAdd.Attribute("cn", []string{"Denied User"})
+		deniedAdd.Attribute("sn", []string{"User"})
+		deniedAdd.Attribute("userPassword", []string{"DeniedPassword123!"})
+		assertLDAPResultCode(t, conn.Add(deniedAdd), ldap.LDAPResultInsufficientAccessRights)
+
+		deniedModify := ldap.NewModifyRequest(janeDN, nil)
+		deniedModify.Replace("mail", []string{"readonly-denied@example.com"})
+		assertLDAPResultCode(t, conn.Modify(deniedModify), ldap.LDAPResultInsufficientAccessRights)
+
+		assertLDAPResultCode(t, conn.Del(ldap.NewDelRequest(janeDN, nil)), ldap.LDAPResultInsufficientAccessRights)
+
+		res = search(t, adminConn, "(uid=jane)", []string{"mail"})
+		assertAttrValues(t, requireEntry(t, res, janeDN), "mail", []string{"jane.doe@example.com"})
+	})
+
 	t.Run("delete compatibility", func(t *testing.T) {
 		conn := srv.dial(t)
 		bindAdmin(t, conn)
@@ -355,6 +387,28 @@ func createMilestoneFixture(t *testing.T, conn *ldap.Conn) {
 	group.Attribute("member", []string{janeDN})
 	if err := conn.Add(group); err != nil {
 		t.Fatalf("add engineering group fixture: %v", err)
+	}
+}
+
+func createReadOnlyServiceAccountFixture(t *testing.T, conn *ldap.Conn) {
+	t.Helper()
+
+	user := ldap.NewAddRequest("uid=appbind,"+usersOUDN, nil)
+	user.Attribute("objectClass", []string{"inetOrgPerson"})
+	user.Attribute("uid", []string{"appbind"})
+	user.Attribute("cn", []string{"Application Bind"})
+	user.Attribute("sn", []string{"Bind"})
+	user.Attribute("userPassword", []string{"AppBindPassword123!"})
+	if err := conn.Add(user); err != nil {
+		t.Fatalf("add read-only app bind user fixture: %v", err)
+	}
+
+	group := ldap.NewAddRequest(readOnlyGroupDN, nil)
+	group.Attribute("objectClass", []string{"groupOfNames"})
+	group.Attribute("cn", []string{"ldaplite.readonly"})
+	group.Attribute("member", []string{"uid=appbind," + usersOUDN})
+	if err := conn.Add(group); err != nil {
+		t.Fatalf("add read-only group fixture: %v", err)
 	}
 }
 

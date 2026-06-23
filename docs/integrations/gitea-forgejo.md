@@ -10,6 +10,7 @@ Reference: https://docs.gitea.com/administration/authentication
 ```bash
 LDAP_BASE_DN=dc=example,dc=com
 LDAP_ADMIN_PASSWORD=change-me
+LDAP_APP_BIND_PASSWORD=app-bind-change-me
 LDAP_PORT=3389
 ```
 
@@ -19,9 +20,10 @@ Default directory layout:
 | --- | --- |
 | User search base | `ou=users,dc=example,dc=com` |
 | Group search base | `ou=groups,dc=example,dc=com` |
-| Bind DN | `uid=admin,ou=users,dc=example,dc=com` |
+| Bind DN | `uid=appbind,ou=users,dc=example,dc=com` |
 
-Use the admin bind DN only until LDAPLite has read-only service accounts.
+Create the bind user and add it to
+`cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 
 ## Authentication Source
 
@@ -34,8 +36,8 @@ values:
 | Security Protocol | Unencrypted LDAP, or LDAPS through a TLS sidecar/proxy |
 | Host | `ldaplite` |
 | Port | `3389` |
-| Bind DN | `uid=admin,ou=users,dc=example,dc=com` |
-| Bind Password | Value of `LDAP_ADMIN_PASSWORD` |
+| Bind DN | `uid=appbind,ou=users,dc=example,dc=com` |
+| Bind Password | Value of `LDAP_APP_BIND_PASSWORD` |
 | User Search Base | `ou=users,dc=example,dc=com` |
 | User Filter | `(&(objectClass=inetOrgPerson)(uid=%s))` |
 | Username Attribute | `uid` |
@@ -73,8 +75,8 @@ LDAPLite computes `memberOf`, including nested group membership.
 
 ```bash
 ldapsearch -H ldap://localhost:3389 \
-  -D "uid=admin,ou=users,dc=example,dc=com" \
-  -w "$LDAP_ADMIN_PASSWORD" \
+  -D "uid=appbind,ou=users,dc=example,dc=com" \
+  -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=users,dc=example,dc=com" \
   "(&(objectClass=inetOrgPerson)(uid=admin))" \
   uid givenName sn mail memberOf
@@ -82,8 +84,8 @@ ldapsearch -H ldap://localhost:3389 \
 
 ## Known Limitations
 
-- LDAPLite does not currently provide read-only bind users. Use admin bind only
-  in trusted deployments until service-account authorization is available.
+- Read-only app bind users must be members of
+  `cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 - LDAPLite does not currently terminate native LDAPS or StartTLS. Use private
   networking, VPN, or an external TLS sidecar/proxy for production traffic.
 - Kerberos, SASL, and Windows SPNEGO/SSPI flows are out of scope for LDAPLite.

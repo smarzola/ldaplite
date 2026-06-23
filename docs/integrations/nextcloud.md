@@ -9,6 +9,7 @@ Reference: https://docs.nextcloud.com/server/latest/admin_manual/configuration_u
 ```bash
 LDAP_BASE_DN=dc=example,dc=com
 LDAP_ADMIN_PASSWORD=change-me
+LDAP_APP_BIND_PASSWORD=app-bind-change-me
 LDAP_PORT=3389
 ```
 
@@ -19,9 +20,10 @@ Default directory layout:
 | Base DN | `dc=example,dc=com` |
 | User base | `ou=users,dc=example,dc=com` |
 | Group base | `ou=groups,dc=example,dc=com` |
-| Bind DN | `uid=admin,ou=users,dc=example,dc=com` |
+| Bind DN | `uid=appbind,ou=users,dc=example,dc=com` |
 
-Use the admin bind DN only until LDAPLite has read-only service accounts.
+Create the bind user and add it to
+`cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 
 ## Server Tab
 
@@ -29,8 +31,8 @@ Use the admin bind DN only until LDAPLite has read-only service accounts.
 | --- | --- |
 | Host | `ldap://ldaplite:3389` |
 | Port | `3389` |
-| User DN | `uid=admin,ou=users,dc=example,dc=com` |
-| Password | Value of `LDAP_ADMIN_PASSWORD` |
+| User DN | `uid=appbind,ou=users,dc=example,dc=com` |
+| Password | Value of `LDAP_APP_BIND_PASSWORD` |
 | Base DN | `dc=example,dc=com` |
 
 Use `ldap://127.0.0.1:3389` for local development. Use an LDAPS sidecar/proxy
@@ -99,8 +101,8 @@ clients.
 
 ```bash
 ldapsearch -H ldap://localhost:3389 \
-  -D "uid=admin,ou=users,dc=example,dc=com" \
-  -w "$LDAP_ADMIN_PASSWORD" \
+  -D "uid=appbind,ou=users,dc=example,dc=com" \
+  -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=users,dc=example,dc=com" \
   "(&(objectClass=inetOrgPerson)(|(uid=admin)(mail=admin)))" \
   uuid uid mail displayName memberOf
@@ -108,8 +110,8 @@ ldapsearch -H ldap://localhost:3389 \
 
 ```bash
 ldapsearch -H ldap://localhost:3389 \
-  -D "uid=admin,ou=users,dc=example,dc=com" \
-  -w "$LDAP_ADMIN_PASSWORD" \
+  -D "uid=appbind,ou=users,dc=example,dc=com" \
+  -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=groups,dc=example,dc=com" \
   "(objectClass=groupOfNames)" \
   uuid cn member
@@ -117,8 +119,8 @@ ldapsearch -H ldap://localhost:3389 \
 
 ## Known Limitations
 
-- LDAPLite does not currently provide read-only bind users. Use admin bind only
-  in trusted deployments until service-account authorization is available.
+- Read-only app bind users must be members of
+  `cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 - LDAPLite does not currently terminate native LDAPS or StartTLS. Use private
   networking, VPN, or an external TLS sidecar/proxy for production traffic.
 - Nextcloud UI probes may offer object classes or filters from other directory

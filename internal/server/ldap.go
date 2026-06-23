@@ -363,8 +363,28 @@ func (s *Server) auditLDAPOperation(ctx context.Context, conn *protocol.Connecti
 	telemetry.RecordLDAPOperation(ctx, operation, event.ResultCode, event.Duration)
 }
 
-func (s *Server) canWrite(conn *protocol.Connection) bool {
-	return conn.IsBound() && conn.GetBoundDN() != ""
+func (s *Server) canWrite(ctx context.Context, conn *protocol.Connection) (bool, error) {
+	if !conn.IsBound() || conn.GetBoundDN() == "" {
+		return false, nil
+	}
+
+	readOnlyGroupDN := s.readOnlyGroupDN()
+	if readOnlyGroupDN == "" {
+		return true, nil
+	}
+
+	isReadOnly, err := s.store.IsUserInGroup(ctx, conn.GetBoundDN(), readOnlyGroupDN)
+	if err != nil {
+		return false, err
+	}
+	return !isReadOnly, nil
+}
+
+func (s *Server) readOnlyGroupDN() string {
+	if s.cfg == nil || s.cfg.LDAP.BaseDN == "" {
+		return ""
+	}
+	return fmt.Sprintf("cn=ldaplite.readonly,ou=groups,%s", s.cfg.LDAP.BaseDN)
 }
 
 func entryWriteResultCode(err error) ldapmsg.ResultCode {

@@ -33,13 +33,13 @@ Confirmed current strengths:
   Nextcloud.
 - LDAP Compare returns meaningful compareTrue, compareFalse, and noSuchObject
   results for safe attributes.
+- Members of `cn=ldaplite.readonly,ou=groups,<baseDN>` can bind/search/compare
+  while Add/Modify/Delete return insufficientAccessRights.
 - Audit-grade structured logs, optional OpenTelemetry tracing, and
   Prometheus-compatible metrics are implemented and documented.
 
 Confirmed current gaps:
 
-- LDAP write authorization is coarse: any authenticated non-anonymous user can
-  write.
 - No native TLS/LDAPS/StartTLS; deployment guidance currently relies on an
   external TLS terminator.
 - No LDIF/CSV/bootstrap import/export path yet.

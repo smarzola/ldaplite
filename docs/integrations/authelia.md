@@ -10,6 +10,7 @@ Reference: https://www.authelia.com/configuration/first-factor/ldap/
 ```bash
 LDAP_BASE_DN=dc=example,dc=com
 LDAP_ADMIN_PASSWORD=change-me
+LDAP_APP_BIND_PASSWORD=app-bind-change-me
 LDAP_PORT=3389
 ```
 
@@ -20,10 +21,10 @@ Default directory layout:
 | Search base | `dc=example,dc=com` |
 | User base | `ou=users,dc=example,dc=com` |
 | Group base | `ou=groups,dc=example,dc=com` |
-| Bind DN | `uid=admin,ou=users,dc=example,dc=com` |
+| Bind DN | `uid=appbind,ou=users,dc=example,dc=com` |
 
-Use the admin bind DN only until LDAPLite has read-only service accounts. This
-credential can write to LDAPLite.
+Create the bind user and add it to
+`cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 
 ## Authelia Configuration
 
@@ -42,8 +43,8 @@ authentication_backend:
     group_search_mode: filter
     permit_referrals: false
     permit_unauthenticated_bind: false
-    user: uid=admin,ou=users,dc=example,dc=com
-    password: change-me
+    user: uid=appbind,ou=users,dc=example,dc=com
+    password: app-bind-change-me
     attributes:
       username: uid
       display_name: displayName
@@ -83,8 +84,8 @@ access_control:
 
 ```bash
 ldapsearch -H ldap://localhost:3389 \
-  -D "uid=admin,ou=users,dc=example,dc=com" \
-  -w "$LDAP_ADMIN_PASSWORD" \
+  -D "uid=appbind,ou=users,dc=example,dc=com" \
+  -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=users,dc=example,dc=com" \
   "(&(uid=admin)(objectClass=inetOrgPerson))" \
   uid mail givenName sn memberOf
@@ -92,8 +93,8 @@ ldapsearch -H ldap://localhost:3389 \
 
 ## Known Limitations
 
-- LDAPLite does not currently provide read-only bind users. Use the admin bind
-  only in trusted deployments until service-account authorization is available.
+- Read-only app bind users must be members of
+  `cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 - LDAPLite does not currently terminate native LDAPS or StartTLS. Use private
   networking, VPN, or an external TLS sidecar/proxy for production traffic.
 - Do not use Authelia's AD recursive matching-rule examples with LDAPLite.

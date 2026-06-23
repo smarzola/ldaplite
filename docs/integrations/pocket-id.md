@@ -22,6 +22,7 @@ Example LDAPLite environment:
 ```bash
 LDAP_BASE_DN=dc=example,dc=com
 LDAP_ADMIN_PASSWORD=change-me
+LDAP_APP_BIND_PASSWORD=app-bind-change-me
 LDAP_PORT=3389
 LDAP_DATABASE_PATH=/var/lib/ldaplite/ldaplite.db
 ```
@@ -33,11 +34,10 @@ Default directory layout:
 | Search base | `dc=example,dc=com` |
 | User base | `ou=users,dc=example,dc=com` |
 | Group base | `ou=groups,dc=example,dc=com` |
-| Admin bind DN | `uid=admin,ou=users,dc=example,dc=com` |
+| App bind DN | `uid=appbind,ou=users,dc=example,dc=com` |
 
-Use the admin bind DN until LDAPLite has read-only service accounts or a
-dedicated app-bind role. Treat this credential as sensitive: it can write to
-LDAPLite.
+Create the bind user and add it to
+`cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 
 ## Pocket ID LDAP Client Configuration
 
@@ -46,8 +46,8 @@ Set these values in Pocket ID's LDAP Client Configuration:
 | Pocket ID setting | LDAPLite value |
 | --- | --- |
 | LDAP URL | `ldap://ldaplite:3389` |
-| LDAP Bind DN | `uid=admin,ou=users,dc=example,dc=com` |
-| LDAP Bind Password | Value of `LDAP_ADMIN_PASSWORD` |
+| LDAP Bind DN | `uid=appbind,ou=users,dc=example,dc=com` |
+| LDAP Bind Password | Value of `LDAP_APP_BIND_PASSWORD` |
 | LDAP Search Base | `dc=example,dc=com` |
 | User Search Filter | `(&(objectClass=inetOrgPerson)(uid=*))` |
 | User Group Search Filter | `(objectClass=groupOfNames)` |
@@ -102,16 +102,16 @@ Verify bind:
 
 ```bash
 ldapwhoami -H ldap://localhost:3389 \
-  -D "uid=admin,ou=users,dc=example,dc=com" \
-  -w "$LDAP_ADMIN_PASSWORD"
+  -D "uid=appbind,ou=users,dc=example,dc=com" \
+  -w "$LDAP_APP_BIND_PASSWORD"
 ```
 
 Verify user sync attributes:
 
 ```bash
 ldapsearch -H ldap://localhost:3389 \
-  -D "uid=admin,ou=users,dc=example,dc=com" \
-  -w "$LDAP_ADMIN_PASSWORD" \
+  -D "uid=appbind,ou=users,dc=example,dc=com" \
+  -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=users,dc=example,dc=com" \
   "(&(objectClass=inetOrgPerson)(uid=*))" \
   uuid uid mail givenName sn memberOf
@@ -121,8 +121,8 @@ Verify group sync attributes:
 
 ```bash
 ldapsearch -H ldap://localhost:3389 \
-  -D "uid=admin,ou=users,dc=example,dc=com" \
-  -w "$LDAP_ADMIN_PASSWORD" \
+  -D "uid=appbind,ou=users,dc=example,dc=com" \
+  -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=groups,dc=example,dc=com" \
   "(objectClass=groupOfNames)" \
   uuid cn member
@@ -133,9 +133,8 @@ ldapsearch -H ldap://localhost:3389 \
 - Pocket ID's example `(objectClass=person)` user filter may not match LDAPLite
   users. Use `(objectClass=inetOrgPerson)` until LDAPLite implements
   objectClass inheritance matching.
-- LDAPLite does not currently provide read-only LDAP bind users. Use the admin
-  bind only in trusted deployments until service-account authorization is
-  implemented.
+- Read-only app bind users must be members of
+  `cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 - LDAPLite does not currently terminate native LDAPS or StartTLS. Use a private
   network, VPN, or external TLS sidecar/proxy when Pocket ID is not on the same
   trusted network.

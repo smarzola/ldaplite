@@ -14,6 +14,7 @@ This roadmap tracks current project direction after the security and interoperab
 - Pocket ID LDAP sync compatibility recipe and functional coverage.
 - LDAP integration recipes for Authelia, Dex, Gitea/Forgejo, Grafana, and Nextcloud.
 - LDAP Compare returns meaningful true, false, and no-such-object results for safe attributes.
+- Read-only LDAP service accounts through `cn=ldaplite.readonly,ou=groups,<baseDN>`.
 - Canonical LDAP attribute casing for known response attributes.
 - Bind enforcement for normal searches and write operations.
 - Web UI same-origin protection and POST-only deletes.

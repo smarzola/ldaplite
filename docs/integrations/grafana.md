@@ -10,6 +10,7 @@ Reference: https://grafana.com/docs/grafana/latest/setup-grafana/configure-acces
 ```bash
 LDAP_BASE_DN=dc=example,dc=com
 LDAP_ADMIN_PASSWORD=change-me
+LDAP_APP_BIND_PASSWORD=app-bind-change-me
 LDAP_PORT=3389
 ```
 
@@ -19,10 +20,10 @@ Default directory layout:
 | --- | --- |
 | User search base | `ou=users,dc=example,dc=com` |
 | Group base | `ou=groups,dc=example,dc=com` |
-| Bind DN | `uid=admin,ou=users,dc=example,dc=com` |
+| Bind DN | `uid=appbind,ou=users,dc=example,dc=com` |
 
-Grafana recommends a read-only bind user. LDAPLite does not have one yet, so
-use the admin bind DN only in trusted deployments.
+Create the bind user and add it to
+`cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 
 ## ldap.toml
 
@@ -33,8 +34,8 @@ port = 3389
 use_ssl = false
 start_tls = false
 ssl_skip_verify = false
-bind_dn = "uid=admin,ou=users,dc=example,dc=com"
-bind_password = "change-me"
+bind_dn = "uid=appbind,ou=users,dc=example,dc=com"
+bind_password = "app-bind-change-me"
 search_filter = "(&(objectClass=inetOrgPerson)(uid=%s))"
 search_base_dns = ["ou=users,dc=example,dc=com"]
 
@@ -68,8 +69,8 @@ Verify user attributes:
 
 ```bash
 ldapsearch -H ldap://localhost:3389 \
-  -D "uid=admin,ou=users,dc=example,dc=com" \
-  -w "$LDAP_ADMIN_PASSWORD" \
+  -D "uid=appbind,ou=users,dc=example,dc=com" \
+  -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=users,dc=example,dc=com" \
   "(&(objectClass=inetOrgPerson)(uid=admin))" \
   uid mail displayName sn memberOf
@@ -79,8 +80,8 @@ Verify the mapped group exists:
 
 ```bash
 ldapsearch -H ldap://localhost:3389 \
-  -D "uid=admin,ou=users,dc=example,dc=com" \
-  -w "$LDAP_ADMIN_PASSWORD" \
+  -D "uid=appbind,ou=users,dc=example,dc=com" \
+  -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=groups,dc=example,dc=com" \
   "(cn=grafana_admins)" \
   cn member
@@ -88,8 +89,8 @@ ldapsearch -H ldap://localhost:3389 \
 
 ## Known Limitations
 
-- LDAPLite does not currently provide read-only bind users. Use admin bind only
-  in trusted deployments until service-account authorization is available.
+- Read-only app bind users must be members of
+  `cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 - LDAPLite does not currently terminate native LDAPS or StartTLS. Use private
   networking, VPN, or an external TLS sidecar/proxy for production traffic.
 - Do not use Active Directory recursive matching-rule examples with LDAPLite.
