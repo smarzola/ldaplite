@@ -585,7 +585,7 @@ Status note, 2026-06-23:
   - `go test -v ./internal/web`
   - `go build -o /private/tmp/ldaplite-m3 ./cmd/ldaplite`
   - Temporary single-binary server plus in-app Browser validation.
-- Commit hash: pending.
+- Commit hash: `006ecb7`.
 
 ## Milestone 4: Entry Detail Surface And Row Actions
 
