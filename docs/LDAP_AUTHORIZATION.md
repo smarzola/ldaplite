@@ -83,15 +83,21 @@ LDAPLite keeps authorization intentionally coarse and group-based:
 The embedded Web UI resolves capabilities on the server and shows only the
 surfaces the actor can use:
 
-- Admin users can inspect and mutate users, groups, OUs, group membership,
-  extra attributes, and password resets.
-- Read-only users can inspect directory summaries but cannot reach mutating
-  Web UI/API endpoints.
-- Password-only users can open the account surface and change their own
-  password, but cannot access directory tables or administration actions.
+- Admin users land in the directory console and can search, filter, paginate,
+  inspect entry details, copy DNs and attribute values, create users/groups/OUs,
+  edit attributes, reset user passwords, manage group members, and delete
+  entries where the server allows it.
+- Read-only users land in lookup-only directory views. They can search,
+  paginate, inspect detail sheets, and copy DNs/attribute values, but they do
+  not see write controls and cannot reach mutating Web UI/API endpoints.
+- Password-only users land on the account surface. They can change their own
+  password, but cannot access directory search, detail, or administration
+  routes.
 
 Hidden controls are not the security boundary. Mutating Web UI/API routes are
-also protected by server-side capabilities and same-origin checks.
+also protected by server-side capabilities and same-origin checks. Password-only
+users are denied directory API access server-side, even if they request those
+routes directly.
 
 ## Non-Goals
 

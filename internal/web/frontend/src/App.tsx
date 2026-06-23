@@ -591,7 +591,7 @@ function DirectorySearchView({
           ) : null}
 
           <form className="flex flex-col gap-3 lg:flex-row lg:items-end" onSubmit={submit}>
-            <Field className="min-w-0 flex-1">
+            <Field className="min-w-0 lg:flex-1">
               <FieldLabel htmlFor="directory-search">Search directory</FieldLabel>
               <div className="flex gap-2">
                 <Input
@@ -608,8 +608,8 @@ function DirectorySearchView({
             </Field>
 
             {!fixedType ? (
-              <Field>
-                <FieldLabel>Type</FieldLabel>
+              <Field className="lg:w-44 lg:flex-none">
+                <FieldLabel htmlFor="directory-type-filter">Type</FieldLabel>
                 <Select
                   onValueChange={(value) => {
                     setEntryType(value as DirectorySearchType)
@@ -618,7 +618,7 @@ function DirectorySearchView({
                   }}
                   value={entryType}
                 >
-                  <SelectTrigger aria-label="Entry type" className="w-40">
+                  <SelectTrigger aria-label="Entry type" className="w-full" id="directory-type-filter">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -633,8 +633,8 @@ function DirectorySearchView({
               </Field>
             ) : null}
 
-            <Field>
-              <FieldLabel>Page size</FieldLabel>
+            <Field className="lg:w-28 lg:flex-none">
+              <FieldLabel htmlFor="directory-page-size">Page size</FieldLabel>
               <Select
                 onValueChange={(value) => {
                   setPageSize(Number(value))
@@ -642,7 +642,7 @@ function DirectorySearchView({
                 }}
                 value={String(pageSize)}
               >
-                <SelectTrigger aria-label="Page size" className="w-28">
+                <SelectTrigger aria-label="Page size" className="w-full" id="directory-page-size">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -771,11 +771,13 @@ function DirectorySearchView({
 }
 
 function SessionCard({ session }: { session: Session }) {
+  const enabledCapabilities = capabilityLabels.filter(([key]) => session.roles[key])
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Session details</CardTitle>
-        <CardDescription>Current bind DN and access summary.</CardDescription>
+        <CardTitle>Session</CardTitle>
+        <CardDescription>Current bind DN and available access.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
@@ -785,11 +787,15 @@ function SessionCard({ session }: { session: Session }) {
         <p className="break-all font-mono text-xs text-muted-foreground">{session.userDN}</p>
         <Separator />
         <div className="flex flex-wrap gap-2">
-          {capabilityLabels.map(([key, label]) => (
-            <Badge key={key} variant={session.roles[key] ? "default" : "secondary"}>
-              {label}
-            </Badge>
-          ))}
+          {enabledCapabilities.length > 0 ? (
+            enabledCapabilities.map(([key, label]) => (
+              <Badge key={key} variant="secondary">
+                {label}
+              </Badge>
+            ))
+          ) : (
+            <Badge variant="secondary">No console access</Badge>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -900,7 +906,7 @@ function RowActions({
     <div className="flex flex-wrap gap-2">
       <Button onClick={() => onSelect(entry)} size="sm" type="button" variant={isSelected ? "default" : "outline"}>
         <Eye data-icon="inline-start" />
-        View
+        View details
       </Button>
       <Button onClick={() => onCopyDN(entry)} size="sm" type="button" variant="outline">
         <Copy data-icon="inline-start" />
@@ -909,7 +915,7 @@ function RowActions({
       {showAdminAction && isAdminWorkflowEntry(entry.type) ? (
         <Button onClick={() => onAdmin(entry)} size="sm" type="button" variant="ghost">
           <Settings2 data-icon="inline-start" />
-          Actions
+          Manage
         </Button>
       ) : null}
     </div>
@@ -954,6 +960,7 @@ function ResultPagination({
           <PaginationPrevious
             aria-disabled={!canPrevious}
             className={!canPrevious ? "pointer-events-none opacity-50" : undefined}
+            tabIndex={!canPrevious ? -1 : undefined}
             {...pageLink(Math.max(1, page - 1))}
           />
         </PaginationItem>
@@ -968,6 +975,7 @@ function ResultPagination({
           <PaginationNext
             aria-disabled={!canNext}
             className={!canNext ? "pointer-events-none opacity-50" : undefined}
+            tabIndex={!canNext ? -1 : undefined}
             {...pageLink(canNext ? page + 1 : page)}
           />
         </PaginationItem>
@@ -1749,7 +1757,7 @@ function WorkflowError({ message }: { message: string }) {
     return null
   }
   return (
-    <Alert variant="destructive">
+    <Alert aria-live="polite" variant="destructive">
       <AlertCircle />
       <AlertTitle>Check the form</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
@@ -1850,8 +1858,8 @@ function AdminPanel({
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Start an admin workflow</CardTitle>
-          <CardDescription>Create entries here. Use search results and entry details to edit, reset, manage members, or delete.</CardDescription>
+          <CardTitle>Create directory entries</CardTitle>
+          <CardDescription>Create users, groups, and OUs here. Open an entry from search results to edit it, reset passwords, manage members, or delete.</CardDescription>
         </CardHeader>
         <CardContent>
           <AdminCreateActions onCreate={(entryType) => setWorkflow({ kind: "create", entryType })} />

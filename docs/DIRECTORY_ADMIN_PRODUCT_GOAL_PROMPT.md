@@ -168,7 +168,7 @@ When a milestone is complete:
 - [x] Milestone 3: Searchable paginated directory results.
 - [x] Milestone 4: Entry detail surface and row actions.
 - [x] Milestone 5: Focused admin workflows.
-- [ ] Milestone 6: Copy, accessibility, visual validation, docs, and final
+- [x] Milestone 6: Copy, accessibility, visual validation, docs, and final
       regression.
 
 ## Milestone 0: UX Baseline, IA, And Component Plan
@@ -843,6 +843,66 @@ test -z "$(gofmt -l .)"
 Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
+
+Status note, 2026-06-23:
+
+- UI copy/accessibility polish:
+  - Search row actions now say `View details`, `Copy DN`, and `Manage`.
+  - Session cards show only available capabilities instead of disabled role
+    badges.
+  - Search filters have associated labels, disabled pagination links leave the
+    tab order, workflow errors announce with `aria-live`, and primary nav
+    exposes the active page with `aria-current="page"`.
+  - The desktop search toolbar was fixed after visual validation caught
+    overlapping filter controls.
+- Docs updated:
+  - `README.md` describes the embedded directory console, search/detail/copy
+    workflows, contextual admin workflows, read-only lookup, account-only
+    password self-service, same-origin write checks, and single-binary embedded
+    frontend model.
+  - `docs/LDAP_AUTHORIZATION.md` describes admin, read-only, and password-only
+    Web UI behavior and direct API denial.
+- Verification commands run:
+  - `npm ci` (passed; npm reported one existing low-severity audit finding and
+    pending install-script approval notices for `esbuild`/`fsevents`).
+  - `npm run build` (passed).
+  - `make build` (passed; rebuilt embedded Web UI assets and `bin/ldaplite`).
+  - `go test -v -race ./...` (passed).
+  - `go test -tags=functional -v ./tests/functional/...` (passed).
+  - `go vet ./...` (passed).
+  - `test -z "$(gofmt -l .)"` (passed).
+- Runtime/browser validation:
+  - Started `./bin/ldaplite server` with a temporary SQLite database at
+    `/private/tmp/ldaplite-m6-final-20260623.db`, Web UI on
+    `127.0.0.1:18080`, and LDAP on `127.0.0.1:13389`.
+  - Seeded `m6target`, `m6read`, `m6pass`, `cn=ldaplite.readonly`,
+    `cn=ldaplite.password`, `cn=m6-operators`, and `ou=validation` through the
+    Web UI JSON API.
+  - In-app Browser validation covered admin, read-only, and password-only roles
+    at `1280x900` and `390x844`.
+  - Admin evidence: directory landing/search has active `Directory`
+    `aria-current`, no toolbar overlap, row `View details`/`Copy DN`/`Manage`
+    actions, detail sheets expose `Edit entry`, `Reset password`,
+    `Delete entry`, `Member of`, and no `userPassword`, and the admin create
+    dialog is reachable from the `Admin` view.
+  - Read-only evidence: directory search/detail/copy remain visible, admin nav
+    and write actions are absent, and no `userPassword` appears.
+  - Password-only evidence: only the `Account` nav/page is visible on desktop
+    and mobile.
+  - Direct API checks returned `403` for read-only `POST /api/users`,
+    password-only `GET /api/directory`, and password-only
+    `GET /api/directory/entry`.
+  - In-app Browser screenshot capture timed out on `Page.captureScreenshot`;
+    UI interactions, DOM checks, role/viewport metrics, and visual validation
+    were still performed in the in-app Browser. Supplemental screenshot files
+    were captured with local Chrome via `npx playwright screenshot --channel=chrome`:
+    `/private/tmp/ldaplite-m6-screens/admin-desktop.png`,
+    `/private/tmp/ldaplite-m6-screens/admin-mobile.png`,
+    `/private/tmp/ldaplite-m6-screens/readonly-desktop.png`,
+    `/private/tmp/ldaplite-m6-screens/readonly-mobile.png`,
+    `/private/tmp/ldaplite-m6-screens/password-desktop.png`, and
+    `/private/tmp/ldaplite-m6-screens/password-mobile.png`.
+- Commit: this milestone commit; final hash reported from `git log -1`.
 
 ## Final Verification
 

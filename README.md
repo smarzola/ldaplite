@@ -71,12 +71,12 @@ directory operations as a hobby.
 
 ### Web UI
 
-- **Embedded Web Interface**: Simple, modern web UI for directory management
-  - HTTP Basic authentication with server-resolved role/capability views
-  - Browse and manage users, groups, and organizational units
-  - Admin CRUD operations for users, groups, OUs, group membership, and password reset
-  - Read-only directory view for non-admin users with directory read capability
-  - Account-only password-change view for `cn=ldaplite.password,ou=groups,<baseDN>` members
+- **Embedded directory console**: Search-first web UI for directory lookup and administration
+  - HTTP Basic authentication with server-resolved role views
+  - Directory search with type filters, pagination, detail sheets, and copyable DNs/attributes
+  - Admin workflows for creating, editing, deleting, resetting passwords, and managing group members
+  - Read-only lookup for non-admin users with directory read access
+  - Account-only password change for `cn=ldaplite.password,ou=groups,<baseDN>` members
   - Responsive React/shadcn UI built with Vite and Tailwind
   - Built at release time and embedded in the single Go binary
 
@@ -292,7 +292,13 @@ See [Telemetry](docs/TELEMETRY.md) for audit fields, metric names, tracing behav
 | `LDAP_WEB_UI_PORT` | `8080` | Web UI HTTP port |
 | `LDAP_WEB_UI_BIND_ADDRESS` | `0.0.0.0` | Web UI bind address |
 
-**Note**: Web UI uses HTTP Basic Auth against LDAPLite users. Authenticated users with `directory.read` can inspect directory data, members of `cn=ldaplite.admin,ou=groups,<baseDN>` can perform administrative actions, and members of `cn=ldaplite.password,ou=groups,<baseDN>` get account-only password self-service when they do not have broader roles. Mutating Web UI/API requests require a same-origin `Origin` or `Referer` header. The older `LDAP_WEBUI_*` spelling is still accepted as a compatibility alias.
+The Web UI uses HTTP Basic Auth against LDAPLite users:
+
+- Members of `cn=ldaplite.admin,ou=groups,<baseDN>` can search, inspect, create, edit, delete, reset passwords, and manage group members.
+- Authenticated non-admin users with directory read access get lookup-only search, detail, and copy workflows.
+- Members of `cn=ldaplite.password,ou=groups,<baseDN>` get account-only password self-service when they do not have broader roles.
+- Mutating Web UI/API requests require a same-origin `Origin` or `Referer` header.
+- The older `LDAP_WEBUI_*` spelling is still accepted as a compatibility alias.
 
 ### Security Configuration
 
