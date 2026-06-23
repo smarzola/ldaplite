@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/pkg/config"
 )
@@ -141,6 +142,111 @@ func BenchmarkSearchEntriesMemberOfFilter(b *testing.B) {
 		if len(entries) != 1 {
 			b.Fatalf("SearchEntries() got %d entries, want 1", len(entries))
 		}
+	}
+}
+
+func TestStableIDAttributesAreGeneratedSearchableAndStable(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	entry, err := store.GetEntryWithOptions(ctx, "uid=jdoe,ou=users,dc=test,dc=com", EntryOptions{IncludeMemberOf: false})
+	if err != nil {
+		t.Fatalf("GetEntryWithOptions() failed: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("expected jdoe fixture to exist")
+	}
+
+	entryUUID := entry.GetAttribute("entryUUID")
+	compatUUID := entry.GetAttribute("uuid")
+	if entryUUID == "" {
+		t.Fatal("entryUUID should be generated")
+	}
+	if compatUUID == "" {
+		t.Fatal("uuid compatibility alias should be generated")
+	}
+	if compatUUID != entryUUID {
+		t.Fatalf("uuid = %q, want same value as entryUUID %q", compatUUID, entryUUID)
+	}
+	if _, err := uuid.Parse(entryUUID); err != nil {
+		t.Fatalf("entryUUID = %q, want valid UUID: %v", entryUUID, err)
+	}
+
+	found, err := store.SearchEntriesWithOptions(ctx, SearchOptions{
+		BaseDN:          "dc=test,dc=com",
+		Filter:          "(entryUUID=" + entryUUID + ")",
+		Scope:           SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		t.Fatalf("SearchEntriesWithOptions(entryUUID) failed: %v", err)
+	}
+	if len(found) != 1 || found[0].DN != entry.DN {
+		t.Fatalf("entryUUID search returned %#v, want only %s", entryDNs(found), entry.DN)
+	}
+
+	found, err = store.SearchEntriesWithOptions(ctx, SearchOptions{
+		BaseDN:          "dc=test,dc=com",
+		Filter:          "(uuid=" + compatUUID + ")",
+		Scope:           SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		t.Fatalf("SearchEntriesWithOptions(uuid) failed: %v", err)
+	}
+	if len(found) != 1 || found[0].DN != entry.DN {
+		t.Fatalf("uuid search returned %#v, want only %s", entryDNs(found), entry.DN)
+	}
+
+	entry.SetAttribute("mail", "jdoe-updated@test.com")
+	if err := store.UpdateEntry(ctx, entry); err != nil {
+		t.Fatalf("UpdateEntry() failed: %v", err)
+	}
+
+	updated, err := store.GetEntryWithOptions(ctx, entry.DN, EntryOptions{IncludeMemberOf: false})
+	if err != nil {
+		t.Fatalf("GetEntryWithOptions(updated) failed: %v", err)
+	}
+	if got := updated.GetAttribute("entryUUID"); got != entryUUID {
+		t.Fatalf("updated entryUUID = %q, want stable %q", got, entryUUID)
+	}
+	if got := updated.GetAttribute("uuid"); got != compatUUID {
+		t.Fatalf("updated uuid = %q, want stable %q", got, compatUUID)
+	}
+}
+
+func TestCreateEntryIgnoresCallerSuppliedStableIDAttributes(t *testing.T) {
+	store := setupTestStore(t)
+	defer store.Close()
+	ctx := context.Background()
+
+	user := models.NewUser("ou=users,dc=test,dc=com", "clientuuid", "Client UUID", "UUID", "clientuuid@test.com")
+	user.SetPassword("{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=2$dummyhash$dummyhash")
+	user.Entry.SetAttribute("entryUUID", "1d84d1af-89ef-4cc2-98fb-f868b84f10e1")
+	user.Entry.SetAttribute("uuid", "1d84d1af-89ef-4cc2-98fb-f868b84f10e1")
+
+	if err := store.CreateEntry(ctx, user.Entry); err != nil {
+		t.Fatalf("CreateEntry() failed: %v", err)
+	}
+
+	created, err := store.GetEntryWithOptions(ctx, user.DN, EntryOptions{IncludeMemberOf: false})
+	if err != nil {
+		t.Fatalf("GetEntryWithOptions() failed: %v", err)
+	}
+	if created == nil {
+		t.Fatal("expected created user to exist")
+	}
+
+	entryUUID := created.GetAttribute("entryUUID")
+	if entryUUID == "1d84d1af-89ef-4cc2-98fb-f868b84f10e1" {
+		t.Fatal("CreateEntry should replace caller-supplied entryUUID with a server-generated value")
+	}
+	if created.GetAttribute("uuid") != entryUUID {
+		t.Fatalf("uuid = %q, want entryUUID %q", created.GetAttribute("uuid"), entryUUID)
+	}
+	if _, err := uuid.Parse(entryUUID); err != nil {
+		t.Fatalf("entryUUID = %q, want valid UUID: %v", entryUUID, err)
 	}
 }
 

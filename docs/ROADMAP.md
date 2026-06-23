@@ -10,6 +10,12 @@ This roadmap tracks current project direction after the security and interoperab
 - Embedded SQLite migrations.
 - SQL-compiled LDAP filters with in-memory fallback for unsupported cases.
 - Operational attributes: `objectClass`, `createTimestamp`, `modifyTimestamp`, and computed `memberOf`.
+- Stable generated entry identifiers: operational `entryUUID` plus `uuid` compatibility alias.
+- Pocket ID LDAP sync compatibility recipe and functional coverage.
+- LDAP integration recipes for Authelia, Dex, Gitea/Forgejo, Grafana, and Nextcloud.
+- LDAP Compare returns meaningful true, false, and no-such-object results for safe attributes.
+- Read-only LDAP service accounts through `cn=ldaplite.readonly,ou=groups,<baseDN>`.
+- Tested LDAPS deployment path using a TLS-terminating TCP sidecar.
 - Canonical LDAP attribute casing for known response attributes.
 - Bind enforcement for normal searches and write operations.
 - Web UI same-origin protection and POST-only deletes.
@@ -32,7 +38,7 @@ This roadmap tracks current project direction after the security and interoperab
 - SCIM 2.0 or REST provisioning API after the service layer is in place (#7).
 - User and group templates in the Web UI as structured presets over the attribute system (#8).
 - Web UI password reset/change flow (#10).
-- LDIF/CSV import and export tools.
+- Implement LDIF import/export commands from [docs/IMPORT_EXPORT_DESIGN.md](IMPORT_EXPORT_DESIGN.md).
 
 ## GitHub Issue Cleanup
 

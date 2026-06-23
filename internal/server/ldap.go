@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/smarzola/ldaplite/internal/audit"
+	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/protocol"
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
 	"github.com/smarzola/ldaplite/internal/store"
@@ -49,17 +50,21 @@ func NewServer(cfg *config.Config, st store.Store, version string) *Server {
 // protected from later Modify operations.
 var addProtectedAttributes = []string{
 	"createtimestamp",
+	"entryuuid",
 	"memberof",
 	"modifytimestamp",
+	"uuid",
 }
 
 // modifyProtectedAttributes lists LDAP operational/structural attributes that
 // cannot be changed after entry creation.
 var modifyProtectedAttributes = []string{
 	"createtimestamp",
+	"entryuuid",
 	"memberof",
 	"modifytimestamp",
 	"objectclass",
+	"uuid",
 }
 
 func isAddProtectedAttribute(attrName string) bool {
@@ -257,7 +262,7 @@ func (s *Server) handleBind(ctx context.Context, conn *protocol.Connection, msg 
 func (s *Server) handleCompare(ctx context.Context, conn *protocol.Connection, msg *ldapmsg.Message) error {
 	start := time.Now()
 	compareReq := msg.Op.(ldapmsg.CompareRequest)
-	resultCode := ldapmsg.ResultCodeCompareFalse
+	resultCode := ldapmsg.ResultCodeOperationsError
 	ctx, span := telemetry.StartLDAPSpan(ctx, "compare")
 	defer func() {
 		telemetry.EndLDAPSpan(span, int(resultCode))
@@ -271,8 +276,62 @@ func (s *Server) handleCompare(ctx context.Context, conn *protocol.Connection, m
 		})
 	}()
 
-	slog.Debug("Compare request")
-	return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(ldapmsg.ResultCodeCompareFalse))
+	slog.Debug("Compare request", "dn", compareReq.Entry, "attribute", compareReq.AVA.Attribute)
+
+	if !s.canSearch(conn, compareReq.Entry) {
+		slog.Info("Compare rejected - bind required", "dn", compareReq.Entry)
+		resultCode = ldapmsg.ResultCodeInsufficientAccessRights
+		return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(resultCode))
+	}
+
+	entry, err := s.store.GetEntryWithOptions(ctx, compareReq.Entry, store.EntryOptions{
+		IncludeMemberOf: strings.EqualFold(compareReq.AVA.Attribute, "memberOf"),
+	})
+	if err != nil {
+		slog.Error("Compare get entry error", "dn", compareReq.Entry, "error", err)
+		resultCode = ldapmsg.ResultCodeOperationsError
+		return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(resultCode))
+	}
+	if entry == nil {
+		resultCode = ldapmsg.ResultCodeNoSuchObject
+		return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(resultCode))
+	}
+
+	if compareEntryAttribute(entry, compareReq.AVA.Attribute, compareReq.AVA.Value) {
+		resultCode = ldapmsg.ResultCodeCompareTrue
+	} else {
+		resultCode = ldapmsg.ResultCodeCompareFalse
+	}
+	return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(resultCode))
+}
+
+func compareEntryAttribute(entry *models.Entry, attrName, assertionValue string) bool {
+	for _, value := range compareAttributeValues(entry, attrName) {
+		if strings.EqualFold(value, assertionValue) {
+			return true
+		}
+	}
+	return false
+}
+
+func compareAttributeValues(entry *models.Entry, attrName string) []string {
+	switch strings.ToLower(attrName) {
+	case "userpassword":
+		return nil
+	case "objectclass":
+		if entry.ObjectClass != "" {
+			return []string{entry.ObjectClass}
+		}
+	case "createtimestamp", "modifytimestamp":
+		timestamp := entry.CreatedAt
+		if strings.EqualFold(attrName, "modifyTimestamp") {
+			timestamp = entry.UpdatedAt
+		}
+		if !timestamp.IsZero() {
+			return []string{models.FormatLDAPTimestamp(timestamp)}
+		}
+	}
+	return entry.GetAttributes(attrName)
 }
 
 // handleUnbind handles unbind operations
@@ -306,8 +365,28 @@ func (s *Server) auditLDAPOperation(ctx context.Context, conn *protocol.Connecti
 	telemetry.RecordLDAPOperation(ctx, operation, event.ResultCode, event.Duration)
 }
 
-func (s *Server) canWrite(conn *protocol.Connection) bool {
-	return conn.IsBound() && conn.GetBoundDN() != ""
+func (s *Server) canWrite(ctx context.Context, conn *protocol.Connection) (bool, error) {
+	if !conn.IsBound() || conn.GetBoundDN() == "" {
+		return false, nil
+	}
+
+	readOnlyGroupDN := s.readOnlyGroupDN()
+	if readOnlyGroupDN == "" {
+		return true, nil
+	}
+
+	isReadOnly, err := s.store.IsUserInGroup(ctx, conn.GetBoundDN(), readOnlyGroupDN)
+	if err != nil {
+		return false, err
+	}
+	return !isReadOnly, nil
+}
+
+func (s *Server) readOnlyGroupDN() string {
+	if s.cfg == nil || s.cfg.LDAP.BaseDN == "" {
+		return ""
+	}
+	return fmt.Sprintf("cn=ldaplite.readonly,ou=groups,%s", s.cfg.LDAP.BaseDN)
 }
 
 func entryWriteResultCode(err error) ldapmsg.ResultCode {

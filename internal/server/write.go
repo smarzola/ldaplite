@@ -36,8 +36,14 @@ func (s *Server) handleAdd(ctx context.Context, conn *protocol.Connection, msg *
 
 	slog.Debug("Add request", "dn", dn)
 
-	if !s.canWrite(conn) {
-		slog.Info("Add rejected - authenticated bind required", "dn", dn)
+	canWrite, err := s.canWrite(ctx, conn)
+	if err != nil {
+		slog.Error("Failed to check write authorization", "dn", dn, "error", err)
+		resultCode = ldapmsg.ResultCodeOperationsError
+		return conn.WriteResponse(msg.ID, protocol.NewAddResponse(ldapmsg.ResultCodeOperationsError))
+	}
+	if !canWrite {
+		slog.Info("Add rejected - write access denied", "dn", dn)
 		resultCode = ldapmsg.ResultCodeInsufficientAccessRights
 		return conn.WriteResponse(msg.ID, protocol.NewAddResponse(ldapmsg.ResultCodeInsufficientAccessRights))
 	}
@@ -103,8 +109,14 @@ func (s *Server) handleDelete(ctx context.Context, conn *protocol.Connection, ms
 
 	slog.Debug("Delete request", "dn", dn)
 
-	if !s.canWrite(conn) {
-		slog.Info("Delete rejected - authenticated bind required", "dn", dn)
+	canWrite, err := s.canWrite(ctx, conn)
+	if err != nil {
+		slog.Error("Failed to check write authorization", "dn", dn, "error", err)
+		resultCode = ldapmsg.ResultCodeOperationsError
+		return conn.WriteResponse(msg.ID, protocol.NewDelResponse(ldapmsg.ResultCodeOperationsError))
+	}
+	if !canWrite {
+		slog.Info("Delete rejected - write access denied", "dn", dn)
 		resultCode = ldapmsg.ResultCodeInsufficientAccessRights
 		return conn.WriteResponse(msg.ID, protocol.NewDelResponse(ldapmsg.ResultCodeInsufficientAccessRights))
 	}
@@ -156,8 +168,14 @@ func (s *Server) handleModify(ctx context.Context, conn *protocol.Connection, ms
 
 	slog.Debug("Modify request", "dn", dn)
 
-	if !s.canWrite(conn) {
-		slog.Info("Modify rejected - authenticated bind required", "dn", dn)
+	canWrite, err := s.canWrite(ctx, conn)
+	if err != nil {
+		slog.Error("Failed to check write authorization", "dn", dn, "error", err)
+		resultCode = ldapmsg.ResultCodeOperationsError
+		return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(ldapmsg.ResultCodeOperationsError))
+	}
+	if !canWrite {
+		slog.Info("Modify rejected - write access denied", "dn", dn)
 		resultCode = ldapmsg.ResultCodeInsufficientAccessRights
 		return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(ldapmsg.ResultCodeInsufficientAccessRights))
 	}

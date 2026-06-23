@@ -208,7 +208,7 @@ func (s searchAttributeSelection) includes(attrName string) bool {
 
 func isOperationalAttribute(attrName string) bool {
 	switch strings.ToLower(attrName) {
-	case "createtimestamp", "modifytimestamp", "memberof":
+	case "createtimestamp", "entryuuid", "modifytimestamp", "memberof":
 		return true
 	default:
 		return false

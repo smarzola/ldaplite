@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	usersOUDN  = "ou=users," + baseDN
-	groupsOUDN = "ou=groups," + baseDN
-	janeDN     = "uid=jane," + usersOUDN
-	groupDN    = "cn=engineering," + groupsOUDN
+	usersOUDN       = "ou=users," + baseDN
+	groupsOUDN      = "ou=groups," + baseDN
+	janeDN          = "uid=jane," + usersOUDN
+	groupDN         = "cn=engineering," + groupsOUDN
+	readOnlyGroupDN = "cn=ldaplite.readonly," + groupsOUDN
 )
 
 func TestADLikeCompatibilityMilestone(t *testing.T) {
@@ -165,6 +166,7 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 		assertAttrValues(t, entry, "objectClass", []string{"inetOrgPerson"})
 		assertTimestampAttr(t, entry, "createTimestamp")
 		assertTimestampAttr(t, entry, "modifyTimestamp")
+		assertStableIDAttrs(t, entry)
 	})
 
 	t.Run("attribute projection", func(t *testing.T) {
@@ -188,8 +190,10 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 		entry = requireEntry(t, res, janeDN)
 		assertTimestampAttr(t, entry, "createTimestamp")
 		assertTimestampAttr(t, entry, "modifyTimestamp")
+		assertEntryUUIDAttr(t, entry)
 		assertAttrValues(t, entry, "memberOf", []string{groupDN})
 		assertNoAttr(t, entry, "cn")
+		assertNoAttr(t, entry, "uuid")
 
 		res = searchTypesOnly(t, srv, conn, "(uid=jane)", []string{"cn", "mail"})
 		entry = requireEntry(t, res, janeDN)
@@ -283,6 +287,66 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 		invalidGroup.Attribute("objectClass", []string{"groupOfNames"})
 		invalidGroup.Attribute("cn", []string{"Invalid Group"})
 		assertLDAPResultCode(t, conn.Add(invalidGroup), ldap.LDAPResultObjectClassViolation)
+
+		clientManagedUUID := ldap.NewAddRequest("uid=client-uuid,"+usersOUDN, nil)
+		clientManagedUUID.Attribute("objectClass", []string{"inetOrgPerson"})
+		clientManagedUUID.Attribute("uid", []string{"client-uuid"})
+		clientManagedUUID.Attribute("cn", []string{"Client UUID"})
+		clientManagedUUID.Attribute("sn", []string{"UUID"})
+		clientManagedUUID.Attribute("entryUUID", []string{"1d84d1af-89ef-4cc2-98fb-f868b84f10e1"})
+		clientManagedUUID.Attribute("userPassword", []string{"Password123!"})
+		assertLDAPResultCode(t, conn.Add(clientManagedUUID), ldap.LDAPResultUnwillingToPerform)
+
+		modEntryUUID := ldap.NewModifyRequest(janeDN, nil)
+		modEntryUUID.Replace("entryUUID", []string{"1d84d1af-89ef-4cc2-98fb-f868b84f10e1"})
+		assertLDAPResultCode(t, conn.Modify(modEntryUUID), ldap.LDAPResultUnwillingToPerform)
+	})
+
+	t.Run("compare compatibility", func(t *testing.T) {
+		conn := srv.dial(t)
+		bindAdmin(t, conn)
+
+		assertCompareResult(t, conn, janeDN, "uid", "jane", true)
+		assertCompareResult(t, conn, janeDN, "cn", "jane doe", true)
+		assertCompareResult(t, conn, janeDN, "objectClass", "inetOrgPerson", true)
+		assertCompareResult(t, conn, janeDN, "memberOf", groupDN, true)
+		assertCompareResult(t, conn, janeDN, "uid", "missing", false)
+		assertCompareResult(t, conn, janeDN, "missingAttribute", "value", false)
+		assertCompareResult(t, conn, janeDN, "userPassword", "NewPassword123!", false)
+
+		_, err := conn.Compare("uid=missing,"+usersOUDN, "uid", "missing")
+		assertLDAPResultCode(t, err, ldap.LDAPResultNoSuchObject)
+	})
+
+	t.Run("read-only service account authorization", func(t *testing.T) {
+		adminConn := srv.dial(t)
+		bindAdmin(t, adminConn)
+		createReadOnlyServiceAccountFixture(t, adminConn)
+
+		conn := srv.dial(t)
+		if err := conn.Bind("uid=appbind,"+usersOUDN, "AppBindPassword123!"); err != nil {
+			t.Fatalf("bind read-only service account: %v", err)
+		}
+
+		res := search(t, conn, "(uid=jane)", []string{"uid", "mail"})
+		assertDNs(t, res, []string{janeDN})
+
+		deniedAdd := ldap.NewAddRequest("uid=denied,"+usersOUDN, nil)
+		deniedAdd.Attribute("objectClass", []string{"inetOrgPerson"})
+		deniedAdd.Attribute("uid", []string{"denied"})
+		deniedAdd.Attribute("cn", []string{"Denied User"})
+		deniedAdd.Attribute("sn", []string{"User"})
+		deniedAdd.Attribute("userPassword", []string{"DeniedPassword123!"})
+		assertLDAPResultCode(t, conn.Add(deniedAdd), ldap.LDAPResultInsufficientAccessRights)
+
+		deniedModify := ldap.NewModifyRequest(janeDN, nil)
+		deniedModify.Replace("mail", []string{"readonly-denied@example.com"})
+		assertLDAPResultCode(t, conn.Modify(deniedModify), ldap.LDAPResultInsufficientAccessRights)
+
+		assertLDAPResultCode(t, conn.Del(ldap.NewDelRequest(janeDN, nil)), ldap.LDAPResultInsufficientAccessRights)
+
+		res = search(t, adminConn, "(uid=jane)", []string{"mail"})
+		assertAttrValues(t, requireEntry(t, res, janeDN), "mail", []string{"jane.doe@example.com"})
 	})
 
 	t.Run("delete compatibility", func(t *testing.T) {
@@ -326,6 +390,28 @@ func createMilestoneFixture(t *testing.T, conn *ldap.Conn) {
 	}
 }
 
+func createReadOnlyServiceAccountFixture(t *testing.T, conn *ldap.Conn) {
+	t.Helper()
+
+	user := ldap.NewAddRequest("uid=appbind,"+usersOUDN, nil)
+	user.Attribute("objectClass", []string{"inetOrgPerson"})
+	user.Attribute("uid", []string{"appbind"})
+	user.Attribute("cn", []string{"Application Bind"})
+	user.Attribute("sn", []string{"Bind"})
+	user.Attribute("userPassword", []string{"AppBindPassword123!"})
+	if err := conn.Add(user); err != nil {
+		t.Fatalf("add read-only app bind user fixture: %v", err)
+	}
+
+	group := ldap.NewAddRequest(readOnlyGroupDN, nil)
+	group.Attribute("objectClass", []string{"groupOfNames"})
+	group.Attribute("cn", []string{"ldaplite.readonly"})
+	group.Attribute("member", []string{"uid=appbind," + usersOUDN})
+	if err := conn.Add(group); err != nil {
+		t.Fatalf("add read-only group fixture: %v", err)
+	}
+}
+
 func bindErr(t *testing.T, srv *testServer, dn, password string) error {
 	t.Helper()
 	conn := srv.dial(t)
@@ -336,6 +422,17 @@ func assertBindSucceeds(t *testing.T, srv *testServer, dn, password string) {
 	t.Helper()
 	if err := bindErr(t, srv, dn, password); err != nil {
 		t.Fatalf("bind %s: %v", dn, err)
+	}
+}
+
+func assertCompareResult(t *testing.T, conn *ldap.Conn, dn, attr, value string, want bool) {
+	t.Helper()
+	got, err := conn.Compare(dn, attr, value)
+	if err != nil {
+		t.Fatalf("compare %s %s=%q: %v", dn, attr, value, err)
+	}
+	if got != want {
+		t.Fatalf("compare %s %s=%q = %v, want %v", dn, attr, value, got, want)
 	}
 }
 
@@ -436,6 +533,30 @@ func assertTimestampAttr(t *testing.T, entry *ldap.Entry, attr string) {
 	if !regexp.MustCompile(`^\d{14}Z$`).MatchString(values[0]) {
 		t.Fatalf("%s = %q, want LDAP generalized time YYYYMMDDHHMMSSZ", attr, values[0])
 	}
+}
+
+func assertStableIDAttrs(t *testing.T, entry *ldap.Entry) {
+	t.Helper()
+	entryUUID := assertEntryUUIDAttr(t, entry)
+	compatUUID := attrValues(entry, "uuid")
+	if len(compatUUID) != 1 {
+		t.Fatalf("uuid values = %v, want exactly one", compatUUID)
+	}
+	if compatUUID[0] != entryUUID {
+		t.Fatalf("uuid = %q, want same value as entryUUID %q", compatUUID[0], entryUUID)
+	}
+}
+
+func assertEntryUUIDAttr(t *testing.T, entry *ldap.Entry) string {
+	t.Helper()
+	entryUUID := attrValues(entry, "entryUUID")
+	if len(entryUUID) != 1 {
+		t.Fatalf("entryUUID values = %v, want exactly one", entryUUID)
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(entryUUID[0]) {
+		t.Fatalf("entryUUID = %q, want RFC 4122 version 4 UUID", entryUUID[0])
+	}
+	return entryUUID[0]
 }
 
 func attrValues(entry *ldap.Entry, attr string) []string {

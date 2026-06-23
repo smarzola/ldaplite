@@ -28,7 +28,7 @@ directory operations as a hobby.
   - Bind with simple authentication
   - Search with SQL-optimized filters
   - Add, Modify, Delete operations
-  - Compare operations (basic)
+  - Compare operations with true/false/no-such-object result semantics
   - RootDSE and Schema queries
 
 - **Object Classes** (RFC 2256, RFC 2798):
@@ -40,8 +40,10 @@ directory operations as a hobby.
 - **Operational Attributes** (RFC 4512, RFC 4517, RFC2307bis-style compatibility):
   - `createTimestamp` - Entry creation time (LDAP Generalized Time format)
   - `modifyTimestamp` - Last modification time
+  - `entryUUID` - Stable server-generated entry identifier (RFC 4530-style)
   - `objectClass` - Structural object class
   - `memberOf` - Groups the user belongs to (computed, read-only)
+  - `uuid` - Stable compatibility alias for clients that expect a plain UUID attribute
   - Searchable with `>=` and `<=` operators for timestamps
 
 ### Advanced Features
@@ -55,6 +57,7 @@ directory operations as a hobby.
 - **Recursive Hierarchy Traversal**: Efficient SQL CTEs for searching deep directory trees
 - **Structured Logging**: JSON or text format with configurable levels
 - **Telemetry**: Audit-grade structured logs plus optional OpenTelemetry metrics/tracing and Prometheus-compatible scraping
+- **Read-only service accounts**: Members of `cn=ldaplite.readonly,ou=groups,<baseDN>` can bind/search/compare but cannot write
 
 ### Storage & Deployment
 
@@ -358,6 +361,8 @@ ldapsearch -H ldap://localhost:3389 \
 # cn: John Doe
 # sn: Doe
 # mail: john@example.com
+# entryUUID: 1d84d1af-89ef-4cc2-98fb-f868b84f10e1
+# uuid: 1d84d1af-89ef-4cc2-98fb-f868b84f10e1
 # memberOf: cn=developers,ou=groups,dc=example,dc=com
 # memberOf: cn=ldaplite.admin,ou=groups,dc=example,dc=com
 
@@ -369,9 +374,11 @@ ldapsearch -H ldap://localhost:3389 \
   "(memberOf=cn=developers,ou=groups,dc=example,dc=com)"
 ```
 
-Search result attribute selection is honored case-insensitively. Requesting `1.1` returns no attributes, `*` returns user attributes, and `+` returns operational attributes such as `memberOf`, `createTimestamp`, and `modifyTimestamp`. When no attribute list is supplied, LDAPLite returns both user and operational attributes for compatibility with common clients.
+Every entry receives a stable generated `entryUUID`; LDAPLite also stores the same value as `uuid` for clients that expect a simple unique identifier attribute, such as directory synchronization tools. Both attributes are server-managed and cannot be set or modified by LDAP clients.
 
-LDAPLite emits canonical presentation casing for known LDAP attributes such as `objectClass`, `memberOf`, `createTimestamp`, `modifyTimestamp`, `givenName`, `displayName`, and `telephoneNumber`. Custom attributes remain case-insensitive internally and are currently presented using the normalized stored name.
+Search result attribute selection is honored case-insensitively. Requesting `1.1` returns no attributes, `*` returns user attributes and the `uuid` compatibility alias, and `+` returns operational attributes such as `entryUUID`, `memberOf`, `createTimestamp`, and `modifyTimestamp`. When no attribute list is supplied, LDAPLite returns both user and operational attributes for compatibility with common clients.
+
+LDAPLite emits canonical presentation casing for known LDAP attributes such as `objectClass`, `entryUUID`, `memberOf`, `createTimestamp`, `modifyTimestamp`, `givenName`, `displayName`, and `telephoneNumber`. Custom attributes remain case-insensitive internally and are currently presented using the normalized stored name.
 
 ## LDAP Filters
 
@@ -474,17 +481,32 @@ compiles them, while local runs are better for comparing before/after changes.
 - **Constant-time verification** to prevent timing attacks
 - **Configurable cost parameters** for future-proofing
 
+## Integration Guides
+
+See [docs/CLIENT_COMPATIBILITY_MATRIX.md](docs/CLIENT_COMPATIBILITY_MATRIX.md) for the LDAP client compatibility matrix.
+See [docs/integrations/](docs/integrations/) for LDAP consumer recipes.
+See [docs/LDAP_AUTHORIZATION.md](docs/LDAP_AUTHORIZATION.md) for read-only app bind users.
+See [docs/deployment/ldaps-tls-sidecar.md](docs/deployment/ldaps-tls-sidecar.md) for LDAPS sidecar deployment.
+
+- [Authelia](docs/integrations/authelia.md)
+- [Dex](docs/integrations/dex.md)
+- [Gitea and Forgejo](docs/integrations/gitea-forgejo.md)
+- [Grafana](docs/integrations/grafana.md)
+- [Nextcloud](docs/integrations/nextcloud.md)
+- [Pocket ID](docs/integrations/pocket-id.md)
+
 ## Roadmap
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for current project status and planned work.
+See [docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md](docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md) for the latest client-compatibility goal summary.
 
 - **SCIM 2.0 Support** - Modern API for user/group provisioning alongside LDAP
   - RESTful HTTP interface (RFC 7643, RFC 7644)
   - JSON payloads for easier integration
   - Compatible with modern IdP systems
 - Enhanced ACLs for granular permissions
-- Import/export tools (LDIF, CSV)
-- TLS/LDAPS support (currently recommend reverse proxy)
+- LDIF import/export commands from [docs/IMPORT_EXPORT_DESIGN.md](docs/IMPORT_EXPORT_DESIGN.md)
+- Native TLS/LDAPS support (sidecar deployment is documented)
 
 ## Limitations
 
