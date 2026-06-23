@@ -15,6 +15,7 @@ func TestCanonicalAttributeName(t *testing.T) {
 		{name: "createtimestamp", want: "createTimestamp"},
 		{name: "modifytimestamp", want: "modifyTimestamp"},
 		{name: "memberof", want: "memberOf"},
+		{name: "entryuuid", want: "entryUUID"},
 		{name: "givenname", want: "givenName"},
 		{name: "displayname", want: "displayName"},
 		{name: "telephonenumber", want: "telephoneNumber"},
@@ -42,6 +43,7 @@ func TestSearchResultEntryBERUsesCanonicalKnownAttributeNames(t *testing.T) {
 	AddAttribute(&entry, "memberof", "cn=developers,ou=groups,dc=example,dc=com")
 	AddAttribute(&entry, "createtimestamp", "20260102030405Z")
 	AddAttribute(&entry, "modifytimestamp", "20260102040506Z")
+	AddAttribute(&entry, "entryuuid", "1d84d1af-89ef-4cc2-98fb-f868b84f10e1")
 	AddAttribute(&entry, "givenname", "John")
 	AddAttribute(&entry, "displayname", "John Doe")
 	AddAttribute(&entry, "telephonenumber", "+15555550100")
@@ -58,6 +60,7 @@ func TestSearchResultEntryBERUsesCanonicalKnownAttributeNames(t *testing.T) {
 		"memberOf",
 		"createTimestamp",
 		"modifyTimestamp",
+		"entryUUID",
 		"givenName",
 		"displayName",
 		"telephoneNumber",

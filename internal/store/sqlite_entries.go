@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/telemetry"
@@ -86,6 +87,7 @@ func (s *SQLiteStore) CreateEntry(ctx context.Context, entry *models.Entry) (err
 	if exists {
 		return fmt.Errorf("%w: %s", ErrEntryAlreadyExists, entry.DN)
 	}
+	assignNewStableIDAttributes(entry)
 
 	// Step 1: Insert core entry metadata into entries table
 	query := `
@@ -217,6 +219,9 @@ func (s *SQLiteStore) UpdateEntry(ctx context.Context, entry *models.Entry) (err
 		return fmt.Errorf("failed to get entry ID: %w", err)
 	}
 	entry.ID = entryID
+	if err := preserveStableIDAttributes(ctx, tx, entryID, entry); err != nil {
+		return err
+	}
 
 	// Step 2: Replace attributes in attributes table (delete-then-insert pattern)
 	// This is simpler than diffing changes and ensures consistency
@@ -277,6 +282,66 @@ func isGenericStoredAttribute(name string) bool {
 	default:
 		return true
 	}
+}
+
+func assignNewStableIDAttributes(entry *models.Entry) {
+	if entry.Attributes == nil {
+		entry.Attributes = make(map[string][]string)
+	}
+
+	setStableIDAttributes(entry, uuid.NewString())
+}
+
+func preserveStableIDAttributes(ctx context.Context, tx *sql.Tx, entryID int64, entry *models.Entry) error {
+	entryUUID, err := stableIDForEntry(ctx, tx, entryID)
+	if err != nil {
+		return err
+	}
+	if entryUUID == "" {
+		entryUUID = uuid.NewString()
+	}
+	setStableIDAttributes(entry, entryUUID)
+	return nil
+}
+
+func stableIDForEntry(ctx context.Context, tx *sql.Tx, entryID int64) (string, error) {
+	var entryUUID string
+	err := tx.QueryRowContext(ctx, `
+		SELECT value
+		FROM attributes
+		WHERE entry_id = ?
+		  AND LOWER(name) = 'entryuuid'
+		LIMIT 1
+	`, entryID).Scan(&entryUUID)
+	if err == nil {
+		return entryUUID, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", fmt.Errorf("failed to read existing entryUUID: %w", err)
+	}
+
+	err = tx.QueryRowContext(ctx, `
+		SELECT value
+		FROM attributes
+		WHERE entry_id = ?
+		  AND LOWER(name) = 'uuid'
+		LIMIT 1
+	`, entryID).Scan(&entryUUID)
+	if err == nil {
+		return entryUUID, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", fmt.Errorf("failed to read existing uuid: %w", err)
+	}
+	return "", nil
+}
+
+func setStableIDAttributes(entry *models.Entry, entryUUID string) {
+	if entry.Attributes == nil {
+		entry.Attributes = make(map[string][]string)
+	}
+	entry.Attributes["entryuuid"] = []string{entryUUID}
+	entry.Attributes["uuid"] = []string{entryUUID}
 }
 
 func (s *SQLiteStore) validateEntryPlacement(ctx context.Context, tx *sql.Tx, entry *models.Entry) error {

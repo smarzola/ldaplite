@@ -165,6 +165,7 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 		assertAttrValues(t, entry, "objectClass", []string{"inetOrgPerson"})
 		assertTimestampAttr(t, entry, "createTimestamp")
 		assertTimestampAttr(t, entry, "modifyTimestamp")
+		assertStableIDAttrs(t, entry)
 	})
 
 	t.Run("attribute projection", func(t *testing.T) {
@@ -188,8 +189,10 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 		entry = requireEntry(t, res, janeDN)
 		assertTimestampAttr(t, entry, "createTimestamp")
 		assertTimestampAttr(t, entry, "modifyTimestamp")
+		assertEntryUUIDAttr(t, entry)
 		assertAttrValues(t, entry, "memberOf", []string{groupDN})
 		assertNoAttr(t, entry, "cn")
+		assertNoAttr(t, entry, "uuid")
 
 		res = searchTypesOnly(t, srv, conn, "(uid=jane)", []string{"cn", "mail"})
 		entry = requireEntry(t, res, janeDN)
@@ -283,6 +286,19 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 		invalidGroup.Attribute("objectClass", []string{"groupOfNames"})
 		invalidGroup.Attribute("cn", []string{"Invalid Group"})
 		assertLDAPResultCode(t, conn.Add(invalidGroup), ldap.LDAPResultObjectClassViolation)
+
+		clientManagedUUID := ldap.NewAddRequest("uid=client-uuid,"+usersOUDN, nil)
+		clientManagedUUID.Attribute("objectClass", []string{"inetOrgPerson"})
+		clientManagedUUID.Attribute("uid", []string{"client-uuid"})
+		clientManagedUUID.Attribute("cn", []string{"Client UUID"})
+		clientManagedUUID.Attribute("sn", []string{"UUID"})
+		clientManagedUUID.Attribute("entryUUID", []string{"1d84d1af-89ef-4cc2-98fb-f868b84f10e1"})
+		clientManagedUUID.Attribute("userPassword", []string{"Password123!"})
+		assertLDAPResultCode(t, conn.Add(clientManagedUUID), ldap.LDAPResultUnwillingToPerform)
+
+		modEntryUUID := ldap.NewModifyRequest(janeDN, nil)
+		modEntryUUID.Replace("entryUUID", []string{"1d84d1af-89ef-4cc2-98fb-f868b84f10e1"})
+		assertLDAPResultCode(t, conn.Modify(modEntryUUID), ldap.LDAPResultUnwillingToPerform)
 	})
 
 	t.Run("delete compatibility", func(t *testing.T) {
@@ -436,6 +452,30 @@ func assertTimestampAttr(t *testing.T, entry *ldap.Entry, attr string) {
 	if !regexp.MustCompile(`^\d{14}Z$`).MatchString(values[0]) {
 		t.Fatalf("%s = %q, want LDAP generalized time YYYYMMDDHHMMSSZ", attr, values[0])
 	}
+}
+
+func assertStableIDAttrs(t *testing.T, entry *ldap.Entry) {
+	t.Helper()
+	entryUUID := assertEntryUUIDAttr(t, entry)
+	compatUUID := attrValues(entry, "uuid")
+	if len(compatUUID) != 1 {
+		t.Fatalf("uuid values = %v, want exactly one", compatUUID)
+	}
+	if compatUUID[0] != entryUUID {
+		t.Fatalf("uuid = %q, want same value as entryUUID %q", compatUUID[0], entryUUID)
+	}
+}
+
+func assertEntryUUIDAttr(t *testing.T, entry *ldap.Entry) string {
+	t.Helper()
+	entryUUID := attrValues(entry, "entryUUID")
+	if len(entryUUID) != 1 {
+		t.Fatalf("entryUUID values = %v, want exactly one", entryUUID)
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(entryUUID[0]) {
+		t.Fatalf("entryUUID = %q, want RFC 4122 version 4 UUID", entryUUID[0])
+	}
+	return entryUUID[0]
 }
 
 func attrValues(entry *ldap.Entry, attr string) []string {

@@ -61,18 +61,32 @@ func TestNewAddEntryBuildsEntryFromAttributes(t *testing.T) {
 func TestNewAddEntryRejectsProtectedAttributes(t *testing.T) {
 	srv := &Server{}
 
-	entry, resultCode, err := srv.newAddEntry("uid=jane,dc=example,dc=com", map[string][]string{
-		"objectClass":     {"inetOrgPerson"},
-		"createTimestamp": {"20260102030405Z"},
-	})
-	if err != nil {
-		t.Fatalf("newAddEntry() error = %v", err)
+	for _, attr := range []string{"createTimestamp", "entryUUID", "uuid"} {
+		t.Run(attr, func(t *testing.T) {
+			entry, resultCode, err := srv.newAddEntry("uid=jane,dc=example,dc=com", map[string][]string{
+				"objectClass": {"inetOrgPerson"},
+				attr:          {"protected"},
+			})
+			if err != nil {
+				t.Fatalf("newAddEntry() error = %v", err)
+			}
+			if entry != nil {
+				t.Fatalf("entry = %#v, want nil", entry)
+			}
+			if resultCode != ldapmsg.ResultCodeUnwillingToPerform {
+				t.Fatalf("resultCode = %d, want unwillingToPerform", resultCode)
+			}
+		})
 	}
-	if entry != nil {
-		t.Fatalf("entry = %#v, want nil", entry)
-	}
-	if resultCode != ldapmsg.ResultCodeUnwillingToPerform {
-		t.Fatalf("resultCode = %d, want unwillingToPerform", resultCode)
+}
+
+func TestStableIDAttributesAreModifyProtected(t *testing.T) {
+	for _, attr := range []string{"entryUUID", "uuid"} {
+		t.Run(attr, func(t *testing.T) {
+			if !isModifyProtectedAttribute(attr) {
+				t.Fatalf("%s should be modify-protected", attr)
+			}
+		})
 	}
 }
 

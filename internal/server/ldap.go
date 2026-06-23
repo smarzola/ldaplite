@@ -49,17 +49,21 @@ func NewServer(cfg *config.Config, st store.Store, version string) *Server {
 // protected from later Modify operations.
 var addProtectedAttributes = []string{
 	"createtimestamp",
+	"entryuuid",
 	"memberof",
 	"modifytimestamp",
+	"uuid",
 }
 
 // modifyProtectedAttributes lists LDAP operational/structural attributes that
 // cannot be changed after entry creation.
 var modifyProtectedAttributes = []string{
 	"createtimestamp",
+	"entryuuid",
 	"memberof",
 	"modifytimestamp",
 	"objectclass",
+	"uuid",
 }
 
 func isAddProtectedAttribute(attrName string) bool {

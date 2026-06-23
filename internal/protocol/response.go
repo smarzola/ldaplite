@@ -42,6 +42,8 @@ func CanonicalAttributeName(name string) string {
 		return "givenName"
 	case "displayname":
 		return "displayName"
+	case "entryuuid":
+		return "entryUUID"
 	case "telephonenumber":
 		return "telephoneNumber"
 	case "userpassword":

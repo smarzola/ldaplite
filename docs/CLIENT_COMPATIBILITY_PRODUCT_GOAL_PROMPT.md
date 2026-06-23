@@ -109,7 +109,7 @@ complete:
 5. Record the commit hash in the goal-loop status before continuing.
 
 - [x] Milestone 0: Baseline audit and compatibility matrix.
-- [ ] Milestone 1: Stable generated IDs for users and groups.
+- [x] Milestone 1: Stable generated IDs for users and groups.
 - [ ] Milestone 2: Pocket ID compatibility test and integration recipe.
 - [ ] Milestone 3: Integration recipe pack for common LDAP consumers.
 - [ ] Milestone 4: Correct LDAP Compare behavior.
