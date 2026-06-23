@@ -85,7 +85,7 @@ attributes:
 
 | Purpose | LDAPLite attribute |
 | --- | --- |
-| Internal username / stable user id | `uuid` |
+| Internal username / stable user id | `entryUUID` |
 | Username | `uid` |
 | Email | `mail` |
 | Display name | `displayName` |
@@ -93,9 +93,8 @@ attributes:
 | Last name | `sn` |
 | Group name | `cn` |
 
-LDAPLite also exposes `entryUUID` as an operational stable identifier, but
-`uuid` is returned as a normal compatibility attribute and is easier to use with
-clients.
+LDAPLite exposes `entryUUID` as an operational stable identifier. Configure
+Nextcloud to request and use `entryUUID` for stable user and group IDs.
 
 ## Smoke Tests
 
@@ -105,7 +104,7 @@ ldapsearch -H ldap://localhost:3389 \
   -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=users,dc=example,dc=com" \
   "(&(objectClass=inetOrgPerson)(|(uid=admin)(mail=admin)))" \
-  uuid uid mail displayName memberOf
+  entryUUID uid mail displayName memberOf
 ```
 
 ```bash
@@ -114,7 +113,7 @@ ldapsearch -H ldap://localhost:3389 \
   -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=groups,dc=example,dc=com" \
   "(objectClass=groupOfNames)" \
-  uuid cn member
+  entryUUID cn member
 ```
 
 ## Known Limitations

@@ -63,19 +63,19 @@ Set these values in Pocket ID's LDAP Attribute Configuration:
 
 | Pocket ID setting | LDAPLite attribute |
 | --- | --- |
-| User Unique Identifier Attribute | `uuid` |
+| User Unique Identifier Attribute | `entryUUID` |
 | Username Attribute | `uid` |
 | User Mail Attribute | `mail` |
 | User First Name Attribute | `givenName` |
 | User Last Name Attribute | `sn` |
 | User Group Membership Attribute | `memberOf` |
 | Group Members Attribute | `member` |
-| Group Unique Identifier Attribute | `uuid` |
+| Group Unique Identifier Attribute | `entryUUID` |
 | Group Name Attribute | `cn` |
 | Admin Group Name | `_pocket_id_admins` |
 
-LDAPLite also exposes `entryUUID` as an operational stable identifier. Pocket ID
-examples use `uuid`, so prefer `uuid` in Pocket ID.
+Pocket ID lets the unique identifier attributes be configured. Use LDAPLite's
+canonical `entryUUID` attribute for both users and groups.
 
 ## Admin Group
 
@@ -115,7 +115,7 @@ ldapsearch -H ldap://localhost:3389 \
   -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=users,dc=example,dc=com" \
   "(&(objectClass=inetOrgPerson)(uid=*))" \
-  uuid uid mail givenName sn memberOf
+  entryUUID uid mail givenName sn memberOf
 ```
 
 Verify group sync attributes:
@@ -126,7 +126,7 @@ ldapsearch -H ldap://localhost:3389 \
   -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=groups,dc=example,dc=com" \
   "(objectClass=groupOfNames)" \
-  uuid cn member
+  entryUUID cn member
 ```
 
 ## Known Limitations

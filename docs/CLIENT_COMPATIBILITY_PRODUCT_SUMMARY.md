@@ -23,8 +23,7 @@ This summarizes the client-compatibility goal-loop work on branch
   - `docs/ROADMAP.md`
   - `README.md`
 - Stable IDs:
-  - `internal/store/migrations/013_add_entry_uuid_attributes.up.sql`
-  - `internal/store/migrations/013_add_entry_uuid_attributes.down.sql`
+  - SQLite stable ID migrations
   - `internal/store/sqlite_entries.go`
   - `internal/server/search.go`
   - `internal/server/write.go`
@@ -55,7 +54,7 @@ This summarizes the client-compatibility goal-loop work on branch
 ## Client Compatibility Now Covered
 
 - Pocket ID has a functional sync-read test and a recipe using LDAPLite's real
-  `inetOrgPerson`, `groupOfNames`, `uuid`, `member`, and `memberOf` behavior.
+  `inetOrgPerson`, `groupOfNames`, `entryUUID`, `member`, and `memberOf` behavior.
 - Authelia, Dex, Gitea/Forgejo, Grafana, and Nextcloud have LDAPLite-specific
   recipes with bind DN, bases, filters, attribute mapping, group mapping, TLS
   notes, and smoke tests.

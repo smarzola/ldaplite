@@ -24,8 +24,8 @@ Confirmed current strengths:
   and timestamp filters.
 - Users are `inetOrgPerson`; groups are `groupOfNames` with `member` DNs.
 - `memberOf` is computed, read-only, and supports nested group membership.
-- Stable generated `entryUUID` and `uuid` attributes are available on entries;
-  `entryUUID` is operational and `uuid` is a normal compatibility alias.
+- Stable generated `entryUUID` attributes are available on entries as
+  operational server-managed identifiers.
 - Functional tests exercise AD-like bind/search/member/memberOf/password/result
   code behavior through `github.com/go-ldap/ldap/v3`.
 - Pocket ID has a tested functional compatibility path and integration recipe.
@@ -48,12 +48,12 @@ Confirmed current gaps:
 
 | Consumer | Expected LDAP Pattern | LDAPLite Status | Next LDAPLite Work |
 | --- | --- | --- | --- |
-| Pocket ID | Periodic LDAP sync with bind DN, search base, user filter such as `(objectClass=person)`, group filter `(objectClass=groupOfNames)`, stable user/group unique attributes, `uid`, `mail`, `givenName`, `sn`, group `member`, and group name mapping. Examples use `ldaps://` and `uuid`. | **Works with LDAPLite-specific settings.** LDAPLite has functional coverage for Pocket ID-shaped reads using `inetOrgPerson`, `groupOfNames`, `member`, `memberOf`, `uid`, `mail`, `givenName`, `sn`, and generated `uuid`. See [Pocket ID recipe](integrations/pocket-id.md). | Remaining gaps are schema defaults and native TLS: use `(objectClass=inetOrgPerson)` instead of Pocket ID's example `(objectClass=person)`, use `cn` for group names, and use the tested [LDAPS TLS sidecar guide](deployment/ldaps-tls-sidecar.md) until native LDAPS/StartTLS exists. |
+| Pocket ID | Periodic LDAP sync with bind DN, search base, user filter such as `(objectClass=person)`, group filter `(objectClass=groupOfNames)`, stable user/group unique attributes, `uid`, `mail`, `givenName`, `sn`, group `member`, and group name mapping. Examples use `ldaps://` and `entryUUID`. | **Works with LDAPLite-specific settings.** LDAPLite has functional coverage for Pocket ID-shaped reads using `inetOrgPerson`, `groupOfNames`, `member`, `memberOf`, `uid`, `mail`, `givenName`, `sn`, and generated `entryUUID`. See [Pocket ID recipe](integrations/pocket-id.md). | Remaining gaps are schema defaults and native TLS: use `(objectClass=inetOrgPerson)` instead of Pocket ID's example `(objectClass=person)`, use `cn` for group names, and use the tested [LDAPS TLS sidecar guide](deployment/ldaps-tls-sidecar.md) until native LDAPS/StartTLS exists. |
 | Authelia | Service bind user searches users and groups. Configurable `base_dn`, `additional_users_dn`, `users_filter`, `additional_groups_dn`, `groups_filter`, group search mode, `memberOf`, `cn`, `uid`, `mail`, `givenName`, `sn`, and TLS/StartTLS settings. | **Likely works with documented settings.** LDAPLite supports bind/search, `memberOf`, group `member`, and common user attributes. See [Authelia recipe](integrations/authelia.md). | Remaining gap: native StartTLS/LDAPS. Use the tested TLS sidecar guide and keep AD recursive matching-rule examples out of LDAPLite recipes. |
-| Dex LDAP connector | Service account bind, user search that combines a filter with username attribute, then bind as found user. Group search supports `userMatchers` such as user `DN` to group `member`; supports recursive group lookup using `recursionGroupAttr` for nested group schemas. | **Likely works for direct groups with documented settings.** LDAPLite supports service bind via read-only app users, user bind verification, user search by `uid`/`mail`/`userPrincipalName`, group `member` as DN, generated `uuid`, and nested `memberOf`. See [Dex recipe](integrations/dex.md). | Add client-shaped functional test if Dex becomes a release gate. Remaining operational gap: native LDAPS/StartTLS; use the tested TLS sidecar guide. |
+| Dex LDAP connector | Service account bind, user search that combines a filter with username attribute, then bind as found user. Group search supports `userMatchers` such as user `DN` to group `member`; supports recursive group lookup using `recursionGroupAttr` for nested group schemas. | **Likely works for direct groups with documented settings.** LDAPLite supports service bind via read-only app users, user bind verification, user search by `uid`/`mail`/`userPrincipalName`, group `member` as DN, generated `entryUUID`, and nested `memberOf`. See [Dex recipe](integrations/dex.md). | Add client-shaped functional test if Dex becomes a release gate. Remaining operational gap: native LDAPS/StartTLS; use the tested TLS sidecar guide. |
 | Gitea / Forgejo | LDAP via BindDN or simple auth. Needs host/port/TLS, optional bind DN, user search base/filter, username attribute, first name `givenName`, surname `sn`, required email `mail`, optional admin filter, and optional group membership verification using group base, group member attribute, and user attribute such as DN or `uid`. | **Likely works with documented settings.** LDAPLite supports simple bind, BindDN search, read-only app bind users, `uid`, `givenName`, `sn`, `mail`, `member`, and `memberOf` filters. See [Gitea/Forgejo recipe](integrations/gitea-forgejo.md). | Remaining gap: native LDAPS/StartTLS. Kerberos, SASL, and SPNEGO/SSPI are out of scope. |
 | Grafana | Bind DN is normally a read-only user. User lookup uses `search_filter` such as `(uid=%s)` and search base DNs. Attributes include `memberOf`, `mail`/`email`, display/name attributes. Group role mapping can use `memberOf`; POSIX fallback can search groups by `memberUid`. TLS/LDAPS and StartTLS are first-class config choices. | **Likely works for `memberOf` mapping with documented settings.** LDAPLite supports bind, read-only app bind users, user search by `uid`/`cn`/`mail`, `memberOf`, group DNs, and common attributes. See [Grafana recipe](integrations/grafana.md). | Remaining gap: native LDAPS/StartTLS. Use the tested TLS sidecar guide and do not use AD recursive matching-rule examples with LDAPLite. |
-| Nextcloud | LDAP app uses read-only directory access. Needs host/port or `ldaps://`, user DN/bind user, base DN, user filters such as `inetOrgPerson` plus optional `memberOf`, login attributes such as `uid` and `mail`, group filters, group display name `cn`, group member association, and stable LDAP UUID/DN mapping. | **Likely works with documented settings.** LDAPLite supports read-only app bind users, read/search patterns, `inetOrgPerson`, `memberOf`, `uid`, `mail`, group `cn`, group `member`, and stable generated UUID attributes. See [Nextcloud recipe](integrations/nextcloud.md). | Remaining gap: native LDAPS/StartTLS. Use raw filters when Nextcloud auto-detection picks schema assumptions from other directory servers. |
+| Nextcloud | LDAP app uses read-only directory access. Needs host/port or `ldaps://`, user DN/bind user, base DN, user filters such as `inetOrgPerson` plus optional `memberOf`, login attributes such as `uid` and `mail`, group filters, group display name `cn`, group member association, and stable LDAP ID/DN mapping. | **Likely works with documented settings.** LDAPLite supports read-only app bind users, read/search patterns, `inetOrgPerson`, `memberOf`, `uid`, `mail`, group `cn`, group `member`, and stable generated `entryUUID` attributes. See [Nextcloud recipe](integrations/nextcloud.md). | Remaining gap: native LDAPS/StartTLS. Use raw filters when Nextcloud auto-detection picks schema assumptions from other directory servers. |
 | Vaultwarden | Current Vaultwarden project documentation is centered on HTTP reverse-proxy deployment. Native LDAP authentication is not a standard first-party LDAP consumer path in the checked docs. | **Not a direct LDAP target.** LDAPLite may still serve the upstream IdP or auth proxy in front of Vaultwarden, but Vaultwarden itself should not drive LDAP protocol milestones unless a maintained LDAP integration is selected. | Treat as an indirect recipe later: LDAPLite -> Authelia/Pocket ID/other OIDC or forward-auth component -> Vaultwarden. Do not block core LDAP milestones on Vaultwarden-native LDAP. |
 
 ## Cross-Client Requirements
@@ -67,8 +67,6 @@ Clients that synchronize users and groups need durable unique identifiers.
 
 Implementation questions:
 
-- Should LDAPLite expose both `entryUUID` and `uuid`?
-- Should `uuid` be a stored alias or computed alias of `entryUUID`?
 - Should stable IDs be returned under `*`, `+`, or only when explicitly
   requested?
 - Should IDs exist on all entries or only users/groups?
@@ -77,8 +75,7 @@ Implemented direction:
 
 - Store one generated UUID per entry.
 - Expose `entryUUID` as the canonical server-managed attribute.
-- Expose `uuid` as a compatibility alias for clients such as Pocket ID.
-- Protect both from Add/Modify input.
+- Protect it from Add/Modify input.
 
 ### Object Class Matching
 

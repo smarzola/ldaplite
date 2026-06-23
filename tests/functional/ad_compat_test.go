@@ -537,14 +537,8 @@ func assertTimestampAttr(t *testing.T, entry *ldap.Entry, attr string) {
 
 func assertStableIDAttrs(t *testing.T, entry *ldap.Entry) {
 	t.Helper()
-	entryUUID := assertEntryUUIDAttr(t, entry)
-	compatUUID := attrValues(entry, "uuid")
-	if len(compatUUID) != 1 {
-		t.Fatalf("uuid values = %v, want exactly one", compatUUID)
-	}
-	if compatUUID[0] != entryUUID {
-		t.Fatalf("uuid = %q, want same value as entryUUID %q", compatUUID[0], entryUUID)
-	}
+	assertEntryUUIDAttr(t, entry)
+	assertNoAttr(t, entry, "uuid")
 }
 
 func assertEntryUUIDAttr(t *testing.T, entry *ldap.Entry) string {

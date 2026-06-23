@@ -33,8 +33,7 @@ self-hosted identity consumers.
 
 The target state is:
 
-- Users and groups expose stable generated identifiers such as `entryUUID` and
-  `uuid`, suitable for clients that need durable sync keys.
+- Users and groups expose stable generated identifiers such as `entryUUID`, suitable for clients that need durable sync keys.
 - Pocket ID has a tested, documented integration path.
 - A small set of high-value client recipes exists under `docs/integrations/`.
 - The functional compatibility suite includes client-consumer expectations, not
@@ -157,18 +156,15 @@ go test ./...
 Problem:
 
 - Clients such as Pocket ID often expect durable unique IDs for users and
-  groups. Pocket ID examples use `uuid`; many LDAP clients also understand
-  `entryUUID`.
+  groups. Configure those clients to request LDAPLite's `entryUUID` attribute.
 - LDAPLite can store arbitrary attributes, but stable generated IDs should not
   depend on manual operator input.
 
 Desired behavior:
 
-- New entries receive stable generated UUID attributes where appropriate.
+- New entries receive stable generated `entryUUID` attributes where appropriate.
 - Existing entries are backfilled by migration.
 - `entryUUID` is treated as server-managed and read-only.
-- `uuid` is available as a compatibility alias if that is the chosen product
-  direction.
 - IDs remain stable across Modify operations and restarts.
 - IDs are returned in search results when requested, and optionally under `*`
   if that matches the schema decision.
@@ -585,8 +581,7 @@ After each commit:
 If the agent cannot make a reasonable choice from repo context, stop and ask
 for alignment before implementing. In particular, ask before:
 
-- choosing whether `uuid` should be a stored alias, a computed alias, or not
-  supported in favor of `entryUUID`;
+- changing the canonical stable identifier away from `entryUUID`;
 - implementing native TLS/StartTLS instead of documenting a sidecar/proxy path;
 - changing LDAP write authorization semantics for existing authenticated users;
 - exposing any password material in import/export;

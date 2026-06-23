@@ -159,15 +159,11 @@ func TestStableIDAttributesAreGeneratedSearchableAndStable(t *testing.T) {
 	}
 
 	entryUUID := entry.GetAttribute("entryUUID")
-	compatUUID := entry.GetAttribute("uuid")
 	if entryUUID == "" {
 		t.Fatal("entryUUID should be generated")
 	}
-	if compatUUID == "" {
-		t.Fatal("uuid compatibility alias should be generated")
-	}
-	if compatUUID != entryUUID {
-		t.Fatalf("uuid = %q, want same value as entryUUID %q", compatUUID, entryUUID)
+	if entry.GetAttribute("uuid") != "" {
+		t.Fatal("uuid should not be generated")
 	}
 	if _, err := uuid.Parse(entryUUID); err != nil {
 		t.Fatalf("entryUUID = %q, want valid UUID: %v", entryUUID, err)
@@ -186,19 +182,6 @@ func TestStableIDAttributesAreGeneratedSearchableAndStable(t *testing.T) {
 		t.Fatalf("entryUUID search returned %#v, want only %s", entryDNs(found), entry.DN)
 	}
 
-	found, err = store.SearchEntriesWithOptions(ctx, SearchOptions{
-		BaseDN:          "dc=test,dc=com",
-		Filter:          "(uuid=" + compatUUID + ")",
-		Scope:           SearchScopeWholeSubtree,
-		IncludeMemberOf: false,
-	})
-	if err != nil {
-		t.Fatalf("SearchEntriesWithOptions(uuid) failed: %v", err)
-	}
-	if len(found) != 1 || found[0].DN != entry.DN {
-		t.Fatalf("uuid search returned %#v, want only %s", entryDNs(found), entry.DN)
-	}
-
 	entry.SetAttribute("mail", "jdoe-updated@test.com")
 	if err := store.UpdateEntry(ctx, entry); err != nil {
 		t.Fatalf("UpdateEntry() failed: %v", err)
@@ -211,8 +194,8 @@ func TestStableIDAttributesAreGeneratedSearchableAndStable(t *testing.T) {
 	if got := updated.GetAttribute("entryUUID"); got != entryUUID {
 		t.Fatalf("updated entryUUID = %q, want stable %q", got, entryUUID)
 	}
-	if got := updated.GetAttribute("uuid"); got != compatUUID {
-		t.Fatalf("updated uuid = %q, want stable %q", got, compatUUID)
+	if got := updated.GetAttribute("uuid"); got != "" {
+		t.Fatalf("updated uuid = %q, want empty", got)
 	}
 }
 
@@ -242,8 +225,8 @@ func TestCreateEntryIgnoresCallerSuppliedStableIDAttributes(t *testing.T) {
 	if entryUUID == "1d84d1af-89ef-4cc2-98fb-f868b84f10e1" {
 		t.Fatal("CreateEntry should replace caller-supplied entryUUID with a server-generated value")
 	}
-	if created.GetAttribute("uuid") != entryUUID {
-		t.Fatalf("uuid = %q, want entryUUID %q", created.GetAttribute("uuid"), entryUUID)
+	if got := created.GetAttribute("uuid"); got != "" {
+		t.Fatalf("uuid = %q, want empty", got)
 	}
 	if _, err := uuid.Parse(entryUUID); err != nil {
 		t.Fatalf("entryUUID = %q, want valid UUID: %v", entryUUID, err)

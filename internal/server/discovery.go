@@ -49,7 +49,6 @@ func (s *Server) handleSchema(conn *protocol.Connection, msg *ldapmsg.Message) e
 		"( 2.5.4.31 NAME 'member' DESC 'RFC2256: member of a group' SUP distinguishedName )",
 		"( 2.5.4.11 NAME 'ou' SUP name DESC 'RFC2256: organizational unit this object belongs to' )",
 		"( 1.3.6.1.1.16.4 NAME 'entryUUID' DESC 'RFC4530: UUID assigned to the entry' EQUALITY uuidMatch ORDERING uuidOrderingMatch SYNTAX 1.3.6.1.1.16.1 SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
-		"( 1.3.6.1.4.1.56521.1.1 NAME 'uuid' DESC 'LDAPLite compatibility alias for entryUUID' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )",
 		"( 1.2.840.113556.1.2.102 NAME 'memberOf' DESC 'RFC2307bis-style: groups to which the entry belongs' EQUALITY distinguishedNameMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 NO-USER-MODIFICATION USAGE directoryOperation )",
 	)
 

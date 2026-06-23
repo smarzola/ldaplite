@@ -1,2 +1,2 @@
 DELETE FROM attributes
-WHERE LOWER(name) IN ('entryuuid', 'uuid');
+WHERE LOWER(name) = 'entryuuid';

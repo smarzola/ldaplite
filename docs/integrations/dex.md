@@ -43,7 +43,7 @@ connectors:
         baseDN: ou=users,dc=example,dc=com
         filter: "(objectClass=inetOrgPerson)"
         username: uid
-        idAttr: uuid
+        idAttr: entryUUID
         emailAttr: mail
         nameAttr: displayName
         preferredUsernameAttr: uid
@@ -69,7 +69,7 @@ ldapsearch -H ldap://localhost:3389 \
   -w "$LDAP_APP_BIND_PASSWORD" \
   -b "ou=users,dc=example,dc=com" \
   "(&(objectClass=inetOrgPerson)(uid=admin))" \
-  uuid uid mail displayName
+  entryUUID uid mail displayName
 ```
 
 Verify group lookup by user DN:

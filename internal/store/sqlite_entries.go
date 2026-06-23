@@ -277,7 +277,7 @@ func insertGenericAttributes(ctx context.Context, tx *sql.Tx, entryID int64, att
 
 func isGenericStoredAttribute(name string) bool {
 	switch strings.ToLower(name) {
-	case "userpassword", "objectclass", "createtimestamp", "modifytimestamp", "memberof":
+	case "userpassword", "objectclass", "createtimestamp", "modifytimestamp", "memberof", "uuid":
 		return false
 	default:
 		return true
@@ -320,19 +320,6 @@ func stableIDForEntry(ctx context.Context, tx *sql.Tx, entryID int64) (string, e
 		return "", fmt.Errorf("failed to read existing entryUUID: %w", err)
 	}
 
-	err = tx.QueryRowContext(ctx, `
-		SELECT value
-		FROM attributes
-		WHERE entry_id = ?
-		  AND LOWER(name) = 'uuid'
-		LIMIT 1
-	`, entryID).Scan(&entryUUID)
-	if err == nil {
-		return entryUUID, nil
-	}
-	if err != sql.ErrNoRows {
-		return "", fmt.Errorf("failed to read existing uuid: %w", err)
-	}
 	return "", nil
 }
 
@@ -341,7 +328,6 @@ func setStableIDAttributes(entry *models.Entry, entryUUID string) {
 		entry.Attributes = make(map[string][]string)
 	}
 	entry.Attributes["entryuuid"] = []string{entryUUID}
-	entry.Attributes["uuid"] = []string{entryUUID}
 }
 
 func (s *SQLiteStore) validateEntryPlacement(ctx context.Context, tx *sql.Tx, entry *models.Entry) error {

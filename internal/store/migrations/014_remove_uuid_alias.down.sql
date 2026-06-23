@@ -1,0 +1,2 @@
+-- The non-standard compatibility alias was intentionally removed.
+-- Down migration is a no-op because entryUUID is the canonical stable ID.
