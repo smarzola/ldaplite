@@ -116,7 +116,7 @@ complete:
 - [x] Milestone 5: Service-account/read-only bind strategy.
 - [x] Milestone 6: TLS/LDAPS deployment path.
 - [x] Milestone 7: Bootstrap/import/export path.
-- [ ] Milestone 8: Final docs, roadmap update, full regression, and release
+- [x] Milestone 8: Final docs, roadmap update, full regression, and release
   readiness summary.
 
 ## Milestone 0: Baseline Audit And Compatibility Matrix

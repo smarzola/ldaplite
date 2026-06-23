@@ -102,25 +102,24 @@ Initial product recommendation:
 
 Most clients recommend a read-only bind user for searches.
 
-Current risk:
+Implemented direction:
 
-- LDAPLite currently allows any authenticated non-anonymous LDAP user to write.
-
-Initial product recommendation:
-
-- Add a minimal read-only role/group before encouraging app bind users.
-- Keep Web UI admin authorization separate from LDAP write authorization unless
-  a service layer refactor intentionally unifies them.
+- App bind users can be made read-only by adding them to
+  `cn=ldaplite.readonly,ou=groups,<baseDN>`.
+- Read-only users can bind, search, and compare.
+- Add, Modify, and Delete return insufficientAccessRights for read-only users.
+- Web UI admin authorization remains separate through
+  `cn=ldaplite.admin,ou=groups,<baseDN>`.
 
 ### TLS/LDAPS
 
 Many clients can use plain LDAP for local/private deployments, but their docs
 often show `ldaps://`, StartTLS, or TLS verification settings.
 
-Initial product recommendation:
+Implemented direction:
 
 - Keep native TLS out of the first compatibility pass.
-- Add a tested LDAPS sidecar/proxy recipe.
+- Use the tested [LDAPS TLS sidecar guide](deployment/ldaps-tls-sidecar.md).
 - Revisit native LDAPS/StartTLS only if the sidecar path cannot satisfy common
   clients.
 

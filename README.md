@@ -483,6 +483,7 @@ compiles them, while local runs are better for comparing before/after changes.
 
 ## Integration Guides
 
+See [docs/CLIENT_COMPATIBILITY_MATRIX.md](docs/CLIENT_COMPATIBILITY_MATRIX.md) for the LDAP client compatibility matrix.
 See [docs/integrations/](docs/integrations/) for LDAP consumer recipes.
 See [docs/LDAP_AUTHORIZATION.md](docs/LDAP_AUTHORIZATION.md) for read-only app bind users.
 See [docs/deployment/ldaps-tls-sidecar.md](docs/deployment/ldaps-tls-sidecar.md) for LDAPS sidecar deployment.
@@ -497,6 +498,7 @@ See [docs/deployment/ldaps-tls-sidecar.md](docs/deployment/ldaps-tls-sidecar.md)
 ## Roadmap
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for current project status and planned work.
+See [docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md](docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md) for the latest client-compatibility goal summary.
 
 - **SCIM 2.0 Support** - Modern API for user/group provisioning alongside LDAP
   - RESTful HTTP interface (RFC 7643, RFC 7644)
