@@ -682,7 +682,7 @@ Status note, 2026-06-23:
 - Browser validation found no blank app, console-visible app error, page
   horizontal overflow, admin navigation leakage to reader, or incorrect
   capability badges.
-- Commit: pending.
+- Commit: `a8074bd`.
 
 ## Milestone 5: Directory Management And Password Flows
 
