@@ -228,7 +228,7 @@ When a milestone is complete:
 - [x] Milestone 0: Baseline audit and design direction.
 - [x] Milestone 1: Shared capability authorization layer.
 - [x] Milestone 2: Breaking least-privilege LDAP write policy.
-- [ ] Milestone 3: Embedded shadcn frontend build foundation.
+- [x] Milestone 3: Embedded shadcn frontend build foundation.
 - [ ] Milestone 4: Role-aware Web UI API and shell.
 - [ ] Milestone 5: Directory management and password flows.
 - [ ] Milestone 6: Browser visual validation, documentation, and final
@@ -574,6 +574,29 @@ go test -v ./internal/web/...
 Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
+
+Status note, 2026-06-23:
+
+- Added a root npm/Vite/TypeScript/shadcn setup with source under
+  `internal/web/frontend/` and generated embedded assets under
+  `internal/web/static/app/`.
+- Added shadcn components through the CLI after `docs` and `--dry-run`: `button`,
+  `card`, and `badge`.
+- Added `/app/` serving from Go's embedded static filesystem while preserving
+  the single `make build` path: frontend assets build before `bin/ldaplite`.
+- Kept the old Go template routes isolated for now; the React/shadcn foundation
+  is served from `/app/` until Milestone 4/5 replace the admin surfaces.
+- Verification passed:
+  - `npm ci` (reported one low-severity npm advisory; no automatic fix applied)
+  - `npx shadcn@latest info`
+  - `npm run build`
+  - `make build`
+  - `go test -v ./internal/web/...`
+  - local `./bin/ldaplite server` on `127.0.0.1:18080`
+  - in-app Browser visual validation at `1280x720` and `390x844`
+- Browser validation found no blank app, console warnings/errors, horizontal
+  overflow, or obvious text/control overlap.
+- Commit: `6d10a4f`.
 
 ## Milestone 4: Role-Aware Web UI API And Shell
 

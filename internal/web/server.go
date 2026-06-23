@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -19,8 +20,8 @@ import (
 //go:embed templates/*.html
 var templatesFS embed.FS
 
-//go:embed static/output.css
-var staticCSS embed.FS
+//go:embed static
+var staticFS embed.FS
 
 // Server represents the web UI HTTP server
 type Server struct {
@@ -72,7 +73,13 @@ func (s *Server) setupRoutes() {
 	}
 
 	// Serve static CSS (no auth required)
-	s.mux.Handle("/static/", http.FileServer(http.FS(staticCSS)))
+	s.mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(mustSubFS(staticFS, "static")))))
+
+	// Serve the embedded React/shadcn application.
+	s.mux.HandleFunc("/app", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/app/", http.StatusMovedPermanently)
+	})
+	s.mux.Handle("/app/", http.StripPrefix("/app/", spaFileServer(mustSubFS(staticFS, "static/app"))))
 
 	// Root redirect
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -108,6 +115,36 @@ func (s *Server) setupRoutes() {
 	s.mux.Handle("/ous/new", protected(ouHandler.New))
 	s.mux.Handle("/ous/edit", protected(ouHandler.Edit))
 	s.mux.Handle("/ous/delete", protected(ouHandler.Delete))
+}
+
+func mustSubFS(fsys fs.FS, dir string) fs.FS {
+	sub, err := fs.Sub(fsys, dir)
+	if err != nil {
+		panic(fmt.Sprintf("embedded filesystem %q unavailable: %v", dir, err))
+	}
+	return sub
+}
+
+func spaFileServer(fsys fs.FS) http.Handler {
+	files := http.FileServer(http.FS(fsys))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
+			path = "index.html"
+		}
+
+		file, err := fsys.Open(path)
+		if err == nil {
+			_ = file.Close()
+			files.ServeHTTP(w, r)
+			return
+		}
+
+		fallback := r.Clone(r.Context())
+		fallback.URL.Path = "/index.html"
+		files.ServeHTTP(w, fallback)
+	})
 }
 
 // Start starts the web server

@@ -11,8 +11,8 @@ help:
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@echo "  build              Build the binary (with CSS)"
-	@echo "  build-css          Build Tailwind CSS"
+	@echo "  build              Build the binary (with embedded Web UI)"
+	@echo "  build-css          Build embedded Web UI assets"
 	@echo "  test               Run tests"
 	@echo "  test-functional    Run AD-like functional compatibility tests"
 	@echo "  test-race          Run tests with race detector"
@@ -27,13 +27,13 @@ help:
 	@echo "  clean              Clean build artifacts"
 
 build-css:
-	@echo "Building Tailwind CSS..."
+	@echo "Building embedded Web UI assets..."
 	@if [ ! -d "node_modules" ]; then \
 		echo "Installing Node dependencies..."; \
 		npm install; \
 	fi
 	npm run build:css
-	@echo "CSS built: internal/web/static/output.css"
+	@echo "Web UI assets built: internal/web/static/app"
 
 build: build-css
 	@echo "Building ${BINARY_NAME}..."
@@ -112,6 +112,7 @@ clean:
 	rm -rf bin/
 	rm -f coverage.out coverage.html
 	rm -f internal/web/static/output.css
+	rm -rf internal/web/static/app
 	${DOCKER} compose down -v
 	@echo "Clean complete"
 
