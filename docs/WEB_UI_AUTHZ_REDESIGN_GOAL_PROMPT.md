@@ -596,7 +596,7 @@ Status note, 2026-06-23:
   - in-app Browser visual validation at `1280x720` and `390x844`
 - Browser validation found no blank app, console warnings/errors, horizontal
   overflow, or obvious text/control overlap.
-- Commit: `6d10a4f`.
+- Commit: `acdbd8e`.
 
 ## Milestone 4: Role-Aware Web UI API And Shell
 
