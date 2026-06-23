@@ -21,7 +21,7 @@ func TestPocketIDLDAPCompatibility(t *testing.T) {
 
 	t.Run("bind user can read sync attributes", func(t *testing.T) {
 		res := search(t, conn, "(&(objectClass=inetOrgPerson)(uid=jane))", []string{
-			"uuid",
+			"entryUUID",
 			"uid",
 			"mail",
 			"givenName",
@@ -31,7 +31,7 @@ func TestPocketIDLDAPCompatibility(t *testing.T) {
 		assertDNs(t, res, []string{janeDN})
 
 		entry := requireEntry(t, res, janeDN)
-		assertPocketIDUUID(t, entry, "uuid")
+		assertPocketIDUUID(t, entry, "entryUUID")
 		assertAttrValues(t, entry, "uid", []string{"jane"})
 		assertAttrValues(t, entry, "mail", []string{"jane@example.com"})
 		assertAttrValues(t, entry, "givenName", []string{"Jane"})
@@ -41,14 +41,14 @@ func TestPocketIDLDAPCompatibility(t *testing.T) {
 
 	t.Run("group sync can resolve members", func(t *testing.T) {
 		res := search(t, conn, "(objectClass=groupOfNames)", []string{
-			"uuid",
+			"entryUUID",
 			"cn",
 			"member",
 		})
 		assertDNs(t, res, []string{"cn=ldaplite.admin," + groupsOUDN, groupDN, pocketIDAdminGroupDN})
 
 		group := requireEntry(t, res, pocketIDAdminGroupDN)
-		assertPocketIDUUID(t, group, "uuid")
+		assertPocketIDUUID(t, group, "entryUUID")
 		assertAttrValues(t, group, "cn", []string{"_pocket_id_admins"})
 		assertAttrValues(t, group, "member", []string{janeDN})
 
@@ -57,7 +57,7 @@ func TestPocketIDLDAPCompatibility(t *testing.T) {
 			t.Fatalf("Pocket ID admin group members = %v, want exactly jane", members)
 		}
 
-		memberRes := search(t, conn, "(uid=jane)", []string{"uuid", "uid", "mail"})
+		memberRes := search(t, conn, "(uid=jane)", []string{"entryUUID", "uid", "mail"})
 		assertDNs(t, memberRes, []string{members[0]})
 		requireEntry(t, memberRes, members[0])
 	})

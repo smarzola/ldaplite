@@ -43,7 +43,6 @@ directory operations as a hobby.
   - `entryUUID` - Stable server-generated entry identifier (RFC 4530-style)
   - `objectClass` - Structural object class
   - `memberOf` - Groups the user belongs to (computed, read-only)
-  - `uuid` - Stable compatibility alias for clients that expect a plain UUID attribute
   - Searchable with `>=` and `<=` operators for timestamps
 
 ### Advanced Features
@@ -362,7 +361,6 @@ ldapsearch -H ldap://localhost:3389 \
 # sn: Doe
 # mail: john@example.com
 # entryUUID: 1d84d1af-89ef-4cc2-98fb-f868b84f10e1
-# uuid: 1d84d1af-89ef-4cc2-98fb-f868b84f10e1
 # memberOf: cn=developers,ou=groups,dc=example,dc=com
 # memberOf: cn=ldaplite.admin,ou=groups,dc=example,dc=com
 
@@ -374,9 +372,9 @@ ldapsearch -H ldap://localhost:3389 \
   "(memberOf=cn=developers,ou=groups,dc=example,dc=com)"
 ```
 
-Every entry receives a stable generated `entryUUID`; LDAPLite also stores the same value as `uuid` for clients that expect a simple unique identifier attribute, such as directory synchronization tools. Both attributes are server-managed and cannot be set or modified by LDAP clients.
+Every entry receives a stable generated `entryUUID`. It is server-managed and cannot be set or modified by LDAP clients.
 
-Search result attribute selection is honored case-insensitively. Requesting `1.1` returns no attributes, `*` returns user attributes and the `uuid` compatibility alias, and `+` returns operational attributes such as `entryUUID`, `memberOf`, `createTimestamp`, and `modifyTimestamp`. When no attribute list is supplied, LDAPLite returns both user and operational attributes for compatibility with common clients.
+Search result attribute selection is honored case-insensitively. Requesting `1.1` returns no attributes, `*` returns user attributes, and `+` returns operational attributes such as `entryUUID`, `memberOf`, `createTimestamp`, and `modifyTimestamp`. Explicitly requested operational attributes are returned by name. When no attribute list is supplied, LDAPLite returns both user and operational attributes for compatibility with common clients.
 
 LDAPLite emits canonical presentation casing for known LDAP attributes such as `objectClass`, `entryUUID`, `memberOf`, `createTimestamp`, `modifyTimestamp`, `givenName`, `displayName`, and `telephoneNumber`. Custom attributes remain case-insensitive internally and are currently presented using the normalized stored name.
 

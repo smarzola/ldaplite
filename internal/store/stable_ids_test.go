@@ -31,8 +31,6 @@ func TestAddEntryUUIDMigrationBackfillsExistingEntries(t *testing.T) {
 		INSERT INTO entries (id, dn) VALUES
 			(1, 'uid=legacy,ou=users,dc=test,dc=com'),
 			(2, 'uid=existing,ou=users,dc=test,dc=com');
-		INSERT INTO attributes (entry_id, name, value) VALUES
-			(2, 'uuid', '1d84d1af-89ef-4cc2-98fb-f868b84f10e1');
 	`); err != nil {
 		t.Fatalf("seed legacy schema: %v", err)
 	}
@@ -75,19 +73,61 @@ func TestAddEntryUUIDMigrationBackfillsExistingEntries(t *testing.T) {
 
 	for entryID, attrs := range valuesByEntry {
 		entryUUID := attrs["entryuuid"]
-		compatUUID := attrs["uuid"]
-		if entryUUID == "" || compatUUID == "" {
-			t.Fatalf("entry %d attrs = %#v, want entryuuid and uuid", entryID, attrs)
+		if entryUUID == "" {
+			t.Fatalf("entry %d attrs = %#v, want entryuuid", entryID, attrs)
 		}
-		if entryUUID != compatUUID {
-			t.Fatalf("entry %d entryuuid = %q, uuid = %q, want same value", entryID, entryUUID, compatUUID)
+		if attrs["uuid"] != "" {
+			t.Fatalf("entry %d attrs = %#v, want no uuid alias", entryID, attrs)
 		}
 		if _, err := uuid.Parse(entryUUID); err != nil {
 			t.Fatalf("entry %d entryuuid = %q, want valid UUID: %v", entryID, entryUUID, err)
 		}
 	}
+}
 
-	if got := valuesByEntry[2]["entryuuid"]; got != "1d84d1af-89ef-4cc2-98fb-f868b84f10e1" {
-		t.Fatalf("existing uuid was not preserved as entryUUID: got %q", got)
+func TestRemoveUUIDAliasMigrationDeletesPersistedAliases(t *testing.T) {
+	db, err := sql.Open("sqlite", t.TempDir()+"/released.db")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE attributes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			entry_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			value TEXT NOT NULL
+		);
+		INSERT INTO attributes (entry_id, name, value) VALUES
+			(1, 'entryuuid', '1d84d1af-89ef-4cc2-98fb-f868b84f10e1'),
+			(1, 'uuid', '1d84d1af-89ef-4cc2-98fb-f868b84f10e1'),
+			(1, 'uid', 'jane');
+	`); err != nil {
+		t.Fatalf("seed released schema: %v", err)
+	}
+
+	migration, err := migrationsFS.ReadFile("migrations/014_remove_uuid_alias.up.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, string(migration)); err != nil {
+		t.Fatalf("run migration: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM attributes WHERE LOWER(name) = 'uuid'`).Scan(&count); err != nil {
+		t.Fatalf("count uuid attrs: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("uuid attr count = %d, want 0", count)
+	}
+
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM attributes WHERE LOWER(name) = 'entryuuid'`).Scan(&count); err != nil {
+		t.Fatalf("count entryuuid attrs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("entryuuid attr count = %d, want 1", count)
 	}
 }

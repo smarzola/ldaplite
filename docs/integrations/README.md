@@ -18,7 +18,7 @@ Shared assumptions:
 - Groups live under `ou=groups,<baseDN>` and use `groupOfNames`.
 - Group membership is DN-based through `member`.
 - User reverse membership is exposed as computed `memberOf`.
-- Stable IDs are exposed as `entryUUID` and `uuid`.
+- Stable IDs are exposed as `entryUUID`.
 - Native LDAPS/StartTLS is not implemented yet; use the
   [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md) where
   encryption is required.

@@ -62,7 +62,7 @@ Behavior:
     batch;
   - every entry must have exactly one supported structural `objectClass`;
   - every group `member` DN must exist in the database or import batch;
-  - client-supplied `entryUUID`, `uuid`, timestamps, and `memberOf` are
+  - client-supplied `entryUUID`, timestamps, and `memberOf` are
     rejected;
   - user entries must satisfy existing `inetOrgPerson` validation.
 - Apply writes in parent-before-child order inside one transaction where
@@ -139,7 +139,7 @@ Unit tests:
 - Reject entries outside the base DN.
 - Reject child entries whose parent is missing.
 - Reject group members that do not exist in the database or batch.
-- Reject client-supplied `entryUUID`, `uuid`, timestamps, and `memberOf`.
+- Reject client-supplied `entryUUID`, timestamps, and `memberOf`.
 - Process plaintext user passwords through the password processor.
 - Export omits `userPassword` by default.
 - Export omits computed `memberOf`.

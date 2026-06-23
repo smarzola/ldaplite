@@ -1,10 +1,21 @@
 # Changelog
 
+## v0.12.1 - 2026-06-23
+
+### LDAP Standards Alignment
+
+- Removed the non-standard LDAP compatibility alias; `entryUUID` is now the
+  only stable server-managed entry identifier.
+- Added a migration to delete persisted alias attributes from databases upgraded
+  from v0.12.0.
+- Updated client integration recipes and compatibility docs to configure
+  `entryUUID` for stable user and group IDs.
+
 ## v0.12.0 - 2026-06-23
 
 ### LDAP Client Compatibility
 
-- Added stable `entryUUID` values plus a `uuid` compatibility alias for clients that key synced users and groups by immutable IDs.
+- Added stable `entryUUID` values for clients that key synced users and groups by immutable IDs.
 - Added LDAP Compare operation support, including compare result codes and functional coverage for client-visible behavior.
 - Added Pocket ID compatibility coverage for user and group synchronization expectations.
 - Added read-only LDAP service account authorization using `cn=ldaplite.readonly,ou=groups,<baseDN>`.
