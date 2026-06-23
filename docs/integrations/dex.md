@@ -87,7 +87,7 @@ ldapsearch -H ldap://localhost:3389 \
 
 - Dex strongly recommends TLS for LDAP because it binds with the user's plain
   password. LDAPLite does not currently terminate native LDAPS or StartTLS; use
-  a trusted private network only for development and a TLS sidecar/proxy for
+  a trusted private network only for development and the [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md) for
   production.
 - Read-only app bind users must be members of
   `cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.

@@ -96,7 +96,7 @@ ldapsearch -H ldap://localhost:3389 \
 - Read-only app bind users must be members of
   `cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 - LDAPLite does not currently terminate native LDAPS or StartTLS. Use private
-  networking, VPN, or an external TLS sidecar/proxy for production traffic.
+  networking, VPN, or the [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md) for production traffic.
 - Do not use Authelia's AD recursive matching-rule examples with LDAPLite.
   LDAPLite computes nested `memberOf`, but it does not implement the AD
   `1.2.840.113556.1.4.1941` matching rule.

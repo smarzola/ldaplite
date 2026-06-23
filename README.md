@@ -485,6 +485,7 @@ compiles them, while local runs are better for comparing before/after changes.
 
 See [docs/integrations/](docs/integrations/) for LDAP consumer recipes.
 See [docs/LDAP_AUTHORIZATION.md](docs/LDAP_AUTHORIZATION.md) for read-only app bind users.
+See [docs/deployment/ldaps-tls-sidecar.md](docs/deployment/ldaps-tls-sidecar.md) for LDAPS sidecar deployment.
 
 - [Authelia](docs/integrations/authelia.md)
 - [Dex](docs/integrations/dex.md)
@@ -503,7 +504,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for current project status and planned wo
   - Compatible with modern IdP systems
 - Enhanced ACLs for granular permissions
 - Import/export tools (LDIF, CSV)
-- TLS/LDAPS support (currently recommend reverse proxy)
+- Native TLS/LDAPS support (sidecar deployment is documented)
 
 ## Limitations
 

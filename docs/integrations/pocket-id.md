@@ -10,7 +10,8 @@ directory shape, but a few defaults should be changed:
   `(objectClass=person)` filter.
 - Use `cn` for group names instead of Pocket ID's default `uid` group-name
   attribute.
-- Use plain `ldap://` on a private network or behind a TLS sidecar/proxy.
+- Use plain `ldap://` on a private network or use the
+  [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md).
   LDAPLite does not currently terminate native LDAPS or StartTLS.
 
 Reference: https://pocket-id.org/docs/configuration/ldap
@@ -136,5 +137,5 @@ ldapsearch -H ldap://localhost:3389 \
 - Read-only app bind users must be members of
   `cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 - LDAPLite does not currently terminate native LDAPS or StartTLS. Use a private
-  network, VPN, or external TLS sidecar/proxy when Pocket ID is not on the same
-  trusted network.
+  network, VPN, or the [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md)
+  when Pocket ID is not on the same trusted network.

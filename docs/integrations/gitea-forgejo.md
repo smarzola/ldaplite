@@ -33,7 +33,7 @@ values:
 | Setting | LDAPLite value |
 | --- | --- |
 | Authentication Name | `LDAPLite` |
-| Security Protocol | Unencrypted LDAP, or LDAPS through a TLS sidecar/proxy |
+| Security Protocol | Unencrypted LDAP, or LDAPS through the [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md) |
 | Host | `ldaplite` |
 | Port | `3389` |
 | Bind DN | `uid=appbind,ou=users,dc=example,dc=com` |
@@ -87,5 +87,5 @@ ldapsearch -H ldap://localhost:3389 \
 - Read-only app bind users must be members of
   `cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 - LDAPLite does not currently terminate native LDAPS or StartTLS. Use private
-  networking, VPN, or an external TLS sidecar/proxy for production traffic.
+  networking, VPN, or the [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md) for production traffic.
 - Kerberos, SASL, and Windows SPNEGO/SSPI flows are out of scope for LDAPLite.

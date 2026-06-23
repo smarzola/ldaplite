@@ -35,8 +35,8 @@ Create the bind user and add it to
 | Password | Value of `LDAP_APP_BIND_PASSWORD` |
 | Base DN | `dc=example,dc=com` |
 
-Use `ldap://127.0.0.1:3389` for local development. Use an LDAPS sidecar/proxy
-or private network for production.
+Use `ldap://127.0.0.1:3389` for local development. Use a private network or the
+[LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md) for production.
 
 ## Users Tab
 
@@ -122,7 +122,7 @@ ldapsearch -H ldap://localhost:3389 \
 - Read-only app bind users must be members of
   `cn=ldaplite.readonly,ou=groups,dc=example,dc=com`.
 - LDAPLite does not currently terminate native LDAPS or StartTLS. Use private
-  networking, VPN, or an external TLS sidecar/proxy for production traffic.
+  networking, VPN, or the [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md) for production traffic.
 - Nextcloud UI probes may offer object classes or filters from other directory
   servers. Use the raw filters above when auto-detection does not choose
   LDAPLite's `inetOrgPerson` and `groupOfNames` schema.
