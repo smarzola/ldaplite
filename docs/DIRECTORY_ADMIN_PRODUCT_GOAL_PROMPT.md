@@ -387,7 +387,7 @@ Status note, 2026-06-23:
   - `go test -v ./internal/web`
   - `go test -v ./internal/web ./internal/store/... ./internal/schema ./internal/models`
   - `go test -v -race ./internal/web`
-- Commit hash: pending.
+- Commit hash: `2af2772`.
 
 ## Milestone 2: Real App Shell And Role-Specific Landing
 
