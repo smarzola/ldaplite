@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.14.0 - 2026-06-24
+
+### Web UI
+
+- Rebuilt the embedded Web UI as a React/shadcn directory lookup and
+  administration console.
+- Added role-specific workflows for admin, read-only, and password-only users.
+- Added searchable, filterable, paginated directory results with detail sheets,
+  copyable DNs/attributes, and contextual row actions.
+- Added focused admin flows for creating entries, editing attributes, resetting
+  passwords, managing group members, and deleting entries.
+- Added server-side Web UI APIs and authorization checks for directory search,
+  entry details, write operations, same-origin mutation protection, and
+  account-only password self-service.
+- Updated Web UI documentation and goal-loop milestone history for the new
+  product workflow.
+
 ## v0.13.0 - 2026-06-23
 
 ### Native LDAP TLS
