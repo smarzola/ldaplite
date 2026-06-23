@@ -284,7 +284,9 @@ func (s *Server) handleCompare(ctx context.Context, conn *protocol.Connection, m
 		return conn.WriteResponse(msg.ID, protocol.NewCompareResponse(resultCode))
 	}
 
-	entry, err := s.store.GetEntryWithOptions(ctx, compareReq.Entry, store.EntryOptions{IncludeMemberOf: true})
+	entry, err := s.store.GetEntryWithOptions(ctx, compareReq.Entry, store.EntryOptions{
+		IncludeMemberOf: strings.EqualFold(compareReq.AVA.Attribute, "memberOf"),
+	})
 	if err != nil {
 		slog.Error("Compare get entry error", "dn", compareReq.Entry, "error", err)
 		resultCode = ldapmsg.ResultCodeOperationsError
