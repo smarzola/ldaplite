@@ -399,7 +399,7 @@ func (s *Server) canWrite(ctx context.Context, conn *protocol.Connection) (bool,
 	if s.cfg != nil {
 		baseDN = s.cfg.LDAP.BaseDN
 	}
-	return authz.New(baseDN, s.store).CanWriteLegacy(ctx, authz.Actor{
+	return authz.New(baseDN, s.store).CanWrite(ctx, authz.Actor{
 		DN:    conn.GetBoundDN(),
 		Bound: conn.IsBound(),
 	})

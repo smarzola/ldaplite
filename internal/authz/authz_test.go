@@ -149,11 +149,11 @@ func TestGroupDNs(t *testing.T) {
 	}
 }
 
-func TestCanWriteLegacy(t *testing.T) {
+func TestCanWrite(t *testing.T) {
 	tests := []struct {
 		name       string
 		actor      Actor
-		readOnly   bool
+		admin      bool
 		storeErr   error
 		want       bool
 		wantErr    bool
@@ -161,8 +161,9 @@ func TestCanWriteLegacy(t *testing.T) {
 	}{
 		{name: "unbound denied", want: false},
 		{name: "anonymous denied", actor: Actor{Bound: true}, want: false},
-		{name: "authenticated non read only allowed", actor: BoundUser(testUserDN), want: true, wantChecks: 1},
-		{name: "read only denied", actor: BoundUser(testReadOnlyDN), readOnly: true, want: false, wantChecks: 1},
+		{name: "authenticated non admin denied", actor: BoundUser(testUserDN), want: false, wantChecks: 1},
+		{name: "admin allowed", actor: BoundUser(testAdminDN), admin: true, want: true, wantChecks: 1},
+		{name: "read only denied", actor: BoundUser(testReadOnlyDN), want: false, wantChecks: 1},
 		{
 			name:       "membership error returned",
 			actor:      BoundUser(testUserDN),
@@ -178,17 +179,17 @@ func TestCanWriteLegacy(t *testing.T) {
 			store := &membershipStore{}
 			if tt.actor.DN != "" {
 				store.groups = membershipMap(tt.actor.DN, map[string]bool{
-					"cn=ldaplite.readonly,ou=groups,dc=example,dc=com": tt.readOnly,
+					"cn=ldaplite.admin,ou=groups,dc=example,dc=com": tt.admin,
 				})
 			}
 			store.err = tt.storeErr
 
-			got, err := New(testBaseDN, store).CanWriteLegacy(context.Background(), tt.actor)
+			got, err := New(testBaseDN, store).CanWrite(context.Background(), tt.actor)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("CanWriteLegacy() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("CanWrite() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if got != tt.want {
-				t.Fatalf("CanWriteLegacy() = %v, want %v", got, tt.want)
+				t.Fatalf("CanWrite() = %v, want %v", got, tt.want)
 			}
 			if store.checks != tt.wantChecks {
 				t.Fatalf("membership checks = %d, want %d", store.checks, tt.wantChecks)

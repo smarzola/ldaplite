@@ -91,7 +91,7 @@ func TestCanWriteAccessPolicy(t *testing.T) {
 	tests := []struct {
 		name       string
 		bindDN     *string
-		readOnly   bool
+		admin      bool
 		storeErr   error
 		want       bool
 		wantErr    bool
@@ -107,15 +107,21 @@ func TestCanWriteAccessPolicy(t *testing.T) {
 			want:   false,
 		},
 		{
-			name:       "authenticated write allowed",
+			name:       "admin write allowed",
 			bindDN:     strPtr("uid=admin,ou=users,dc=example,dc=com"),
+			admin:      true,
 			want:       true,
 			wantChecks: 1,
 		},
 		{
-			name:       "read-only group member write rejected",
+			name:       "authenticated non-admin write rejected",
+			bindDN:     strPtr("uid=jane,ou=users,dc=example,dc=com"),
+			want:       false,
+			wantChecks: 1,
+		},
+		{
+			name:       "read-only group member write rejected by default",
 			bindDN:     strPtr("uid=app,ou=users,dc=example,dc=com"),
-			readOnly:   true,
 			want:       false,
 			wantChecks: 1,
 		},
@@ -132,7 +138,7 @@ func TestCanWriteAccessPolicy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := testAuthzServer(true)
-			authzStore := &authzStore{readOnly: tt.readOnly, err: tt.storeErr}
+			authzStore := &authzStore{admin: tt.admin, err: tt.storeErr}
 			srv.store = authzStore
 			conn := protocol.NewConnection(nil, protocol.OperationHandlers{})
 			if tt.bindDN != nil {
@@ -145,6 +151,106 @@ func TestCanWriteAccessPolicy(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Fatalf("canWrite() = %v, want %v", got, tt.want)
+			}
+			if authzStore.checks != tt.wantChecks {
+				t.Fatalf("membership checks = %d, want %d", authzStore.checks, tt.wantChecks)
+			}
+		})
+	}
+}
+
+func TestCanModifyAccessPolicy(t *testing.T) {
+	tests := []struct {
+		name       string
+		bindDN     *string
+		targetDN   string
+		changes    []ldapmsg.ModifyChange
+		admin      bool
+		storeErr   error
+		want       bool
+		wantErr    bool
+		wantChecks int
+	}{
+		{
+			name:       "admin can modify ordinary attribute",
+			bindDN:     strPtr("uid=admin,ou=users,dc=example,dc=com"),
+			targetDN:   "uid=jane,ou=users,dc=example,dc=com",
+			changes:    replaceChange("mail", "jane@example.com"),
+			admin:      true,
+			want:       true,
+			wantChecks: 1,
+		},
+		{
+			name:       "non-admin cannot modify ordinary attribute",
+			bindDN:     strPtr("uid=jane,ou=users,dc=example,dc=com"),
+			targetDN:   "uid=jane,ou=users,dc=example,dc=com",
+			changes:    replaceChange("mail", "jane@example.com"),
+			want:       false,
+			wantChecks: 1,
+		},
+		{
+			name:       "non-admin can replace own password",
+			bindDN:     strPtr("uid=jane,ou=users,dc=example,dc=com"),
+			targetDN:   "UID=JANE,OU=USERS,DC=EXAMPLE,DC=COM",
+			changes:    replaceChange("userPassword", "NewPassword123!"),
+			want:       true,
+			wantChecks: 1,
+		},
+		{
+			name:       "non-admin cannot replace another user password",
+			bindDN:     strPtr("uid=jane,ou=users,dc=example,dc=com"),
+			targetDN:   "uid=bob,ou=users,dc=example,dc=com",
+			changes:    replaceChange("userPassword", "NewPassword123!"),
+			want:       false,
+			wantChecks: 1,
+		},
+		{
+			name:     "non-admin cannot mix own password with ordinary attribute",
+			bindDN:   strPtr("uid=jane,ou=users,dc=example,dc=com"),
+			targetDN: "uid=jane,ou=users,dc=example,dc=com",
+			changes: append(
+				replaceChange("userPassword", "NewPassword123!"),
+				replaceChange("mail", "jane@example.com")...,
+			),
+			want:       false,
+			wantChecks: 1,
+		},
+		{
+			name:       "non-admin cannot add own password value",
+			bindDN:     strPtr("uid=jane,ou=users,dc=example,dc=com"),
+			targetDN:   "uid=jane,ou=users,dc=example,dc=com",
+			changes:    addChange("userPassword", "NewPassword123!"),
+			want:       false,
+			wantChecks: 1,
+		},
+		{
+			name:       "membership check error returned",
+			bindDN:     strPtr("uid=jane,ou=users,dc=example,dc=com"),
+			targetDN:   "uid=jane,ou=users,dc=example,dc=com",
+			changes:    replaceChange("userPassword", "NewPassword123!"),
+			storeErr:   errors.New("membership failed"),
+			want:       false,
+			wantErr:    true,
+			wantChecks: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := testAuthzServer(true)
+			authzStore := &authzStore{admin: tt.admin, err: tt.storeErr}
+			srv.store = authzStore
+			conn := protocol.NewConnection(nil, protocol.OperationHandlers{})
+			if tt.bindDN != nil {
+				conn.SetBoundDN(*tt.bindDN)
+			}
+
+			got, err := srv.canModify(context.Background(), conn, tt.targetDN, tt.changes)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("canModify() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("canModify() = %v, want %v", got, tt.want)
 			}
 			if authzStore.checks != tt.wantChecks {
 				t.Fatalf("membership checks = %d, want %d", authzStore.checks, tt.wantChecks)
@@ -261,9 +367,9 @@ func strPtr(s string) *string {
 }
 
 type authzStore struct {
-	readOnly bool
-	err      error
-	checks   int
+	admin  bool
+	err    error
+	checks int
 }
 
 func (s *authzStore) Initialize(ctx context.Context) error { return nil }
@@ -302,8 +408,28 @@ func (s *authzStore) GetUserPasswordHashByDN(ctx context.Context, dn string) (st
 
 func (s *authzStore) IsUserInGroup(ctx context.Context, userDN, groupDN string) (bool, error) {
 	s.checks++
-	if want := "cn=ldaplite.readonly,ou=groups,dc=example,dc=com"; groupDN != want {
+	if want := "cn=ldaplite.admin,ou=groups,dc=example,dc=com"; groupDN != want {
 		return false, fmt.Errorf("groupDN = %q, want %q", groupDN, want)
 	}
-	return s.readOnly, s.err
+	return s.admin, s.err
+}
+
+func replaceChange(attr string, values ...string) []ldapmsg.ModifyChange {
+	return []ldapmsg.ModifyChange{{
+		Operation: ldapmsg.ModifyOperationReplace,
+		Modification: ldapmsg.Attribute{
+			Name:   attr,
+			Values: values,
+		},
+	}}
+}
+
+func addChange(attr string, values ...string) []ldapmsg.ModifyChange {
+	return []ldapmsg.ModifyChange{{
+		Operation: ldapmsg.ModifyOperationAdd,
+		Modification: ldapmsg.Attribute{
+			Name:   attr,
+			Values: values,
+		},
+	}}
 }

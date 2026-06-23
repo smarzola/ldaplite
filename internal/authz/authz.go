@@ -96,18 +96,12 @@ func (a *Authorizer) IsExplicitReadOnly(ctx context.Context, userDN string) (boo
 	return a.isMember(ctx, userDN, a.ReadOnlyGroupDN())
 }
 
-// CanWriteLegacy preserves LDAPLite's pre-redesign write policy until the
-// breaking least-privilege inversion is implemented in the next milestone.
-func (a *Authorizer) CanWriteLegacy(ctx context.Context, actor Actor) (bool, error) {
-	if !actor.Bound || actor.DN == "" {
-		return false, nil
-	}
-
-	isReadOnly, err := a.IsExplicitReadOnly(ctx, actor.DN)
+func (a *Authorizer) CanWrite(ctx context.Context, actor Actor) (bool, error) {
+	capabilities, err := a.Capabilities(ctx, actor)
 	if err != nil {
 		return false, err
 	}
-	return !isReadOnly, nil
+	return capabilities.Has(DirectoryWrite), nil
 }
 
 func (a *Authorizer) AdminGroupDN() string {

@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/smarzola/ldaplite/internal/audit"
+	"github.com/smarzola/ldaplite/internal/authz"
 	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/protocol"
@@ -168,14 +170,14 @@ func (s *Server) handleModify(ctx context.Context, conn *protocol.Connection, ms
 
 	slog.Debug("Modify request", "dn", dn)
 
-	canWrite, err := s.canWrite(ctx, conn)
+	canModify, err := s.canModify(ctx, conn, dn, modReq.Changes)
 	if err != nil {
-		slog.Error("Failed to check write authorization", "dn", dn, "error", err)
+		slog.Error("Failed to check modify authorization", "dn", dn, "error", err)
 		resultCode = ldapmsg.ResultCodeOperationsError
 		return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(ldapmsg.ResultCodeOperationsError))
 	}
-	if !canWrite {
-		slog.Info("Modify rejected - write access denied", "dn", dn)
+	if !canModify {
+		slog.Info("Modify rejected - access denied", "dn", dn)
 		resultCode = ldapmsg.ResultCodeInsufficientAccessRights
 		return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(ldapmsg.ResultCodeInsufficientAccessRights))
 	}
@@ -242,6 +244,42 @@ func (s *Server) handleModify(ctx context.Context, conn *protocol.Connection, ms
 	slog.Info("Entry modified", "dn", dn)
 	resultCode = ldapmsg.ResultCodeSuccess
 	return conn.WriteResponse(msg.ID, protocol.NewModifyResponse(ldapmsg.ResultCodeSuccess))
+}
+
+func (s *Server) canModify(ctx context.Context, conn *protocol.Connection, targetDN string, changes []ldapmsg.ModifyChange) (bool, error) {
+	baseDN := ""
+	if s.cfg != nil {
+		baseDN = s.cfg.LDAP.BaseDN
+	}
+	capabilities, err := authz.New(baseDN, s.store).Capabilities(ctx, authz.Actor{
+		DN:    conn.GetBoundDN(),
+		Bound: conn.IsBound(),
+	})
+	if err != nil {
+		return false, err
+	}
+	if capabilities.Has(authz.DirectoryWrite) {
+		return true, nil
+	}
+	return capabilities.Has(authz.PasswordChangeSelf) && isSelfPasswordModify(conn.GetBoundDN(), targetDN, changes), nil
+}
+
+func isSelfPasswordModify(boundDN, targetDN string, changes []ldapmsg.ModifyChange) bool {
+	if boundDN == "" || !ldapdn.Equal(boundDN, targetDN) || len(changes) == 0 {
+		return false
+	}
+	for _, change := range changes {
+		if change.Operation != ldapmsg.ModifyOperationReplace {
+			return false
+		}
+		if !strings.EqualFold(change.Modification.Name, "userPassword") {
+			return false
+		}
+		if len(change.Modification.Values) == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func addRequestAttributes(attrs []ldapmsg.Attribute) map[string][]string {

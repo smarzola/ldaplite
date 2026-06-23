@@ -318,6 +318,48 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 		assertLDAPResultCode(t, err, ldap.LDAPResultNoSuchObject)
 	})
 
+	t.Run("authenticated non-admin authorization", func(t *testing.T) {
+		conn := srv.dial(t)
+		if err := conn.Bind(janeDN, "NewPassword123!"); err != nil {
+			t.Fatalf("bind non-admin user: %v", err)
+		}
+
+		res := search(t, conn, "(uid=jane)", []string{"uid", "mail"})
+		assertDNs(t, res, []string{janeDN})
+		assertCompareResult(t, conn, janeDN, "uid", "jane", true)
+
+		deniedAdd := ldap.NewAddRequest("uid=denied-nonadmin,"+usersOUDN, nil)
+		deniedAdd.Attribute("objectClass", []string{"inetOrgPerson"})
+		deniedAdd.Attribute("uid", []string{"denied-nonadmin"})
+		deniedAdd.Attribute("cn", []string{"Denied Non Admin"})
+		deniedAdd.Attribute("sn", []string{"User"})
+		deniedAdd.Attribute("userPassword", []string{"DeniedPassword123!"})
+		assertLDAPResultCode(t, conn.Add(deniedAdd), ldap.LDAPResultInsufficientAccessRights)
+
+		deniedModify := ldap.NewModifyRequest(janeDN, nil)
+		deniedModify.Replace("mail", []string{"nonadmin-denied@example.com"})
+		assertLDAPResultCode(t, conn.Modify(deniedModify), ldap.LDAPResultInsufficientAccessRights)
+
+		deniedOtherPassword := ldap.NewModifyRequest(adminDN, nil)
+		deniedOtherPassword.Replace("userPassword", []string{"ShouldNotWork123!"})
+		assertLDAPResultCode(t, conn.Modify(deniedOtherPassword), ldap.LDAPResultInsufficientAccessRights)
+
+		selfPassword := ldap.NewModifyRequest(janeDN, nil)
+		selfPassword.Replace("userPassword", []string{"JaneSelfPassword123!"})
+		if err := conn.Modify(selfPassword); err != nil {
+			t.Fatalf("self password modify: %v", err)
+		}
+		assertLDAPResultCode(t, bindErr(t, srv, janeDN, "NewPassword123!"), ldap.LDAPResultInvalidCredentials)
+		assertBindSucceeds(t, srv, janeDN, "JaneSelfPassword123!")
+
+		assertLDAPResultCode(t, conn.Del(ldap.NewDelRequest(janeDN, nil)), ldap.LDAPResultInsufficientAccessRights)
+
+		adminConn := srv.dial(t)
+		bindAdmin(t, adminConn)
+		res = search(t, adminConn, "(uid=jane)", []string{"mail"})
+		assertAttrValues(t, requireEntry(t, res, janeDN), "mail", []string{"jane.doe@example.com"})
+	})
+
 	t.Run("read-only service account authorization", func(t *testing.T) {
 		adminConn := srv.dial(t)
 		bindAdmin(t, adminConn)
@@ -359,7 +401,7 @@ func TestADLikeCompatibilityMilestone(t *testing.T) {
 
 		res := search(t, conn, "(uid=jane)", []string{"*", "+"})
 		assertDNs(t, res, nil)
-		assertLDAPResultCode(t, bindErr(t, srv, janeDN, "NewPassword123!"), ldap.LDAPResultInvalidCredentials)
+		assertLDAPResultCode(t, bindErr(t, srv, janeDN, "JaneSelfPassword123!"), ldap.LDAPResultInvalidCredentials)
 		assertLDAPResultCode(t, conn.Del(ldap.NewDelRequest(janeDN, nil)), ldap.LDAPResultNoSuchObject)
 	})
 }

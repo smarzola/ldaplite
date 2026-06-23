@@ -227,7 +227,7 @@ When a milestone is complete:
 
 - [x] Milestone 0: Baseline audit and design direction.
 - [x] Milestone 1: Shared capability authorization layer.
-- [ ] Milestone 2: Breaking least-privilege LDAP write policy.
+- [x] Milestone 2: Breaking least-privilege LDAP write policy.
 - [ ] Milestone 3: Embedded shadcn frontend build foundation.
 - [ ] Milestone 4: Role-aware Web UI API and shell.
 - [ ] Milestone 5: Directory management and password flows.
@@ -488,6 +488,35 @@ go test -tags=functional -v ./tests/functional/...
 Commit requirement:
 
 - Commit after marking this milestone done and adding the status note.
+
+Status note, 2026-06-23:
+
+- Commands run:
+  - `gofmt -w internal/authz/authz.go internal/authz/authz_test.go internal/server/ldap.go internal/server/write.go internal/server/authz_test.go tests/functional/ad_compat_test.go`
+  - `go test -v ./internal/server ./internal/authz` passed.
+  - `go test -tags=functional -v ./tests/functional/...` passed.
+  - `go test -count=1 -v ./internal/server` passed.
+  - `go test -count=1 -tags=functional -v ./tests/functional/...` passed.
+- Replaced the temporary legacy write bridge with `authz.CanWrite`, so
+  directory write capability now comes only from `ldaplite.admin` membership.
+- LDAP Add and Delete now deny non-admin authenticated users with LDAP
+  `insufficientAccessRights`.
+- LDAP Modify now uses a separate authorization check:
+  - admins can modify ordinary attributes;
+  - non-admin users cannot modify ordinary attributes;
+  - non-admin users may only replace their own `userPassword`;
+  - non-admin users cannot reset another user's password, mix password changes
+    with other attributes, or add extra password values.
+- Functional coverage now proves authenticated non-admin users can search and
+  compare, cannot Add/Modify/Delete arbitrary entries, can change their own
+  password, and cannot reset another user's password.
+- Existing read-only service-account functional coverage still proves
+  bind/search/compare works and Add/Modify/Delete return
+  `insufficientAccessRights`.
+- Updated `docs/LDAP_AUTHORIZATION.md`,
+  `docs/CLIENT_COMPATIBILITY_MATRIX.md`, and `docs/integrations/README.md` to
+  describe the breaking least-privilege default and explicit app bind guidance.
+- Commit hash: pending checkpoint commit.
 
 ## Milestone 3: Embedded shadcn Frontend Build Foundation
 
