@@ -56,7 +56,8 @@ directory operations as a hobby.
 - **Recursive Hierarchy Traversal**: Efficient SQL CTEs for searching deep directory trees
 - **Structured Logging**: JSON or text format with configurable levels
 - **Telemetry**: Audit-grade structured logs plus optional OpenTelemetry metrics/tracing and Prometheus-compatible scraping
-- **Read-only service accounts**: Members of `cn=ldaplite.readonly,ou=groups,<baseDN>` can bind/search/compare but cannot write
+- **Least-privilege authorization**: Authenticated users can bind/search/compare and change their own password; directory writes require `cn=ldaplite.admin,ou=groups,<baseDN>`
+- **Explicit app-bind accounts**: Add service users to `cn=ldaplite.readonly,ou=groups,<baseDN>` to document read-only integration intent
 
 ### Storage & Deployment
 
@@ -70,13 +71,14 @@ directory operations as a hobby.
 
 ### Web UI
 
-- **Embedded Web Interface**: Simple, modern web UI for directory management
-  - HTTP Basic authentication with admin group authorization
-  - Browse and manage users, groups, and organizational units
-  - Full CRUD operations (create, read, update, delete)
-  - Dark/light theme toggle (wireframe/black themes)
-  - Responsive design with Tailwind CSS and DaisyUI
-  - No external dependencies, embedded in binary
+- **Embedded directory console**: Search-first web UI for directory lookup and administration
+  - HTTP Basic authentication with server-resolved role views
+  - Directory search with type filters, pagination, detail sheets, and copyable DNs/attributes
+  - Admin workflows for creating, editing, deleting, resetting passwords, and managing group members
+  - Read-only lookup for non-admin users with directory read access
+  - Account-only password change for `cn=ldaplite.password,ou=groups,<baseDN>` members
+  - Responsive React/shadcn UI built with Vite and Tailwind
+  - Built at release time and embedded in the single Go binary
 
 ## Quick Start
 
@@ -182,7 +184,7 @@ dc=example,dc=com (base DN)
     └── cn=ldaplite.admin (admin group, contains uid=admin)
 ```
 
-The admin user is automatically added to the `ldaplite.admin` group, which grants access to the Web UI.
+The admin user is automatically added to the `ldaplite.admin` group, which grants directory write and full Web UI administration access.
 
 ## Testing Your Connection
 
@@ -290,7 +292,13 @@ See [Telemetry](docs/TELEMETRY.md) for audit fields, metric names, tracing behav
 | `LDAP_WEB_UI_PORT` | `8080` | Web UI HTTP port |
 | `LDAP_WEB_UI_BIND_ADDRESS` | `0.0.0.0` | Web UI bind address |
 
-**Note**: Web UI requires authentication using admin user credentials (HTTP Basic Auth). Only members of the `cn=ldaplite.admin,ou=groups` group can access the web interface. Mutating Web UI requests require a same-origin `Origin` or `Referer` header, and delete actions use POST requests. The older `LDAP_WEBUI_*` spelling is still accepted as a compatibility alias.
+The Web UI uses HTTP Basic Auth against LDAPLite users:
+
+- Members of `cn=ldaplite.admin,ou=groups,<baseDN>` can search, inspect, create, edit, delete, reset passwords, and manage group members.
+- Authenticated non-admin users with directory read access get lookup-only search, detail, and copy workflows.
+- Members of `cn=ldaplite.password,ou=groups,<baseDN>` get account-only password self-service when they do not have broader roles.
+- Mutating Web UI/API requests require a same-origin `Origin` or `Referer` header.
+- The older `LDAP_WEBUI_*` spelling is still accepted as a compatibility alias.
 
 ### Security Configuration
 
@@ -303,7 +311,7 @@ See [Telemetry](docs/TELEMETRY.md) for audit fields, metric names, tracing behav
 | `LDAP_ARGON2_SALT_LENGTH` | `16` | Salt length in bytes |
 | `LDAP_ARGON2_KEY_LENGTH` | `32` | Derived key length in bytes |
 
-LDAPLite requires a successful bind before normal directory searches and all write operations. RootDSE and schema searches are intentionally readable before bind so clients can discover server capabilities. When `LDAP_ALLOW_ANONYMOUS_BIND=true`, anonymous clients must still perform an anonymous bind first, and anonymous sessions are limited to search access; Add, Modify, and Delete require an authenticated user DN.
+LDAPLite requires a successful bind before normal directory searches and all write operations. RootDSE and schema searches are intentionally readable before bind so clients can discover server capabilities. When `LDAP_ALLOW_ANONYMOUS_BIND=true`, anonymous clients must still perform an anonymous bind first, and anonymous sessions are limited to search access. Add, Modify, and Delete require admin capability through `cn=ldaplite.admin,ou=groups,<baseDN>`.
 
 **Note**: Argon2id parameters follow [OWASP recommendations](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#argon2id) for secure password hashing.
 
@@ -537,7 +545,7 @@ Current limitations (by design or priority):
 
 - **No SASL** - Simple bind only (username/password)
 - **No Replication** - Single-instance only
-- **No Complex ACLs** - Admin has full access, users can bind
+- **No Complex ACLs** - Admin has full write access; ordinary users can bind/search/compare and change their own password
 - **No Schema Extension** - Fixed object classes (sufficient for most use cases)
 - **SQLite Concurrency** - Suitable for small-to-medium deployments
 
@@ -548,20 +556,20 @@ These are intentional trade-offs for simplicity. For large enterprise deployment
 ### Running Tests
 
 ```bash
-# Run all tests with race detection (also builds embedded Web UI CSS)
+# Run all tests with race detection (also builds embedded Web UI assets)
 make test
 
 # Run AD-like functional compatibility tests
 make test-functional
 
-# Run with coverage (also builds embedded Web UI CSS)
+# Run with coverage (also builds embedded Web UI assets)
 make test-coverage
 
 # View coverage in browser
 open coverage.html
 ```
 
-Note: direct `go test ./...` requires `internal/web/static/output.css` to exist because the Web UI embeds it at compile time. Prefer `make test` on a fresh checkout so CSS is generated first.
+Note: direct `go test ./...` requires generated files under `internal/web/static/` because the Web UI embeds them at compile time. Prefer `make test` on a fresh checkout so frontend assets are generated first.
 
 ### Compatibility Testing
 

@@ -19,7 +19,12 @@ This roadmap tracks current project direction after the security and interoperab
 - Native LDAPS and StartTLS with operator-provided certificate/key files.
 - Canonical LDAP attribute casing for known response attributes.
 - Bind enforcement for normal searches and write operations.
-- Web UI same-origin protection and POST-only deletes.
+- Web UI same-origin protection for mutating routes.
+- Role-aware React/shadcn Web UI with admin, read-only, and account-only
+  password surfaces.
+- Shared directory service for Web UI user, group, OU, membership, attribute,
+  and password mutation flows.
+- Web UI password reset and self-service password change flows.
 - Referential integrity for parent DNs and group members.
 - Recursive nested group membership with cycle/depth protection.
 - LDAP search response attribute selection, including `1.1`, `*`, and `+`.
@@ -31,14 +36,12 @@ This roadmap tracks current project direction after the security and interoperab
 - Add compatibility tests against casing-sensitive LDAP clients (#11).
 - Revisit original presentation casing for custom attributes if compatibility tests show real client impact; current behavior stores and emits custom attributes using normalized names.
 - Add richer LDAP result mapping for store constraint errors.
-- Add a service layer shared by LDAP handlers and Web UI handlers so validation and authorization are not duplicated.
 - Expand healthcheck modes if deployments need separate database, listener, and full LDAP bind/search readiness checks.
 
 ## Product Roadmap
 
-- SCIM 2.0 or REST provisioning API after the service layer is in place (#7).
+- SCIM 2.0 or REST provisioning API on top of the shared directory service (#7).
 - User and group templates in the Web UI as structured presets over the attribute system (#8).
-- Web UI password reset/change flow (#10).
 - Implement LDIF import/export commands from [docs/IMPORT_EXPORT_DESIGN.md](IMPORT_EXPORT_DESIGN.md).
 
 ## GitHub Issue Cleanup
@@ -47,5 +50,4 @@ Issue `#2 Future development` was closed on 2026-06-21 after the completed Web U
 
 - #7 SCIM 2.0 / REST provisioning API.
 - #8 User and group templates.
-- #10 Web UI password change and reset flows.
 - #11 LDAP client compatibility test matrix.

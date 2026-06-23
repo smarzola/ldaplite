@@ -23,4 +23,5 @@ Shared assumptions:
   [LDAPS TLS sidecar guide](../deployment/ldaps-tls-sidecar.md) when external
   TLS termination is preferred.
 - For app bind users, create a user under `ou=users,<baseDN>` and add it to
-  `cn=ldaplite.readonly,ou=groups,<baseDN>`.
+  `cn=ldaplite.readonly,ou=groups,<baseDN>` to make its read-only purpose
+  explicit. Authenticated non-admin users are read-only by default.

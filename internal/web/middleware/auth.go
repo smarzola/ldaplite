@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/smarzola/ldaplite/internal/audit"
+	"github.com/smarzola/ldaplite/internal/authz"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/config"
 	"github.com/smarzola/ldaplite/pkg/crypto"
@@ -17,9 +18,10 @@ import (
 type contextKey string
 
 const UserDNKey contextKey = "user_dn"
+const capabilitiesKey contextKey = "capabilities"
 
-// Auth is the authentication middleware that validates HTTP Basic Auth
-// against LDAP credentials and checks admin group membership
+// Auth is the authentication middleware that validates HTTP Basic Auth against
+// LDAP credentials and attaches resolved capabilities to the request context.
 type Auth struct {
 	store  store.Store
 	cfg    *config.Config
@@ -35,9 +37,14 @@ func NewAuth(st store.Store, cfg *config.Config) *Auth {
 	}
 }
 
-// RequireAuth is middleware that requires Basic Auth with LDAP credentials
-// and membership in the ldaplite.admin group
+// RequireAuth is middleware that requires Basic Auth with LDAP credentials and
+// ui.read capability.
 func (a *Auth) RequireAuth(next http.Handler) http.Handler {
+	return a.RequireCapability(authz.UIRead, next)
+}
+
+// RequireCapability requires Basic Auth and a specific Web UI capability.
+func (a *Auth) RequireCapability(capability authz.Capability, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Get Authorization header
 		authHeader := r.Header.Get("Authorization")
@@ -94,35 +101,15 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 		}
 		audit.SetActorDN(ctx, userDN)
 
-		// Search for the admin group entry to get its actual DN
-		adminGroups, err := a.store.SearchEntriesWithOptions(ctx, store.SearchOptions{
-			BaseDN:          a.cfg.LDAP.BaseDN,
-			Filter:          "(&(objectClass=groupOfNames)(cn=ldaplite.admin))",
-			Scope:           store.SearchScopeWholeSubtree,
-			IncludeMemberOf: false,
-		})
+		capabilities, err := authz.New(a.cfg.LDAP.BaseDN, a.store).Capabilities(ctx, authz.BoundUser(userDN))
 		if err != nil {
-			slog.Error("Failed to search for admin group", "error", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
-		if len(adminGroups) == 0 {
-			slog.Error("Admin group not found", "expected_cn", "ldaplite.admin")
-			http.Error(w, "Internal server error: admin group not configured", http.StatusInternalServerError)
-			return
-		}
-		adminGroupDN := adminGroups[0].DN
-
-		// Check admin group membership
-		isMember, err := a.store.IsUserInGroup(ctx, userDN, adminGroupDN)
-		if err != nil {
-			slog.Error("Failed to check group membership", "user_dn", userDN, "error", err)
+			slog.Error("Failed to resolve capabilities", "user_dn", userDN, "error", err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
-		if !isMember {
-			slog.Warn("Access denied: user not in admin group", "user_dn", userDN)
+		if !capabilities.Has(capability) {
+			slog.Warn("Access denied: missing capability", "user_dn", userDN, "capability", capability)
 			audit.LogWeb(ctx, audit.WebEvent{
 				Event:      audit.EventWebAuthorizationDeny,
 				RemoteAddr: r.RemoteAddr,
@@ -131,12 +118,13 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 				Route:      NormalizeRoute(r.URL.Path),
 				Status:     http.StatusForbidden,
 			})
-			http.Error(w, "Access denied: admin privileges required", http.StatusForbidden)
+			http.Error(w, "Access denied", http.StatusForbidden)
 			return
 		}
 
-		// Add user DN to context
+		// Add user DN and capabilities to context.
 		ctx = context.WithValue(ctx, UserDNKey, userDN)
+		ctx = context.WithValue(ctx, capabilitiesKey, capabilities)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -179,7 +167,7 @@ func (a *Auth) authenticate(ctx context.Context, uid, password string) (string, 
 
 // requestAuth sends a 401 response requesting Basic Auth
 func (a *Auth) requestAuth(w http.ResponseWriter) {
-	w.Header().Set("WWW-Authenticate", `Basic realm="LDAPLite Admin"`)
+	w.Header().Set("WWW-Authenticate", `Basic realm="LDAPLite Web UI"`)
 	http.Error(w, "Authentication required", http.StatusUnauthorized)
 }
 
@@ -189,4 +177,11 @@ func GetUserDN(r *http.Request) string {
 		return dn
 	}
 	return ""
+}
+
+func GetCapabilities(r *http.Request) authz.Set {
+	if capabilities, ok := r.Context().Value(capabilitiesKey).(authz.Set); ok {
+		return capabilities
+	}
+	return authz.NewSet()
 }

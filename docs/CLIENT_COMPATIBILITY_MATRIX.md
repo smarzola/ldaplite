@@ -33,8 +33,10 @@ Confirmed current strengths:
   Nextcloud.
 - LDAP Compare returns meaningful compareTrue, compareFalse, and noSuchObject
   results for safe attributes.
-- Members of `cn=ldaplite.readonly,ou=groups,<baseDN>` can bind/search/compare
-  while Add/Modify/Delete return insufficientAccessRights.
+- Authenticated non-admin users can bind/search/compare and change their own
+  password, while arbitrary Add/Modify/Delete return insufficientAccessRights.
+- Members of `cn=ldaplite.readonly,ou=groups,<baseDN>` remain the recommended
+  explicit app bind users for read-only integrations.
 - LDAPS and StartTLS are covered by native TLS support and the tested sidecar deployment path remains available.
 - Audit-grade structured logs, optional OpenTelemetry tracing, and
   Prometheus-compatible metrics are implemented and documented.
@@ -100,11 +102,13 @@ Most clients recommend a read-only bind user for searches.
 
 Implemented direction:
 
-- App bind users can be made read-only by adding them to
-  `cn=ldaplite.readonly,ou=groups,<baseDN>`.
-- Read-only users can bind, search, and compare.
-- Add, Modify, and Delete return insufficientAccessRights for read-only users.
-- Web UI admin authorization remains separate through
+- LDAPLite is least-privilege by default: authenticated non-admin users can
+  bind, search, compare, and change their own password, but arbitrary Add,
+  Modify, and Delete return insufficientAccessRights.
+- App bind users should still be added to
+  `cn=ldaplite.readonly,ou=groups,<baseDN>` to make their read-only purpose
+  explicit.
+- Directory write administration requires
   `cn=ldaplite.admin,ou=groups,<baseDN>`.
 
 ### TLS/LDAPS

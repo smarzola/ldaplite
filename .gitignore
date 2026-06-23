@@ -24,6 +24,7 @@ go.work
 
 # Generated CSS
 internal/web/static/output.css
+internal/web/static/app/
 
 # IDEs
 .vscode/

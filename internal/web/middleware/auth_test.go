@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/smarzola/ldaplite/internal/authz"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/config"
@@ -203,7 +204,7 @@ func TestRequireAuthNonExistentUser(t *testing.T) {
 	}
 }
 
-func TestRequireAuthNotInAdminGroup(t *testing.T) {
+func TestRequireAuthAllowsAuthenticatedNonAdminRead(t *testing.T) {
 	auth, st := setupTestAuth(t)
 	defer st.Close()
 	ctx := context.Background()
@@ -253,13 +254,61 @@ func TestRequireAuthNotInAdminGroup(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	// Verify response - should be Forbidden (not in admin group)
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+	if !called {
+		t.Error("Test handler was not called - authenticated non-admin users should have ui.read")
+	}
+}
+
+func TestRequireCapabilityDeniesAuthenticatedNonAdminAdminAccess(t *testing.T) {
+	auth, st := setupTestAuth(t)
+	defer st.Close()
+	ctx := context.Background()
+	logs := captureMiddlewareAuditLogs(t)
+
+	hashedPassword, err := auth.hasher.Hash("RegularPassword123!")
+	if err != nil {
+		t.Fatalf("Failed to hash password: %v", err)
+	}
+
+	modelEntry := models.NewEntry("uid=regularuser,ou=users,dc=test,dc=com", "inetOrgPerson")
+	modelEntry.SetAttribute("uid", "regularuser")
+	modelEntry.SetAttribute("cn", "Regular User")
+	modelEntry.SetAttribute("sn", "User")
+	modelEntry.SetAttribute("userPassword", hashedPassword)
+
+	if err := st.CreateEntry(ctx, modelEntry); err != nil {
+		t.Fatalf("Failed to create regular user: %v", err)
+	}
+
+	called := false
+	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := auth.RequireCapability(authz.UIAdmin, testHandler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	credentials := base64.StdEncoding.EncodeToString([]byte("regularuser:RegularPassword123!"))
+	req.Header.Set("Authorization", "Basic "+credentials)
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("Expected status %d, got %d: %s", http.StatusForbidden, rr.Code, rr.Body.String())
 	}
 	if called {
-		t.Error("Test handler was called but should have been blocked by admin group check")
+		t.Error("Test handler was called but should have been blocked by ui.admin capability check")
 	}
+
+	got := logs.String()
+	assertAuditLogContains(t, got, `"event":"web.authorization_denied"`)
+	assertAuditLogContains(t, got, `"actor_dn":"uid=regularuser,ou=users,dc=test,dc=com"`)
+	assertAuditLogContains(t, got, `"status":403`)
 }
 
 func TestRequireAuthMalformedBasicAuth(t *testing.T) {

@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [{ "path": "./internal/web/frontend/tsconfig.json" }],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./internal/web/frontend/src/*"]
+    }
+  }
+}

@@ -12,7 +12,7 @@ Key stack:
 - Repo-owned LDAP BER encoding/decoding in `internal/protocol/`
 - CLI via Cobra
 - Password hashing with Argon2id
-- Web UI assets built with npm/Tailwind/DaisyUI
+- Web UI assets built with npm/Vite/React/Tailwind/shadcn/ui
 
 ## Search And Editing Rules
 
@@ -39,7 +39,7 @@ npm run build:css
 go build -o bin/ldaplite ./cmd/ldaplite
 ```
 
-`make build` builds embedded Web UI CSS before compiling the binary.
+`make build` builds embedded Web UI assets before compiling the binary.
 
 ### Test
 
@@ -59,7 +59,7 @@ go test -tags=functional -v ./tests/functional/...
 
 The functional suite starts a real `ldaplite server` subprocess on a random local port, uses a temporary SQLite database, and drives LDAP operations through `github.com/go-ldap/ldap/v3`.
 
-Direct `go test ./...` requires `internal/web/static/output.css` to already exist because the Web UI embeds it.
+Direct `go test ./...` requires embedded Web UI assets to already exist because the Web UI embeds `internal/web/static/`. Prefer `make test` on a fresh checkout.
 
 ### Run Locally
 

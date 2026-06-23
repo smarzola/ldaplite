@@ -48,11 +48,14 @@ func AuditHTTP(next http.Handler) http.Handler {
 
 func NormalizeRoute(path string) string {
 	switch path {
-	case "/", "/logout", "/users", "/users/new", "/users/edit", "/users/delete", "/groups", "/groups/new", "/groups/edit", "/groups/delete", "/ous", "/ous/new", "/ous/edit", "/ous/delete":
+	case "/", "/logout", "/api/session", "/api/directory", "/api/users", "/api/groups", "/api/ous", "/api/account/password", "/api/users/password", "/users", "/users/new", "/users/edit", "/users/delete", "/groups", "/groups/new", "/groups/edit", "/groups/delete", "/ous", "/ous/new", "/ous/edit", "/ous/delete":
 		return path
 	default:
 		if strings.HasPrefix(path, "/static/") {
 			return "/static/"
+		}
+		if strings.HasPrefix(path, "/app/") {
+			return "/app/"
 		}
 		return "unknown"
 	}

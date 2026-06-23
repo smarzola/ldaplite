@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/smarzola/ldaplite/internal/audit"
+	"github.com/smarzola/ldaplite/internal/authz"
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/protocol"
 	"github.com/smarzola/ldaplite/internal/protocol/ldapmsg"
@@ -394,27 +395,14 @@ func (s *Server) auditLDAPOperation(ctx context.Context, conn *protocol.Connecti
 }
 
 func (s *Server) canWrite(ctx context.Context, conn *protocol.Connection) (bool, error) {
-	if !conn.IsBound() || conn.GetBoundDN() == "" {
-		return false, nil
+	baseDN := ""
+	if s.cfg != nil {
+		baseDN = s.cfg.LDAP.BaseDN
 	}
-
-	readOnlyGroupDN := s.readOnlyGroupDN()
-	if readOnlyGroupDN == "" {
-		return true, nil
-	}
-
-	isReadOnly, err := s.store.IsUserInGroup(ctx, conn.GetBoundDN(), readOnlyGroupDN)
-	if err != nil {
-		return false, err
-	}
-	return !isReadOnly, nil
-}
-
-func (s *Server) readOnlyGroupDN() string {
-	if s.cfg == nil || s.cfg.LDAP.BaseDN == "" {
-		return ""
-	}
-	return fmt.Sprintf("cn=ldaplite.readonly,ou=groups,%s", s.cfg.LDAP.BaseDN)
+	return authz.New(baseDN, s.store).CanWrite(ctx, authz.Actor{
+		DN:    conn.GetBoundDN(),
+		Bound: conn.IsBound(),
+	})
 }
 
 func entryWriteResultCode(err error) ldapmsg.ResultCode {
