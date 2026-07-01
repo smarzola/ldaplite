@@ -1,6 +1,6 @@
 # SQLite Data Layer Improvement Plan
 
-> Historical note, 2026-06-21: this plan is preserved as design history. Several items described below have since been completed or superseded, including embedded migrations, SQL-compiled filters, operational timestamps, nested group traversal, and referential integrity checks. Use `docs/ROADMAP.md` for current status and remaining work before acting on line references or "current issue" statements in this document.
+> Historical note, 2026-06-21: this plan is preserved as design history. Several items described below have since been completed or superseded, including embedded migrations, SQL-compiled filters, operational timestamps, nested group traversal, and referential integrity checks. Use `docs/roadmap.md` for current status and remaining work before acting on line references or "current issue" statements in this document.
 
 **Date:** 2025-10-25
 **Status:** Historical / partially implemented

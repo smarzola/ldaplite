@@ -40,10 +40,14 @@ Confirmed current strengths:
 - LDAPS and StartTLS are covered by native TLS support and the tested sidecar deployment path remains available.
 - Audit-grade structured logs, optional OpenTelemetry tracing, and
   Prometheus-compatible metrics are implemented and documented.
+- LDIF import/export commands are available for bootstrap and safe inspection.
 
-Confirmed current gaps:
+Current compatibility follow-ups:
 
-- LDIF import/export command design is documented; implementation is pending.
+- Object class inheritance matching is not implemented; recipes should use
+  `(objectClass=inetOrgPerson)` for user searches.
+- Additional client-shaped functional tests can be added if a specific
+  integration becomes a release gate.
 
 ## Consumer Matrix
 
@@ -152,8 +156,8 @@ Each integration recipe should include:
 Relevant local files:
 
 - `README.md`
-- `docs/ROADMAP.md`
-- `docs/TELEMETRY.md`
+- `docs/roadmap.md`
+- `docs/telemetry.md`
 - `tests/functional/ad_compat_test.go`
 - `internal/server/search.go`
 - `internal/server/write.go`

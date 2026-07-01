@@ -135,7 +135,7 @@ GOCACHE=/private/tmp/ldaplite-gocache go test -tags=functional -v ./tests/functi
 Status note:
 
 - Done on 2026-06-22.
-- Added `docs/GOLDAP_PROTOCOL_INVENTORY.md` with the current `goldap` import
+- Added `docs/internal/design-history/goldap-protocol-inventory.md` with the current `goldap` import
   boundary, decoded request operations, encoded response operations, server-used
   request fields, and filter forms.
 - Added `internal/protocol/fixture_test.go` with representative request decode
@@ -415,7 +415,7 @@ Status note:
   GOCACHE=/private/tmp/ldaplite-gocache go mod tidy -e
   ```
 - Updated stale docs in `AGENTS.md`, `README.md`, `CLAUDE.md`, and
-  `docs/SQLITE_IMPROVEMENT_PLAN.md` to describe repo-owned BER/protocol
+  `docs/internal/design-history/sqlite-improvement-plan.md` to describe repo-owned BER/protocol
   handling.
 - Dependency grep run:
   ```bash

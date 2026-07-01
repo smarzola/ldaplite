@@ -387,9 +387,9 @@ Acceptance criteria:
 Likely files:
 
 - `README.md`
-- `docs/ROADMAP.md`
-- new `docs/TELEMETRY.md` if the content is too large for README
-- `docs/TELEMETRY_GOAL_PROMPT.md`
+- `docs/roadmap.md`
+- new `docs/telemetry.md` if the content is too large for README
+- `docs/internal/prompts/telemetry-goal-prompt.md`
 
 Verification:
 

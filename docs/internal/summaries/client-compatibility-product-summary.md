@@ -17,10 +17,10 @@ This summarizes the client-compatibility goal-loop work on branch
 ## Files Changed By Area
 
 - Goal and product tracking:
-  - `docs/CLIENT_COMPATIBILITY_PRODUCT_GOAL_PROMPT.md`
-  - `docs/CLIENT_COMPATIBILITY_MATRIX.md`
-  - `docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md`
-  - `docs/ROADMAP.md`
+  - `docs/internal/prompts/client-compatibility-product-goal-prompt.md`
+  - `docs/client-compatibility.md`
+  - `docs/internal/summaries/client-compatibility-product-summary.md`
+  - `docs/roadmap.md`
   - `README.md`
 - Stable IDs:
   - SQLite stable ID migrations
@@ -45,11 +45,11 @@ This summarizes the client-compatibility goal-loop work on branch
   - `internal/server/write.go`
   - `internal/server/authz_test.go`
   - `internal/server/compare_test.go`
-  - `docs/LDAP_AUTHORIZATION.md`
+  - `docs/authorization.md`
 - TLS and bootstrap:
   - `docs/deployment/ldaps-tls-sidecar.md`
   - `tests/functional/tls_sidecar_compat_test.go`
-  - `docs/IMPORT_EXPORT_DESIGN.md`
+  - `docs/internal/design-history/import-export-design.md`
 
 ## Client Compatibility Now Covered
 

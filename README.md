@@ -311,7 +311,7 @@ All configuration via environment variables. No config files needed.
 | `LDAP_METRICS_PORT` | `9090` | Metrics HTTP port |
 | `LDAP_METRICS_PATH` | `/metrics` | Metrics scrape path |
 
-See [Telemetry](docs/TELEMETRY.md) for audit fields, metric names, tracing behavior, and sensitive-data handling.
+See [Telemetry](docs/telemetry.md) for audit fields, metric names, tracing behavior, and sensitive-data handling.
 
 ### Web UI Configuration
 
@@ -544,9 +544,9 @@ compiles them, while local runs are better for comparing before/after changes.
 
 ## Integration Guides
 
-See [docs/CLIENT_COMPATIBILITY_MATRIX.md](docs/CLIENT_COMPATIBILITY_MATRIX.md) for the LDAP client compatibility matrix.
+See [docs/client-compatibility.md](docs/client-compatibility.md) for the LDAP client compatibility matrix.
 See [docs/integrations/](docs/integrations/) for LDAP consumer recipes.
-See [docs/LDAP_AUTHORIZATION.md](docs/LDAP_AUTHORIZATION.md) for read-only app bind users.
+See [docs/authorization.md](docs/authorization.md) for read-only app bind users.
 See [docs/deployment/ldaps-tls-sidecar.md](docs/deployment/ldaps-tls-sidecar.md) for optional LDAPS sidecar deployment.
 
 - [Authelia](docs/integrations/authelia.md)
@@ -558,15 +558,16 @@ See [docs/deployment/ldaps-tls-sidecar.md](docs/deployment/ldaps-tls-sidecar.md)
 
 Provisioning:
 
-- [SCIM provisioning API](docs/SCIM.md)
+- [SCIM provisioning API](docs/scim.md)
 
 ## Roadmap
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for current project status and planned work.
-See [docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md](docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md) for the latest client-compatibility goal summary.
+See [docs/roadmap.md](docs/roadmap.md) for current project status and future candidates.
+See [docs/README.md](docs/README.md) for the full operator documentation index.
 
-- Enhanced ACLs for granular permissions
-- LDIF import/export commands from [docs/IMPORT_EXPORT_DESIGN.md](docs/IMPORT_EXPORT_DESIGN.md)
+- LDIF import/export commands are documented in [docs/import-export.md](docs/import-export.md)
+- Near-term hardening focuses on precise LDAP result mapping, healthcheck modes, and release-readiness documentation.
+- Future product candidates include backup/restore commands, Web UI templates, and additional client-shaped functional gates.
 
 ## Limitations
 

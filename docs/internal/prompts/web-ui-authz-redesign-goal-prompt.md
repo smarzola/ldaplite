@@ -13,7 +13,7 @@ single Go binary with embedded Web UI assets. Node, Vite, shadcn/ui, Tailwind,
 and related frontend tools are build-time dependencies only; operators must not
 need a separate frontend server or Node runtime to run LDAPLite.
 
-Track this work against the existing roadmap themes in `docs/ROADMAP.md`:
+Track this work against the existing roadmap themes in `docs/roadmap.md`:
 shared LDAP/Web UI authorization, Web UI password flows, and Web UI templates.
 
 ## Repository Rules
@@ -97,7 +97,7 @@ LDAPLite currently has two mismatched authorization models:
 - Web UI authorization requires `cn=ldaplite.admin,ou=groups,<baseDN>` for the
   protected UI, so normal authenticated users can write through LDAP but cannot
   do anything in the UI.
-- `docs/LDAP_AUTHORIZATION.md` documents the current coarse read-only service
+- `docs/authorization.md` documents the current coarse read-only service
   account behavior and explicitly says Web UI authorization is separate.
 - `internal/server/ldap.go` contains `canWrite`, which checks only the reserved
   read-only group.
@@ -263,10 +263,10 @@ Acceptance criteria:
 
 Likely files:
 
-- `docs/WEB_UI_AUTHZ_REDESIGN_GOAL_PROMPT.md`
+- `docs/internal/prompts/web-ui-authz-redesign-goal-prompt.md`
 - `AGENTS.md`
-- `docs/ROADMAP.md`
-- `docs/LDAP_AUTHORIZATION.md`
+- `docs/roadmap.md`
+- `docs/authorization.md`
 - `internal/server/ldap.go`
 - `internal/web/`
 - `package.json`
@@ -393,7 +393,7 @@ Likely files:
 - `internal/web/middleware/auth.go`
 - `internal/store/store.go`
 - `internal/store/sqlite_membership.go`
-- `docs/LDAP_AUTHORIZATION.md`
+- `docs/authorization.md`
 
 Verification:
 
@@ -473,10 +473,10 @@ Likely files:
 - `internal/server/write.go`
 - `internal/server/authz_test.go`
 - `tests/functional/ad_compat_test.go`
-- `docs/LDAP_AUTHORIZATION.md`
-- `docs/CLIENT_COMPATIBILITY_MATRIX.md`
+- `docs/authorization.md`
+- `docs/client-compatibility.md`
 - `docs/integrations/*.md`
-- `docs/ROADMAP.md`
+- `docs/roadmap.md`
 
 Verification:
 
@@ -513,8 +513,8 @@ Status note, 2026-06-23:
 - Existing read-only service-account functional coverage still proves
   bind/search/compare works and Add/Modify/Delete return
   `insufficientAccessRights`.
-- Updated `docs/LDAP_AUTHORIZATION.md`,
-  `docs/CLIENT_COMPATIBILITY_MATRIX.md`, and `docs/integrations/README.md` to
+- Updated `docs/authorization.md`,
+  `docs/client-compatibility.md`, and `docs/integrations/README.md` to
   describe the breaking least-privilege default and explicit app bind guidance.
 - Commit hash: `97517b5`.
 
@@ -814,9 +814,9 @@ Acceptance criteria:
 
 Likely files:
 
-- `docs/LDAP_AUTHORIZATION.md`
-- `docs/ROADMAP.md`
-- `docs/CLIENT_COMPATIBILITY_MATRIX.md`
+- `docs/authorization.md`
+- `docs/roadmap.md`
+- `docs/client-compatibility.md`
 - `docs/integrations/*.md`
 - `README.md`
 - `AGENTS.md`
@@ -860,10 +860,10 @@ Status note, 2026-06-23:
   model and the final Web UI architecture:
   - `README.md` now describes the role-aware React/shadcn UI, least-privilege
     directory writes, and build-time-only frontend toolchain.
-  - `docs/LDAP_AUTHORIZATION.md` now documents `ldaplite.admin`,
+  - `docs/authorization.md` now documents `ldaplite.admin`,
     `ldaplite.readonly`, `ldaplite.password`, Web UI role behavior, and
     server-side capability enforcement.
-  - `docs/ROADMAP.md` marks the shared directory service, role-aware Web UI,
+  - `docs/roadmap.md` marks the shared directory service, role-aware Web UI,
     password reset, and self-service flows as completed.
   - `AGENTS.md` now names the Vite/React/Tailwind/shadcn embedded Web UI stack.
 - Switched the root Web UI redirect to `/app/` and added
