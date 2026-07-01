@@ -1,0 +1,6 @@
+dn: uid=broken,ou=users,dc=example,dc=com
+objectClass inetOrgPerson
+uid: broken
+cn: Broken User
+sn: User
+userPassword: ChangeMe123!

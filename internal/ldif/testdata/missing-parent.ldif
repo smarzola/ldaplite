@@ -1,0 +1,6 @@
+dn: uid=orphan,ou=missing,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: orphan
+cn: Orphan User
+sn: User
+userPassword: ChangeMe123!

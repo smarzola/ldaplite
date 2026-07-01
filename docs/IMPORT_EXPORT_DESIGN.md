@@ -1,7 +1,7 @@
 # Import And Export Design
 
-This document defines the practical bootstrap/import/export path for LDAPLite.
-It is the committed Milestone 7 design until the commands are implemented.
+This document describes the implemented practical bootstrap/import/export path
+for LDAPLite.
 
 ## Goals
 
@@ -52,7 +52,7 @@ Flags:
 | `--replace-existing` | `false` | Replace existing entries by DN |
 | `--allow-generated-passwords` | `false` | Generate random passwords for imported users missing `userPassword` |
 
-Behavior:
+Implemented behavior:
 
 - Initialize the SQLite store and migrations before import.
 - Parse all LDIF records before writing.
@@ -65,10 +65,10 @@ Behavior:
   - client-supplied `entryUUID`, timestamps, and `memberOf` are
     rejected;
   - user entries must satisfy existing `inetOrgPerson` validation.
-- Apply writes in parent-before-child order inside one transaction where
-  possible. If the current store API cannot do a single transaction across the
-  whole import, the implementation must fail before writes for validation
-  errors and document any partial-write risk for storage errors.
+- Apply writes in parent-before-child order. The implementation fails before
+  writes for validation errors. The current store API does not expose a
+  whole-import transaction, so storage errors after validation can leave a
+  partially applied import.
 
 Password handling:
 
@@ -95,7 +95,7 @@ Flags:
 | `--include-operational` | `false` | Include safe operational attributes such as timestamps and `entryUUID` |
 | `--include-password-placeholders` | `false` | Emit `userPassword: {REDACTED}` placeholders for user entries |
 
-Behavior:
+Implemented behavior:
 
 - Export base DN, OUs, users, and groups in parent-before-child order.
 - Export `objectClass` and normal attributes.
@@ -130,9 +130,9 @@ member: uid=appbind,ou=users,dc=example,dc=com
 - Keep import/export independent of the LDAP server listener.
 - Keep the Web UI out of scope for the first implementation.
 
-## Required Tests
+## Test Coverage
 
-Unit tests:
+Unit tests cover:
 
 - Parse single and multi-entry LDIF.
 - Reject malformed records.
@@ -144,7 +144,7 @@ Unit tests:
 - Export omits `userPassword` by default.
 - Export omits computed `memberOf`.
 
-Command tests:
+Command tests cover:
 
 - `ldaplite import ldif --dry-run --file fixture.ldif` validates without
   writing.
@@ -153,7 +153,7 @@ Command tests:
 - `ldaplite export ldif --file -` emits importable LDIF without password hashes.
 - Invalid import input exits non-zero and prints the failing DN and reason.
 
-Functional follow-up:
+Functional tests cover:
 
 - Start LDAPLite against an imported database.
 - Bind as an imported user.

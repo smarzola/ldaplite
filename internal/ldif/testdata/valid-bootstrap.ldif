@@ -1,0 +1,46 @@
+# Valid LDAPLite bootstrap import with base DN, OUs, users, and groups.
+dn: dc=example,dc=com
+objectClass: top
+dc: example
+
+dn: ou=users,dc=example,dc=com
+objectClass: organizationalUnit
+ou: users
+description: Imported users organizational unit
+
+dn: ou=groups,dc=example,dc=com
+objectClass: organizationalUnit
+ou: groups
+description: Imported groups organizational unit
+
+dn: uid=jane,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: jane
+cn: Jane Example
+sn: Example
+givenName: Jane
+mail: jane@example.com
+mail: jane.alt@example.com
+userPassword: ChangeMe123!
+
+dn: uid=appbind,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: appbind
+cn: Application Bind
+sn: Bind
+description: Imported application bind user with a folded 
+ line continuation for parser coverage
+userPassword: AppBind123!
+
+dn: cn=ldaplite.readonly,ou=groups,dc=example,dc=com
+objectClass: groupOfNames
+cn: ldaplite.readonly
+description: Read-only LDAPLite service accounts
+member: uid=appbind,ou=users,dc=example,dc=com
+
+dn: cn=engineering,ou=groups,dc=example,dc=com
+objectClass: groupOfNames
+cn: engineering
+description: Engineering users
+member: uid=jane,ou=users,dc=example,dc=com
+member: uid=appbind,ou=users,dc=example,dc=com

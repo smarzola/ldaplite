@@ -1,0 +1,7 @@
+# Base64 value fixture for parser and writer coverage.
+dn: uid=base64,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: base64
+cn:: QmFzZTY0IFVzZXI=
+sn: User
+userPassword: ChangeMe123!

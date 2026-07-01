@@ -1,0 +1,4 @@
+dn: cn=missing-member,ou=groups,dc=example,dc=com
+objectClass: groupOfNames
+cn: missing-member
+member: uid=missing,ou=users,dc=example,dc=com
