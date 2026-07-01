@@ -187,7 +187,7 @@ When a milestone is complete:
 
 - [x] Milestone 0: Baseline Contract And Fixtures
 - [x] Milestone 1: LDIF Parser And Writer Primitives
-- [ ] Milestone 2: Import Planning And Dry-Run Validation
+- [x] Milestone 2: Import Planning And Dry-Run Validation
 - [ ] Milestone 3: Import Write Path And CLI Command
 - [ ] Milestone 4: Export Path And CLI Command
 - [ ] Milestone 5: Optional Import/Export Flags
@@ -342,6 +342,18 @@ Verification:
 ```bash
 go test ./internal/ldif ./internal/directory ./internal/models ./internal/store ./pkg/crypto
 ```
+
+Status notes:
+
+- 2026-07-01: Added pure import planning and dry-run validation in
+  `internal/ldif`, using LDAPLite model validation, parent/member existence
+  checks, protected-attribute rejection, supported object-class selection,
+  password processing through `ProcessPassword()`, and parent-before-child
+  ordering. Added tests for valid planning, invalid fixtures, missing
+  passwords, unsupported object classes, `top` plus structural objectClass, and
+  a real SQLite no-mutation dry-run. Verification command:
+  `go test ./internal/ldif ./internal/directory ./internal/models ./internal/store ./pkg/crypto`;
+  passed.
 
 Commit requirement:
 
