@@ -260,7 +260,7 @@ Likely files:
 - `internal/scim/`
 - `internal/web/server.go`
 - `internal/web/server_test.go`
-- `docs/SCIM_PROVISIONING_API_GOAL_PROMPT.md`
+- `docs/internal/prompts/scim-provisioning-api-goal-prompt.md`
 
 Verification:
 
@@ -614,7 +614,7 @@ Likely files:
 - `README.md`
 - `docs/ROADMAP.md`
 - `CHANGELOG.md`
-- `docs/SCIM_PROVISIONING_API_GOAL_PROMPT.md`
+- `docs/internal/prompts/scim-provisioning-api-goal-prompt.md`
 
 Verification:
 

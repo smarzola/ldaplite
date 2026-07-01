@@ -323,7 +323,7 @@ Likely files:
 
 Problem:
 
-- `docs/SQLITE_IMPROVEMENT_PLAN.md` and `docs/TIMESTAMP_ATTRIBUTES_PLAN.md` describe many items as future/current problems even though parts are already implemented.
+- `docs/internal/design-history/sqlite-improvement-plan.md` and `docs/internal/design-history/timestamp-attributes-plan.md` describe many items as future/current problems even though parts are already implemented.
 
 Desired behavior:
 
@@ -337,8 +337,8 @@ Acceptance criteria:
 
 Likely files:
 
-- `docs/SQLITE_IMPROVEMENT_PLAN.md`
-- `docs/TIMESTAMP_ATTRIBUTES_PLAN.md`
+- `docs/internal/design-history/sqlite-improvement-plan.md`
+- `docs/internal/design-history/timestamp-attributes-plan.md`
 - new `docs/ROADMAP.md` if helpful
 
 ## P3: GitHub Issue Roadmap Cleanup

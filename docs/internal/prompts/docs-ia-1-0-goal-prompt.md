@@ -109,18 +109,18 @@ Current public `docs/` mixes several document classes:
 - Goal-loop prompts:
   - `docs/*_GOAL_PROMPT.md`
 - Historical plans and design records:
-  - `docs/IMPORT_EXPORT_DESIGN.md`
-  - `docs/GOLDAP_PROTOCOL_INVENTORY.md`
-  - `docs/SQLITE_IMPROVEMENT_PLAN.md`
-  - `docs/TIMESTAMP_ATTRIBUTES_PLAN.md`
+  - `docs/internal/design-history/import-export-design.md`
+  - `docs/internal/design-history/goldap-protocol-inventory.md`
+  - `docs/internal/design-history/sqlite-improvement-plan.md`
+  - `docs/internal/design-history/timestamp-attributes-plan.md`
 - Audit and summary records:
-  - `docs/CODEBASE_SIMPLIFICATION_FINDINGS.md`
-  - `docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md`
-  - `docs/IMPROVEMENT_GOAL_PROMPT.md`
+  - `docs/internal/audits/codebase-simplification-findings.md`
+  - `docs/internal/summaries/client-compatibility-product-summary.md`
+  - `docs/internal/audits/improvement-goal-prompt.md`
 
 Known stale public-doc issues:
 
-- `README.md` links to `docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md` as a
+- `README.md` links to `docs/internal/summaries/client-compatibility-product-summary.md` as a
   current roadmap/supporting doc.
 - `README.md` still points roadmap readers at LDIF import/export as planned
   work, even though `v0.16.0` shipped LDIF import/export.
@@ -187,7 +187,7 @@ When a milestone is complete:
    milestone.
 
 - [x] Milestone 0: Inventory, Classification, And Link Map
-- [ ] Milestone 1: Create Internal Documentation Layout And Move Historical Files
+- [x] Milestone 1: Create Internal Documentation Layout And Move Historical Files
 - [ ] Milestone 2: Normalize Public Documentation Names And Links
 - [ ] Milestone 3: Refresh Public Product Truth
 - [ ] Milestone 4: Root Documentation And Agent Guide Cleanup
@@ -254,21 +254,21 @@ Status notes:
     `docs/LDAP_AUTHORIZATION.md`, `docs/ROADMAP.md`, `docs/SCIM.md`,
     `docs/TELEMETRY.md`, `docs/deployment/ldaps-tls-sidecar.md`, and
     `docs/integrations/*.md`.
-  - Internal prompts: `docs/AD_COMPAT_FUNCTIONAL_GOAL_PROMPT.md`,
-    `docs/CLIENT_COMPATIBILITY_PRODUCT_GOAL_PROMPT.md`,
-    `docs/DIRECTORY_ADMIN_PRODUCT_GOAL_PROMPT.md`,
-    `docs/GOLDAP_REPLACEMENT_GOAL_PROMPT.md`,
-    `docs/LDIF_IMPORT_EXPORT_GOAL_PROMPT.md`,
-    `docs/MEMBEROF_PERFORMANCE_GOAL_PROMPT.md`,
-    `docs/SCIM_PROVISIONING_API_GOAL_PROMPT.md`,
-    `docs/TELEMETRY_GOAL_PROMPT.md`,
-    `docs/WEB_UI_AUTHZ_REDESIGN_GOAL_PROMPT.md`, and this prompt.
-  - Internal design history: `docs/GOLDAP_PROTOCOL_INVENTORY.md`,
-    `docs/IMPORT_EXPORT_DESIGN.md`, `docs/SQLITE_IMPROVEMENT_PLAN.md`, and
-    `docs/TIMESTAMP_ATTRIBUTES_PLAN.md`.
-  - Internal audits: `docs/CODEBASE_SIMPLIFICATION_FINDINGS.md` and
-    `docs/IMPROVEMENT_GOAL_PROMPT.md`.
-  - Internal summaries: `docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md`.
+  - Internal prompts: `docs/internal/prompts/ad-compat-functional-goal-prompt.md`,
+    `docs/internal/prompts/client-compatibility-product-goal-prompt.md`,
+    `docs/internal/prompts/directory-admin-product-goal-prompt.md`,
+    `docs/internal/prompts/goldap-replacement-goal-prompt.md`,
+    `docs/internal/prompts/ldif-import-export-goal-prompt.md`,
+    `docs/internal/prompts/memberof-performance-goal-prompt.md`,
+    `docs/internal/prompts/scim-provisioning-api-goal-prompt.md`,
+    `docs/internal/prompts/telemetry-goal-prompt.md`,
+    `docs/internal/prompts/web-ui-authz-redesign-goal-prompt.md`, and this prompt.
+  - Internal design history: `docs/internal/design-history/goldap-protocol-inventory.md`,
+    `docs/internal/design-history/import-export-design.md`, `docs/internal/design-history/sqlite-improvement-plan.md`, and
+    `docs/internal/design-history/timestamp-attributes-plan.md`.
+  - Internal audits: `docs/internal/audits/codebase-simplification-findings.md` and
+    `docs/internal/audits/improvement-goal-prompt.md`.
+  - Internal summaries: `docs/internal/summaries/client-compatibility-product-summary.md`.
 
   Link map to handle in later milestones:
   - `README.md` links to uppercase public docs paths and internal summary/design
@@ -276,7 +276,7 @@ Status notes:
   - Public and internal docs link to `docs/ROADMAP.md`,
     `docs/TELEMETRY.md`, `docs/LDAP_AUTHORIZATION.md`,
     `docs/CLIENT_COMPATIBILITY_MATRIX.md`, and
-    `docs/IMPORT_EXPORT_DESIGN.md`.
+    `docs/internal/design-history/import-export-design.md`.
   - Integration docs use relative links to `../deployment/ldaps-tls-sidecar.md`;
     those should remain valid.
   - `AGENTS.md` names `docs/ROADMAP.md` in the source map and should be updated
@@ -315,12 +315,12 @@ Acceptance criteria:
 Likely files:
 
 - `docs/*_GOAL_PROMPT.md`
-- `docs/IMPORT_EXPORT_DESIGN.md`
-- `docs/GOLDAP_PROTOCOL_INVENTORY.md`
-- `docs/SQLITE_IMPROVEMENT_PLAN.md`
-- `docs/TIMESTAMP_ATTRIBUTES_PLAN.md`
-- `docs/CODEBASE_SIMPLIFICATION_FINDINGS.md`
-- `docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md`
+- `docs/internal/design-history/import-export-design.md`
+- `docs/internal/design-history/goldap-protocol-inventory.md`
+- `docs/internal/design-history/sqlite-improvement-plan.md`
+- `docs/internal/design-history/timestamp-attributes-plan.md`
+- `docs/internal/audits/codebase-simplification-findings.md`
+- `docs/internal/summaries/client-compatibility-product-summary.md`
 - `docs/internal/**`
 
 Verification:
@@ -332,7 +332,14 @@ test -z "$(find docs -maxdepth 1 -type f -name '*GOAL_PROMPT.md' -print)"
 
 Status notes:
 
-- Pending.
+- 2026-07-02: Created the internal documentation layout and moved historical
+  implementation material out of public `docs/`. Verification commands run:
+  `find docs -maxdepth 4 -type f | sort` and
+  `test -z "$(find docs -maxdepth 1 -type f -name '*GOAL_PROMPT.md' -print)"`.
+  Also ran a moved-path search with `rg` and updated moved-file references in
+  README and internal docs so they point at `docs/internal/prompts/`,
+  `docs/internal/design-history/`, `docs/internal/audits/`, or
+  `docs/internal/summaries/`.
 
 Commit requirement:
 
@@ -360,7 +367,7 @@ Acceptance criteria:
   - `docs/CLIENT_COMPATIBILITY_MATRIX.md` to
     `docs/client-compatibility.md`.
 - Decide whether `docs/import-export.md` should be created from the public
-  portions of `docs/internal/design-history/IMPORT_EXPORT_DESIGN.md` or whether
+  portions of `docs/internal/design-history/import-export-design.md` or whether
   README's LDIF section is enough. Prefer a public `docs/import-export.md` for
   1.0 readiness.
 - Update links in README, public docs, internal docs, and `AGENTS.md`.

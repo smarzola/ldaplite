@@ -263,7 +263,7 @@ Acceptance criteria:
 
 Likely files:
 
-- `docs/WEB_UI_AUTHZ_REDESIGN_GOAL_PROMPT.md`
+- `docs/internal/prompts/web-ui-authz-redesign-goal-prompt.md`
 - `AGENTS.md`
 - `docs/ROADMAP.md`
 - `docs/LDAP_AUTHORIZATION.md`

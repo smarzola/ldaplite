@@ -17,9 +17,9 @@ This summarizes the client-compatibility goal-loop work on branch
 ## Files Changed By Area
 
 - Goal and product tracking:
-  - `docs/CLIENT_COMPATIBILITY_PRODUCT_GOAL_PROMPT.md`
+  - `docs/internal/prompts/client-compatibility-product-goal-prompt.md`
   - `docs/CLIENT_COMPATIBILITY_MATRIX.md`
-  - `docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md`
+  - `docs/internal/summaries/client-compatibility-product-summary.md`
   - `docs/ROADMAP.md`
   - `README.md`
 - Stable IDs:
@@ -49,7 +49,7 @@ This summarizes the client-compatibility goal-loop work on branch
 - TLS and bootstrap:
   - `docs/deployment/ldaps-tls-sidecar.md`
   - `tests/functional/tls_sidecar_compat_test.go`
-  - `docs/IMPORT_EXPORT_DESIGN.md`
+  - `docs/internal/design-history/import-export-design.md`
 
 ## Client Compatibility Now Covered
 

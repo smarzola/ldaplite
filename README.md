@@ -563,10 +563,10 @@ Provisioning:
 ## Roadmap
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for current project status and planned work.
-See [docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md](docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md) for the latest client-compatibility goal summary.
+See [docs/internal/summaries/client-compatibility-product-summary.md](docs/internal/summaries/client-compatibility-product-summary.md) for the latest client-compatibility goal summary.
 
 - Enhanced ACLs for granular permissions
-- LDIF import/export commands from [docs/IMPORT_EXPORT_DESIGN.md](docs/IMPORT_EXPORT_DESIGN.md)
+- LDIF import/export commands from [docs/internal/design-history/import-export-design.md](docs/internal/design-history/import-export-design.md)
 
 ## Limitations
 
