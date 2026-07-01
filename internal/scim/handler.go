@@ -173,8 +173,14 @@ func (h *Handler) Groups(w http.ResponseWriter, r *http.Request) {
 		h.listGroups(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, BasePath+"/Groups/"):
 		h.getGroup(w, r)
+	case r.Method == http.MethodPost && r.URL.Path == BasePath+"/Groups":
+		h.createGroup(w, r)
+	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, BasePath+"/Groups/"):
+		h.replaceGroup(w, r)
+	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, BasePath+"/Groups/"):
+		h.deleteGroup(w, r)
 	default:
-		writeSCIMError(w, http.StatusNotImplemented, "SCIM group writes are not implemented yet")
+		writeSCIMError(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}
 }
 
@@ -359,6 +365,81 @@ func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *Handler) createGroup(w http.ResponseWriter, r *http.Request) {
+	var input groupRequest
+	if !decodeSCIMJSON(w, r, &input) {
+		return
+	}
+	directoryInput, err := h.groupDirectoryInput(r, input, "", true)
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	entry, err := h.service.CreateGroup(r.Context(), directoryInput)
+	if err != nil {
+		writeDirectoryError(w, err)
+		return
+	}
+	resource := h.groupResource(r, entry)
+	w.Header().Set("Location", resource.Meta.Location)
+	writeSCIMJSON(w, http.StatusCreated, resource)
+}
+
+func (h *Handler) replaceGroup(w http.ResponseWriter, r *http.Request) {
+	id, err := pathResourceID(r.URL.Path, BasePath+"/Groups/")
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	entry, ok, err := h.groupByID(r, id)
+	if err != nil {
+		writeSCIMError(w, http.StatusInternalServerError, "Failed to load SCIM group")
+		return
+	}
+	if !ok {
+		writeSCIMError(w, http.StatusNotFound, "SCIM group not found")
+		return
+	}
+
+	var input groupRequest
+	if !decodeSCIMJSON(w, r, &input) {
+		return
+	}
+	directoryInput, err := h.groupDirectoryInput(r, input, entry.GetAttribute("cn"), false)
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated, err := h.service.UpdateGroup(r.Context(), entry.DN, directoryInput)
+	if err != nil {
+		writeDirectoryError(w, err)
+		return
+	}
+	writeSCIMJSON(w, http.StatusOK, h.groupResource(r, updated))
+}
+
+func (h *Handler) deleteGroup(w http.ResponseWriter, r *http.Request) {
+	id, err := pathResourceID(r.URL.Path, BasePath+"/Groups/")
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	entry, ok, err := h.groupByID(r, id)
+	if err != nil {
+		writeSCIMError(w, http.StatusInternalServerError, "Failed to load SCIM group")
+		return
+	}
+	if !ok {
+		writeSCIMError(w, http.StatusNotFound, "SCIM group not found")
+		return
+	}
+	if err := h.service.DeleteEntry(r.Context(), entry.DN); err != nil {
+		writeDirectoryError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) userByID(r *http.Request, id string) (*models.Entry, bool, error) {
 	entries, err := h.store.SearchEntriesWithOptions(r.Context(), store.SearchOptions{
 		BaseDN:          h.cfg.LDAP.BaseDN,
@@ -491,6 +572,54 @@ func (h *Handler) userDirectoryInput(input userRequest, existingUID string, requ
 		Mail:      primaryEmail(input.Emails),
 		Password:  input.Password,
 	}, nil
+}
+
+func (h *Handler) groupDirectoryInput(r *http.Request, input groupRequest, existingCN string, requireMembers bool) (directory.GroupInput, error) {
+	cn := strings.TrimSpace(input.DisplayName)
+	if cn == "" {
+		return directory.GroupInput{}, requestError("displayName is required")
+	}
+	if existingCN != "" && !strings.EqualFold(cn, existingCN) {
+		return directory.GroupInput{}, requestError("Changing group displayName is not supported")
+	}
+	if requireMembers && len(input.Members) == 0 {
+		return directory.GroupInput{}, requestError("members are required")
+	}
+
+	members := make([]string, 0, len(input.Members))
+	for _, member := range input.Members {
+		memberDN, err := h.memberDNBySCIMID(r, member.Value)
+		if err != nil {
+			return directory.GroupInput{}, err
+		}
+		members = append(members, memberDN)
+	}
+
+	return directory.GroupInput{
+		ParentDN: "ou=groups," + h.cfg.LDAP.BaseDN,
+		CN:       cn,
+		Members:  members,
+	}, nil
+}
+
+func (h *Handler) memberDNBySCIMID(r *http.Request, id string) (string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", requestError("member value is required")
+	}
+	entries, err := h.store.SearchEntriesWithOptions(r.Context(), store.SearchOptions{
+		BaseDN:          h.cfg.LDAP.BaseDN,
+		Filter:          "(entryUUID=" + escapeLDAPFilterAssertionValue(id) + ")",
+		Scope:           store.SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		return "", requestError("Failed to resolve SCIM member")
+	}
+	if len(entries) == 0 {
+		return "", requestError("SCIM member not found")
+	}
+	return entries[0].DN, nil
 }
 
 func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {
@@ -817,6 +946,12 @@ type groupResource struct {
 	DisplayName string           `json:"displayName"`
 	Members     []memberResource `json:"members,omitempty"`
 	Meta        metaResource     `json:"meta"`
+}
+
+type groupRequest struct {
+	Schemas     []string         `json:"schemas,omitempty"`
+	DisplayName string           `json:"displayName"`
+	Members     []memberResource `json:"members,omitempty"`
 }
 
 type memberResource struct {

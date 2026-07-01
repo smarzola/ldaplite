@@ -228,7 +228,7 @@ When a milestone is complete:
 - [x] Milestone 2: User read/list/filter endpoints.
 - [x] Milestone 3: User provisioning writes.
 - [x] Milestone 4: Group read/list/filter endpoints.
-- [ ] Milestone 5: Group provisioning writes.
+- [x] Milestone 5: Group provisioning writes.
 - [ ] Milestone 6: Documentation, roadmap, regression, and release readiness.
 
 ## Milestone 0: Baseline Contract And Test Harness
@@ -514,7 +514,7 @@ Status note, 2026-07-01:
   and
   `GOCACHE=/private/tmp/ldaplite-go-cache GOMODCACHE=/private/tmp/ldaplite-go-mod /opt/homebrew/opt/go@1.25/bin/go test ./internal/scim ./internal/web ./internal/store`.
 - Result: passed.
-- Commit: pending checkpoint commit.
+- Commit: `ddd83d6`.
 
 Commit requirement:
 
@@ -566,6 +566,15 @@ Verification:
 ```bash
 go test ./internal/scim ./internal/web ./internal/directory ./internal/store
 ```
+
+Status note, 2026-07-01:
+
+- Commands run:
+  `/opt/homebrew/opt/go@1.25/bin/gofmt -w internal/scim/handler.go internal/scim/handler_test.go internal/web/server.go internal/web/server_test.go`
+  and
+  `GOCACHE=/private/tmp/ldaplite-go-cache GOMODCACHE=/private/tmp/ldaplite-go-mod /opt/homebrew/opt/go@1.25/bin/go test ./internal/scim ./internal/web ./internal/directory ./internal/store`.
+- Result: passed.
+- Commit: pending checkpoint commit.
 
 Commit requirement:
 

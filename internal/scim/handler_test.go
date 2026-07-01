@@ -635,6 +635,137 @@ func TestGroupsReturnSCIMErrorsForUnsupportedReadInputs(t *testing.T) {
 	}
 }
 
+func TestGroupCreateReplaceAndDeleteUseDirectoryService(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+	first := createSCIMTestUser(t, st, "firstmember", "First Member", "Member", "First", "first@example.com")
+	second := createSCIMTestUser(t, st, "secondmember", "Second Member", "Member", "Second", "second@example.com")
+
+	createReq := scimJSONRequest(t, http.MethodPost, "http://ldaplite.test/scim/v2/Groups", groupRequest{
+		DisplayName: "provisioned-group",
+		Members: []memberResource{
+			{Value: first.GetAttribute("entryUUID")},
+		},
+	})
+	createRR := httptest.NewRecorder()
+
+	handler.Groups(createRR, createReq)
+
+	if createRR.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d; body=%s", createRR.Code, http.StatusCreated, createRR.Body.String())
+	}
+	var created groupResource
+	if err := json.Unmarshal(createRR.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode created group: %v", err)
+	}
+	if created.ID == "" || created.DisplayName != "provisioned-group" || len(created.Members) != 1 || created.Members[0].Value != first.GetAttribute("entryUUID") {
+		t.Fatalf("created group = %+v, want provisioned group with first member", created)
+	}
+
+	replaceReq := scimJSONRequest(t, http.MethodPut, "http://ldaplite.test/scim/v2/Groups/"+created.ID, groupRequest{
+		DisplayName: "provisioned-group",
+		Members: []memberResource{
+			{Value: second.GetAttribute("entryUUID")},
+		},
+	})
+	replaceRR := httptest.NewRecorder()
+
+	handler.Groups(replaceRR, replaceReq)
+
+	if replaceRR.Code != http.StatusOK {
+		t.Fatalf("replace status = %d, want %d; body=%s", replaceRR.Code, http.StatusOK, replaceRR.Body.String())
+	}
+	var replaced groupResource
+	if err := json.Unmarshal(replaceRR.Body.Bytes(), &replaced); err != nil {
+		t.Fatalf("failed to decode replaced group: %v", err)
+	}
+	if replaced.ID != created.ID || len(replaced.Members) != 1 || replaced.Members[0].Value != second.GetAttribute("entryUUID") {
+		t.Fatalf("replaced group = %+v, want stable id and second member", replaced)
+	}
+
+	ldapGroup, err := st.GetEntry(context.Background(), "cn=provisioned-group,ou=groups,dc=test,dc=com")
+	if err != nil {
+		t.Fatalf("GetEntry(provisioned-group) failed: %v", err)
+	}
+	if got := ldapGroup.GetAttributes("member"); len(got) != 1 || got[0] != second.DN {
+		t.Fatalf("LDAP group members = %v, want %s", got, second.DN)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "http://ldaplite.test/scim/v2/Groups/"+created.ID, nil)
+	deleteRR := httptest.NewRecorder()
+
+	handler.Groups(deleteRR, deleteReq)
+
+	if deleteRR.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d; body=%s", deleteRR.Code, http.StatusNoContent, deleteRR.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Groups/"+created.ID, nil)
+	getRR := httptest.NewRecorder()
+
+	handler.Groups(getRR, getReq)
+
+	if getRR.Code != http.StatusNotFound {
+		t.Fatalf("get deleted status = %d, want %d; body=%s", getRR.Code, http.StatusNotFound, getRR.Body.String())
+	}
+}
+
+func TestGroupWritesRejectInvalidMembersAndUnsupportedRenames(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+	member := createSCIMTestUser(t, st, "writemember", "Write Member", "Member", "Write", "writemember@example.com")
+	group := createSCIMTestGroup(t, st, "write-team", "Write Team", member.DN)
+
+	tests := []struct {
+		name   string
+		method string
+		target string
+		body   string
+	}{
+		{
+			name:   "empty members on create",
+			method: http.MethodPost,
+			target: "http://ldaplite.test/scim/v2/Groups",
+			body:   `{"displayName":"empty-group","members":[]}`,
+		},
+		{
+			name:   "unknown member id",
+			method: http.MethodPost,
+			target: "http://ldaplite.test/scim/v2/Groups",
+			body:   `{"displayName":"unknown-member","members":[{"value":"missing"}]}`,
+		},
+		{
+			name:   "rename displayName",
+			method: http.MethodPut,
+			target: "http://ldaplite.test/scim/v2/Groups/" + group.GetAttribute("entryUUID"),
+			body:   `{"displayName":"renamed-team","members":[{"value":"` + member.GetAttribute("entryUUID") + `"}]}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.target, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", ContentType)
+			rr := httptest.NewRecorder()
+
+			handler.Groups(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
+			}
+			var body errorResponse
+			if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+				t.Fatalf("failed to decode SCIM error: %v", err)
+			}
+			if !contains(body.Schemas, errorSchema) {
+				t.Fatalf("schemas = %v, want SCIM error schema", body.Schemas)
+			}
+		})
+	}
+}
+
 func setupTestStore(t *testing.T) (*config.Config, store.Store) {
 	t.Helper()
 	t.Setenv("LDAP_ADMIN_PASSWORD", "TestPassword123!")

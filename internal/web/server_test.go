@@ -710,6 +710,47 @@ func TestSCIMGroupsRouteUsesDirectoryReadAuthorization(t *testing.T) {
 	if passwordOnlyRR.Code != http.StatusForbidden {
 		t.Fatalf("password-only status = %d, want %d; body=%s", passwordOnlyRR.Code, http.StatusForbidden, passwordOnlyRR.Body.String())
 	}
+
+	nonAdminCreate := apiJSONRequest(t, http.MethodPost, "/scim/v2/Groups", "regularuser:RegularPassword123!", map[string]any{
+		"displayName": "blocked-group",
+		"members": []map[string]any{
+			{"value": groups.Resources[0].Members[0].Value},
+		},
+	})
+	nonAdminCreateRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(nonAdminCreateRR, nonAdminCreate)
+
+	if nonAdminCreateRR.Code != http.StatusForbidden {
+		t.Fatalf("non-admin create status = %d, want %d; body=%s", nonAdminCreateRR.Code, http.StatusForbidden, nonAdminCreateRR.Body.String())
+	}
+
+	adminCreate := apiJSONRequest(t, http.MethodPost, "/scim/v2/Groups", "admin:TestPassword123!", map[string]any{
+		"displayName": "admin-scim-group",
+		"members": []map[string]any{
+			{"value": groups.Resources[0].Members[0].Value},
+		},
+	})
+	adminCreateRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(adminCreateRR, adminCreate)
+
+	if adminCreateRR.Code != http.StatusCreated {
+		t.Fatalf("admin create status = %d, want %d; body=%s", adminCreateRR.Code, http.StatusCreated, adminCreateRR.Body.String())
+	}
+	var created struct {
+		ID          string `json:"id"`
+		DisplayName string `json:"displayName"`
+		Members     []struct {
+			Value string `json:"value"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal(adminCreateRR.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode created group: %v", err)
+	}
+	if created.ID == "" || created.DisplayName != "admin-scim-group" || len(created.Members) != 1 || created.Members[0].Value != groups.Resources[0].Members[0].Value {
+		t.Fatalf("created group = %+v, want admin-scim-group with stable member id", created)
+	}
 }
 
 func TestAdminDirectoryWriteAPI(t *testing.T) {
