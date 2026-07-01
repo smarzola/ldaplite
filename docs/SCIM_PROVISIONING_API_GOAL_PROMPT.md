@@ -227,7 +227,7 @@ When a milestone is complete:
 - [x] Milestone 1: SCIM discovery, shared response types, and error handling.
 - [x] Milestone 2: User read/list/filter endpoints.
 - [x] Milestone 3: User provisioning writes.
-- [ ] Milestone 4: Group read/list/filter endpoints.
+- [x] Milestone 4: Group read/list/filter endpoints.
 - [ ] Milestone 5: Group provisioning writes.
 - [ ] Milestone 6: Documentation, roadmap, regression, and release readiness.
 
@@ -455,7 +455,7 @@ Status note, 2026-07-01:
 - Result: passed. The first sandboxed test attempt could not resolve
   `proxy.golang.org` while downloading `github.com/stretchr/testify`; the
   command passed after rerunning with network access.
-- Commit: pending checkpoint commit.
+- Commit: `7b6722a`.
 
 Commit requirement:
 
@@ -506,6 +506,15 @@ Verification:
 ```bash
 go test ./internal/scim ./internal/web ./internal/store
 ```
+
+Status note, 2026-07-01:
+
+- Commands run:
+  `/opt/homebrew/opt/go@1.25/bin/gofmt -w internal/scim/handler.go internal/scim/handler_test.go internal/web/server.go internal/web/server_test.go`
+  and
+  `GOCACHE=/private/tmp/ldaplite-go-cache GOMODCACHE=/private/tmp/ldaplite-go-mod /opt/homebrew/opt/go@1.25/bin/go test ./internal/scim ./internal/web ./internal/store`.
+- Result: passed.
+- Commit: pending checkpoint commit.
 
 Commit requirement:
 

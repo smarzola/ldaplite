@@ -658,6 +658,60 @@ func TestSCIMUsersRouteUsesDirectoryReadAuthorization(t *testing.T) {
 	assertPasswordValid(t, st, "adminscim", "AdminSCIMPassword123!")
 }
 
+func TestSCIMGroupsRouteUsesDirectoryReadAuthorization(t *testing.T) {
+	srv, st := setupTestServer(t)
+	defer st.Close()
+
+	createTestUser(t, st, "regularuser", "RegularPassword123!")
+	createTestUser(t, st, "passworduser", "PasswordOnly123!")
+	createTestGroup(t, st, "ldaplite.password", "uid=passworduser,ou=users,dc=test,dc=com")
+	createTestUser(t, st, "scimmember", "MemberPassword123!")
+	createTestGroup(t, st, "scim-readers", "uid=scimmember,ou=users,dc=test,dc=com")
+
+	readReq := httptest.NewRequest(http.MethodGet, `http://ldaplite.test/scim/v2/Groups?filter=displayName+eq+%22scim-readers%22`, nil)
+	readReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	readRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(readRR, readReq)
+
+	if readRR.Code != http.StatusOK {
+		t.Fatalf("directory reader status = %d, want %d; body=%s", readRR.Code, http.StatusOK, readRR.Body.String())
+	}
+	if strings.Contains(readRR.Body.String(), "uid=scimmember") {
+		t.Fatalf("SCIM groups response leaked raw member DN: %s", readRR.Body.String())
+	}
+	var groups struct {
+		TotalResults int `json:"totalResults"`
+		Resources    []struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"displayName"`
+			Members     []struct {
+				Value string `json:"value"`
+				Type  string `json:"type"`
+			} `json:"members"`
+		} `json:"Resources"`
+	}
+	if err := json.Unmarshal(readRR.Body.Bytes(), &groups); err != nil {
+		t.Fatalf("failed to decode SCIM groups response: %v", err)
+	}
+	if groups.TotalResults != 1 || len(groups.Resources) != 1 || groups.Resources[0].DisplayName != "scim-readers" || groups.Resources[0].ID == "" {
+		t.Fatalf("SCIM groups response = %+v, want scim-readers with stable id", groups)
+	}
+	if len(groups.Resources[0].Members) != 1 || groups.Resources[0].Members[0].Value == "" || groups.Resources[0].Members[0].Type != "User" {
+		t.Fatalf("SCIM group members = %+v, want stable User member id", groups.Resources[0].Members)
+	}
+
+	passwordOnlyReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Groups", nil)
+	passwordOnlyReq.Header.Set("Authorization", basicAuth("passworduser:PasswordOnly123!"))
+	passwordOnlyRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(passwordOnlyRR, passwordOnlyReq)
+
+	if passwordOnlyRR.Code != http.StatusForbidden {
+		t.Fatalf("password-only status = %d, want %d; body=%s", passwordOnlyRR.Code, http.StatusForbidden, passwordOnlyRR.Body.String())
+	}
+}
+
 func TestAdminDirectoryWriteAPI(t *testing.T) {
 	srv, st := setupTestServer(t)
 	defer st.Close()

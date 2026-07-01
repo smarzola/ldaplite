@@ -46,9 +46,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.ResourceTypes(w, r)
 	case BasePath + "/Users":
 		h.Users(w, r)
+	case BasePath + "/Groups":
+		h.Groups(w, r)
 	default:
 		if strings.HasPrefix(r.URL.Path, BasePath+"/Users/") {
 			h.Users(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, BasePath+"/Groups/") {
+			h.Groups(w, r)
 			return
 		}
 		writeSCIMError(w, http.StatusNotImplemented, "SCIM endpoint is not implemented yet")
@@ -161,6 +167,17 @@ func (h *Handler) Users(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) Groups(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case r.Method == http.MethodGet && r.URL.Path == BasePath+"/Groups":
+		h.listGroups(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, BasePath+"/Groups/"):
+		h.getGroup(w, r)
+	default:
+		writeSCIMError(w, http.StatusNotImplemented, "SCIM group writes are not implemented yet")
+	}
+}
+
 func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
 	filter, err := userLDAPFilter(r.URL.Query().Get("filter"))
 	if err != nil {
@@ -212,6 +229,59 @@ func (h *Handler) getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeSCIMJSON(w, http.StatusOK, h.userResource(r, entry))
+}
+
+func (h *Handler) listGroups(w http.ResponseWriter, r *http.Request) {
+	filter, err := groupLDAPFilter(r.URL.Query().Get("filter"))
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	startIndex, count, err := parsePagination(r)
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	entries, err := h.store.SearchEntriesWithOptions(r.Context(), store.SearchOptions{
+		BaseDN:          h.cfg.LDAP.BaseDN,
+		Filter:          filter,
+		Scope:           store.SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		writeSCIMError(w, http.StatusInternalServerError, "Failed to search SCIM groups")
+		return
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return strings.ToLower(entries[i].DN) < strings.ToLower(entries[j].DN)
+	})
+
+	total := len(entries)
+	pageEntries := pageEntries(entries, startIndex, count)
+	resources := make([]groupResource, 0, len(pageEntries))
+	for _, entry := range pageEntries {
+		resources = append(resources, h.groupResource(r, entry))
+	}
+	writeSCIMJSON(w, http.StatusOK, newListResponsePage(resources, total, startIndex))
+}
+
+func (h *Handler) getGroup(w http.ResponseWriter, r *http.Request) {
+	id, err := pathResourceID(r.URL.Path, BasePath+"/Groups/")
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	entry, ok, err := h.groupByID(r, id)
+	if err != nil {
+		writeSCIMError(w, http.StatusInternalServerError, "Failed to load SCIM group")
+		return
+	}
+	if !ok {
+		writeSCIMError(w, http.StatusNotFound, "SCIM group not found")
+		return
+	}
+	writeSCIMJSON(w, http.StatusOK, h.groupResource(r, entry))
 }
 
 func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
@@ -305,6 +375,22 @@ func (h *Handler) userByID(r *http.Request, id string) (*models.Entry, bool, err
 	return entries[0], true, nil
 }
 
+func (h *Handler) groupByID(r *http.Request, id string) (*models.Entry, bool, error) {
+	entries, err := h.store.SearchEntriesWithOptions(r.Context(), store.SearchOptions{
+		BaseDN:          h.cfg.LDAP.BaseDN,
+		Filter:          "(&(objectClass=groupOfNames)(entryUUID=" + escapeLDAPFilterAssertionValue(id) + "))",
+		Scope:           store.SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if len(entries) == 0 {
+		return nil, false, nil
+	}
+	return entries[0], true, nil
+}
+
 func (h *Handler) userResource(r *http.Request, entry *models.Entry) userResource {
 	id := entry.GetAttribute("entryUUID")
 	resource := userResource{
@@ -328,6 +414,51 @@ func (h *Handler) userResource(r *http.Request, entry *models.Entry) userResourc
 		resource.Emails = []emailResource{{Value: mail, Primary: true}}
 	}
 	return resource
+}
+
+func (h *Handler) groupResource(r *http.Request, entry *models.Entry) groupResource {
+	id := entry.GetAttribute("entryUUID")
+	members := make([]memberResource, 0, len(entry.GetAttributes("member")))
+	for _, memberDN := range entry.GetAttributes("member") {
+		if member, ok := h.memberResource(r, memberDN); ok {
+			members = append(members, member)
+		}
+	}
+	return groupResource{
+		Schemas:     []string{groupSchema},
+		ID:          id,
+		DisplayName: entry.GetAttribute("cn"),
+		Members:     members,
+		Meta: metaResource{
+			ResourceType: "Group",
+			Created:      formatSCIMTime(entry.CreatedAt),
+			LastModified: formatSCIMTime(entry.UpdatedAt),
+			Location:     absoluteURL(r, BasePath+"/Groups/"+url.PathEscape(id)),
+		},
+	}
+}
+
+func (h *Handler) memberResource(r *http.Request, memberDN string) (memberResource, bool) {
+	entry, err := h.store.GetEntryWithOptions(r.Context(), memberDN, store.EntryOptions{IncludeMemberOf: false})
+	if err != nil || entry == nil {
+		return memberResource{}, false
+	}
+	id := entry.GetAttribute("entryUUID")
+	if id == "" {
+		return memberResource{}, false
+	}
+	resourceType := "User"
+	path := BasePath + "/Users/" + url.PathEscape(id)
+	if entry.IsGroup() {
+		resourceType = "Group"
+		path = BasePath + "/Groups/" + url.PathEscape(id)
+	}
+	return memberResource{
+		Value:   id,
+		Display: memberDisplay(entry),
+		Ref:     absoluteURL(r, path),
+		Type:    resourceType,
+	}, true
 }
 
 func (h *Handler) userDirectoryInput(input userRequest, existingUID string, requirePassword bool) (directory.UserInput, error) {
@@ -498,6 +629,27 @@ func userLDAPFilter(rawFilter string) (string, error) {
 	return "(&(objectClass=inetOrgPerson)(" + ldapAttr + "=" + escapeLDAPFilterAssertionValue(value) + "))", nil
 }
 
+func groupLDAPFilter(rawFilter string) (string, error) {
+	attr, value, ok, err := parseSimpleEqualityFilter(rawFilter)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "(objectClass=groupOfNames)", nil
+	}
+
+	var ldapAttr string
+	switch attr {
+	case "id":
+		ldapAttr = "entryUUID"
+	case "displayName":
+		ldapAttr = "cn"
+	default:
+		return "", requestError("Unsupported SCIM group filter")
+	}
+	return "(&(objectClass=groupOfNames)(" + ldapAttr + "=" + escapeLDAPFilterAssertionValue(value) + "))", nil
+}
+
 func parseSimpleEqualityFilter(rawFilter string) (attr string, value string, ok bool, err error) {
 	rawFilter = strings.TrimSpace(rawFilter)
 	if rawFilter == "" {
@@ -588,6 +740,16 @@ func primaryEmail(emails []emailResource) string {
 	return ""
 }
 
+func memberDisplay(entry *models.Entry) string {
+	if cn := entry.GetAttribute("cn"); cn != "" {
+		return cn
+	}
+	if uid := entry.GetAttribute("uid"); uid != "" {
+		return uid
+	}
+	return entry.DN
+}
+
 type serviceProviderConfigResponse struct {
 	Schemas               []string               `json:"schemas"`
 	Patch                 supportedConfig        `json:"patch"`
@@ -647,6 +809,21 @@ type userRequest struct {
 	Emails      []emailResource `json:"emails,omitempty"`
 	Password    string          `json:"password,omitempty"`
 	Active      *bool           `json:"active,omitempty"`
+}
+
+type groupResource struct {
+	Schemas     []string         `json:"schemas"`
+	ID          string           `json:"id"`
+	DisplayName string           `json:"displayName"`
+	Members     []memberResource `json:"members,omitempty"`
+	Meta        metaResource     `json:"meta"`
+}
+
+type memberResource struct {
+	Value   string `json:"value"`
+	Display string `json:"display,omitempty"`
+	Ref     string `json:"$ref,omitempty"`
+	Type    string `json:"type,omitempty"`
 }
 
 type nameResource struct {

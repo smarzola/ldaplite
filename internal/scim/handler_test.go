@@ -69,7 +69,7 @@ func TestHandlerReturnsDeliberateNotImplementedForUnknownRoutes(t *testing.T) {
 	defer st.Close()
 	handler := NewHandler(st, cfg)
 
-	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Groups", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Bulk", nil)
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -482,6 +482,159 @@ func TestUserWritesRejectUnsupportedFields(t *testing.T) {
 	}
 }
 
+func TestGroupsListSupportsPaginationAndMemberMapping(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+	member := createSCIMTestUser(t, st, "groupmember", "Group Member", "Member", "Group", "member@example.com")
+	group := createSCIMTestGroup(t, st, "scim-team", "SCIM Team", member.DN)
+
+	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Groups?startIndex=1&count=1", nil)
+	rr := httptest.NewRecorder()
+
+	handler.Groups(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), member.DN) {
+		t.Fatalf("SCIM group list leaked raw member DN: %s", rr.Body.String())
+	}
+
+	var body listResponse[groupResource]
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode Groups list: %v", err)
+	}
+	if !contains(body.Schemas, listResponseSchema) {
+		t.Fatalf("schemas = %v, want %s", body.Schemas, listResponseSchema)
+	}
+	if body.TotalResults < 1 || body.StartIndex != 1 || body.ItemsPerPage != 1 || len(body.Resources) != 1 {
+		t.Fatalf("list response = %+v, want one paged group resource", body)
+	}
+	if body.Resources[0].ID == "" || body.Resources[0].DisplayName == "" || body.Resources[0].Meta.Location == "" {
+		t.Fatalf("SCIM group resource missing identity/meta: %+v", body.Resources[0])
+	}
+
+	filterReq := httptest.NewRequest(http.MethodGet, `http://ldaplite.test/scim/v2/Groups?filter=id+eq+%22`+group.GetAttribute("entryUUID")+`%22`, nil)
+	filterRR := httptest.NewRecorder()
+
+	handler.Groups(filterRR, filterReq)
+
+	if filterRR.Code != http.StatusOK {
+		t.Fatalf("filter status = %d, want %d; body=%s", filterRR.Code, http.StatusOK, filterRR.Body.String())
+	}
+	var filtered listResponse[groupResource]
+	if err := json.Unmarshal(filterRR.Body.Bytes(), &filtered); err != nil {
+		t.Fatalf("failed to decode filtered Groups list: %v", err)
+	}
+	if filtered.TotalResults != 1 || len(filtered.Resources) != 1 || filtered.Resources[0].ID != group.GetAttribute("entryUUID") {
+		t.Fatalf("filtered groups = %+v, want the scim-team group", filtered)
+	}
+}
+
+func TestGroupsListSupportsDisplayNameFilter(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+	member := createSCIMTestUser(t, st, "displaymember", "Display Member", "Member", "Display", "displaymember@example.com")
+	group := createSCIMTestGroup(t, st, "display-team", "Display Team", member.DN)
+
+	req := httptest.NewRequest(http.MethodGet, `http://ldaplite.test/scim/v2/Groups?filter=displayName+eq+%22display-team%22`, nil)
+	rr := httptest.NewRecorder()
+
+	handler.Groups(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var body listResponse[groupResource]
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode Groups list: %v", err)
+	}
+	if body.TotalResults != 1 || len(body.Resources) != 1 {
+		t.Fatalf("filtered groups = %+v, want exactly one resource", body)
+	}
+	if got := body.Resources[0]; got.ID != group.GetAttribute("entryUUID") || got.DisplayName != "display-team" || len(got.Members) != 1 || got.Members[0].Value != member.GetAttribute("entryUUID") || got.Members[0].Type != "User" {
+		t.Fatalf("filtered group = %+v, want display-team with stable member id", got)
+	}
+}
+
+func TestGroupGetByStableID(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+	member := createSCIMTestUser(t, st, "getmember", "Get Member", "Member", "Get", "getmember@example.com")
+	group := createSCIMTestGroup(t, st, "get-team", "Get Team", member.DN)
+	id := group.GetAttribute("entryUUID")
+
+	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Groups/"+id, nil)
+	rr := httptest.NewRecorder()
+
+	handler.Groups(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var body groupResource
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode SCIM group: %v", err)
+	}
+	if body.ID != id || body.DisplayName != "get-team" || body.Meta.ResourceType != "Group" {
+		t.Fatalf("SCIM group = %+v, want get-team with stable id %s", body, id)
+	}
+	if len(body.Members) != 1 || body.Members[0].Value != member.GetAttribute("entryUUID") || body.Members[0].Ref == "" {
+		t.Fatalf("members = %+v, want member stable id and ref", body.Members)
+	}
+}
+
+func TestGroupsReturnSCIMErrorsForUnsupportedReadInputs(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+
+	tests := []struct {
+		name       string
+		target     string
+		wantStatus int
+	}{
+		{
+			name:       "unsupported filter",
+			target:     `http://ldaplite.test/scim/v2/Groups?filter=members.value+eq+%22x%22`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing group",
+			target:     "http://ldaplite.test/scim/v2/Groups/not-a-real-id",
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "bad pagination",
+			target:     "http://ldaplite.test/scim/v2/Groups?count=-1",
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
+			rr := httptest.NewRecorder()
+
+			handler.Groups(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", rr.Code, tt.wantStatus, rr.Body.String())
+			}
+			var body errorResponse
+			if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+				t.Fatalf("failed to decode SCIM error: %v", err)
+			}
+			if !contains(body.Schemas, errorSchema) {
+				t.Fatalf("schemas = %v, want SCIM error schema", body.Schemas)
+			}
+		})
+	}
+}
+
 func setupTestStore(t *testing.T) (*config.Config, store.Store) {
 	t.Helper()
 	t.Setenv("LDAP_ADMIN_PASSWORD", "TestPassword123!")
@@ -528,6 +681,23 @@ func createSCIMTestUser(t *testing.T, st store.Store, uid, cn, sn, givenName, ma
 	entry, err := st.GetEntry(context.Background(), user.DN)
 	if err != nil {
 		t.Fatalf("GetEntry(%s) failed: %v", user.DN, err)
+	}
+	return entry
+}
+
+func createSCIMTestGroup(t *testing.T, st store.Store, cn, description string, members ...string) *models.Entry {
+	t.Helper()
+
+	group := models.NewGroup("ou=groups,dc=test,dc=com", cn, description)
+	for _, member := range members {
+		group.AddMember(member)
+	}
+	if err := st.CreateEntry(context.Background(), group.Entry); err != nil {
+		t.Fatalf("CreateEntry(%s) failed: %v", cn, err)
+	}
+	entry, err := st.GetEntry(context.Background(), group.DN)
+	if err != nil {
+		t.Fatalf("GetEntry(%s) failed: %v", group.DN, err)
 	}
 	return entry
 }

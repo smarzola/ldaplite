@@ -129,6 +129,8 @@ func (s *Server) setupRoutes() {
 	scimUsers := methodCapabilityHandler(auth, authz.DirectoryRead, authz.DirectoryWrite, http.HandlerFunc(scimHandler.Users))
 	s.mux.Handle("/scim/v2/Users", scimUsers)
 	s.mux.Handle("/scim/v2/Users/", scimUsers)
+	s.mux.Handle("/scim/v2/Groups", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.Groups)))
+	s.mux.Handle("/scim/v2/Groups/", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.Groups)))
 
 	// User routes
 	s.mux.Handle("/users", readProtected(userHandler.List))
