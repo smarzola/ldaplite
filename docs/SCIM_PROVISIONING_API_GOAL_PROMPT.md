@@ -229,7 +229,7 @@ When a milestone is complete:
 - [x] Milestone 3: User provisioning writes.
 - [x] Milestone 4: Group read/list/filter endpoints.
 - [x] Milestone 5: Group provisioning writes.
-- [ ] Milestone 6: Documentation, roadmap, regression, and release readiness.
+- [x] Milestone 6: Documentation, roadmap, regression, and release readiness.
 
 ## Milestone 0: Baseline Contract And Test Harness
 
@@ -574,7 +574,7 @@ Status note, 2026-07-01:
   and
   `GOCACHE=/private/tmp/ldaplite-go-cache GOMODCACHE=/private/tmp/ldaplite-go-mod /opt/homebrew/opt/go@1.25/bin/go test ./internal/scim ./internal/web ./internal/directory ./internal/store`.
 - Result: passed.
-- Commit: pending checkpoint commit.
+- Commit: `f08c838`.
 
 Commit requirement:
 
@@ -627,6 +627,25 @@ go vet ./...
 test -z "$(gofmt -l .)"
 go build -v ./...
 ```
+
+Status note, 2026-07-01:
+
+- Commands run:
+  `npm ci`;
+  `npm run build:css`;
+  `PATH=/opt/homebrew/opt/go@1.25/bin:$PATH GOCACHE=/private/tmp/ldaplite-go-cache GOMODCACHE=/private/tmp/ldaplite-go-mod go test -v -race ./...`;
+  `PATH=/opt/homebrew/opt/go@1.25/bin:$PATH GOCACHE=/private/tmp/ldaplite-go-cache GOMODCACHE=/private/tmp/ldaplite-go-mod make test-functional`;
+  `PATH=/opt/homebrew/opt/go@1.25/bin:$PATH GOCACHE=/private/tmp/ldaplite-go-cache GOMODCACHE=/private/tmp/ldaplite-go-mod go vet ./...`;
+  `PATH=/opt/homebrew/opt/go@1.25/bin:$PATH gofmt -l .`;
+  and
+  `PATH=/opt/homebrew/opt/go@1.25/bin:$PATH GOCACHE=/private/tmp/ldaplite-go-cache GOMODCACHE=/private/tmp/ldaplite-go-mod go build -v ./...`.
+- Result: passed. `make test-functional` first failed in the sandbox because
+  `proxy.golang.org` could not be resolved while downloading
+  `github.com/go-ldap/ldap/v3`; the same command passed after rerunning with
+  network access. The full `go test -v -race ./...` regression was also run
+  outside the sandbox because earlier sandbox attempts hit module-fetch and
+  loopback-listener restrictions.
+- Commit: pending checkpoint commit.
 
 Commit requirement:
 
