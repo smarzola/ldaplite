@@ -100,10 +100,10 @@ made.
 Current public `docs/` mixes several document classes:
 
 - Operator-facing docs:
-  - `docs/SCIM.md`
-  - `docs/TELEMETRY.md`
-  - `docs/LDAP_AUTHORIZATION.md`
-  - `docs/CLIENT_COMPATIBILITY_MATRIX.md`
+  - `docs/scim.md`
+  - `docs/telemetry.md`
+  - `docs/authorization.md`
+  - `docs/client-compatibility.md`
   - `docs/deployment/ldaps-tls-sidecar.md`
   - `docs/integrations/*.md`
 - Goal-loop prompts:
@@ -124,9 +124,9 @@ Known stale public-doc issues:
   current roadmap/supporting doc.
 - `README.md` still points roadmap readers at LDIF import/export as planned
   work, even though `v0.16.0` shipped LDIF import/export.
-- `docs/ROADMAP.md` still references issue `#8` and issue `#11` as follow-up
+- `docs/roadmap.md` still references issue `#8` and issue `#11` as follow-up
   work even though both are closed in GitHub.
-- `docs/CLIENT_COMPATIBILITY_MATRIX.md` still says LDIF import/export
+- `docs/client-compatibility.md` still says LDIF import/export
   implementation is pending.
 - `QUICKSTART.md` has older Docker Compose and bind-DN examples that must be
   checked against current product behavior before it remains public.
@@ -188,7 +188,7 @@ When a milestone is complete:
 
 - [x] Milestone 0: Inventory, Classification, And Link Map
 - [x] Milestone 1: Create Internal Documentation Layout And Move Historical Files
-- [ ] Milestone 2: Normalize Public Documentation Names And Links
+- [x] Milestone 2: Normalize Public Documentation Names And Links
 - [ ] Milestone 3: Refresh Public Product Truth
 - [ ] Milestone 4: Root Documentation And Agent Guide Cleanup
 - [ ] Milestone 5: Final Link Audit, Regression Checks, And 1.0 Release Notes
@@ -250,9 +250,9 @@ Status notes:
   - Project agent guide: `AGENTS.md`.
   - Removal or pointer candidate: `CLAUDE.md`.
   - Public operator docs:
-    `docs/CLIENT_COMPATIBILITY_MATRIX.md`,
-    `docs/LDAP_AUTHORIZATION.md`, `docs/ROADMAP.md`, `docs/SCIM.md`,
-    `docs/TELEMETRY.md`, `docs/deployment/ldaps-tls-sidecar.md`, and
+    `docs/client-compatibility.md`,
+    `docs/authorization.md`, `docs/roadmap.md`, `docs/scim.md`,
+    `docs/telemetry.md`, `docs/deployment/ldaps-tls-sidecar.md`, and
     `docs/integrations/*.md`.
   - Internal prompts: `docs/internal/prompts/ad-compat-functional-goal-prompt.md`,
     `docs/internal/prompts/client-compatibility-product-goal-prompt.md`,
@@ -273,13 +273,13 @@ Status notes:
   Link map to handle in later milestones:
   - `README.md` links to uppercase public docs paths and internal summary/design
     files.
-  - Public and internal docs link to `docs/ROADMAP.md`,
-    `docs/TELEMETRY.md`, `docs/LDAP_AUTHORIZATION.md`,
-    `docs/CLIENT_COMPATIBILITY_MATRIX.md`, and
+  - Public and internal docs link to `docs/roadmap.md`,
+    `docs/telemetry.md`, `docs/authorization.md`,
+    `docs/client-compatibility.md`, and
     `docs/internal/design-history/import-export-design.md`.
   - Integration docs use relative links to `../deployment/ldaps-tls-sidecar.md`;
     those should remain valid.
-  - `AGENTS.md` names `docs/ROADMAP.md` in the source map and should be updated
+  - `AGENTS.md` names `docs/roadmap.md` in the source map and should be updated
     after the public docs rename.
 
 Commit requirement:
@@ -360,11 +360,11 @@ Desired behavior:
 Acceptance criteria:
 
 - Rename:
-  - `docs/ROADMAP.md` to `docs/roadmap.md`.
-  - `docs/SCIM.md` to `docs/scim.md`.
-  - `docs/TELEMETRY.md` to `docs/telemetry.md`.
-  - `docs/LDAP_AUTHORIZATION.md` to `docs/authorization.md`.
-  - `docs/CLIENT_COMPATIBILITY_MATRIX.md` to
+  - `docs/roadmap.md` to `docs/roadmap.md`.
+  - `docs/scim.md` to `docs/scim.md`.
+  - `docs/telemetry.md` to `docs/telemetry.md`.
+  - `docs/authorization.md` to `docs/authorization.md`.
+  - `docs/client-compatibility.md` to
     `docs/client-compatibility.md`.
 - Decide whether `docs/import-export.md` should be created from the public
   portions of `docs/internal/design-history/import-export-design.md` or whether
@@ -393,7 +393,14 @@ grep -R "docs/[A-Z_][A-Z_]*\\.md" -n README.md docs AGENTS.md || true
 
 Status notes:
 
-- Pending.
+- 2026-07-02: Renamed public operator docs to lower-case kebab-case, added
+  `docs/import-export.md`, added `docs/README.md`, and updated README,
+  `AGENTS.md`, public docs, and internal docs to point at the new public paths.
+  Verification commands run:
+  `find docs -maxdepth 2 -type f | sort` and
+  `grep -R "docs/[A-Z_][A-Z_]*\\.md" -n README.md docs AGENTS.md || true`.
+  The grep output only reported conventional `docs/README.md` references,
+  which are intentional and allowed by the target layout.
 
 Commit requirement:
 
@@ -485,7 +492,7 @@ Verification:
 
 ```bash
 find . -maxdepth 2 -name '*.md' -type f | sort
-grep -R "CLAUDE.md\\|CLIENT_COMPATIBILITY_PRODUCT_SUMMARY\\|docs/ROADMAP.md\\|docs/SCIM.md" -n README.md AGENTS.md QUICKSTART.md docs || true
+grep -R "CLAUDE.md\\|CLIENT_COMPATIBILITY_PRODUCT_SUMMARY\\|docs/roadmap.md\\|docs/scim.md" -n README.md AGENTS.md QUICKSTART.md docs || true
 ```
 
 Status notes:

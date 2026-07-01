@@ -1,6 +1,6 @@
 # LDAPLite Improvement Goal Prompt
 
-> Status note, 2026-06-21: this prompt has been substantially executed in the current worktree. GitHub issue `#2` was split into focused issues `#7` through `#11` and closed; Dependabot PR `#5` was merged. Keep this file as the original improvement brief and use `docs/ROADMAP.md` for current roadmap state.
+> Status note, 2026-06-21: this prompt has been substantially executed in the current worktree. GitHub issue `#2` was split into focused issues `#7` through `#11` and closed; Dependabot PR `#5` was merged. Keep this file as the original improvement brief and use `docs/roadmap.md` for current roadmap state.
 
 Use this prompt in a goal loop to harden LDAPLite and turn the current review findings into focused, verified improvements.
 
@@ -339,7 +339,7 @@ Likely files:
 
 - `docs/internal/design-history/sqlite-improvement-plan.md`
 - `docs/internal/design-history/timestamp-attributes-plan.md`
-- new `docs/ROADMAP.md` if helpful
+- new `docs/roadmap.md` if helpful
 
 ## P3: GitHub Issue Roadmap Cleanup
 

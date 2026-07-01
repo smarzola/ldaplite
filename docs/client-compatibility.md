@@ -152,8 +152,8 @@ Each integration recipe should include:
 Relevant local files:
 
 - `README.md`
-- `docs/ROADMAP.md`
-- `docs/TELEMETRY.md`
+- `docs/roadmap.md`
+- `docs/telemetry.md`
 - `tests/functional/ad_compat_test.go`
 - `internal/server/search.go`
 - `internal/server/write.go`

@@ -8,7 +8,7 @@ GitOps-style directory setup while preserving LDAPLite's SQLite-backed storage
 model, password security invariants, group referential integrity, and existing
 directory validation behavior.
 
-Track this work against the Product Roadmap item in `docs/ROADMAP.md` and the
+Track this work against the Product Roadmap item in `docs/roadmap.md` and the
 accepted design in `docs/internal/design-history/import-export-design.md`.
 
 ## Repository Rules
@@ -105,7 +105,7 @@ LDAPLite has most of the internal building blocks:
 
 - `docs/internal/design-history/import-export-design.md` defines the intended command shape, flags,
   validation rules, password behavior, and required tests.
-- `docs/ROADMAP.md` lists LDIF import/export as an open Product Roadmap item.
+- `docs/roadmap.md` lists LDIF import/export as an open Product Roadmap item.
 - `cmd/ldaplite/main.go` wires Cobra commands for server, version, and
   healthcheck; import/export commands do not exist yet.
 - `internal/directory.Service` supports user, group, OU, membership, and
@@ -165,7 +165,7 @@ The goal is complete only when:
 11. Unit, command, and functional tests cover parser, import validation, import
     writes, export safety, password behavior, and real LDAP server use of an
     imported database.
-12. `docs/internal/design-history/import-export-design.md`, `docs/ROADMAP.md`, `README.md` or another
+12. `docs/internal/design-history/import-export-design.md`, `docs/roadmap.md`, `README.md` or another
     appropriate operator doc, and `CHANGELOG.md` are updated.
 13. Milestone checkboxes in this file are marked `[x]` as work completes.
 14. Each completed milestone has a focused commit.
@@ -562,7 +562,7 @@ Acceptance criteria:
 - Add an export/import round-trip test where practical.
 - Update `docs/internal/design-history/import-export-design.md` from design contract to implemented
   behavior.
-- Update `docs/ROADMAP.md` to move LDIF import/export out of open roadmap
+- Update `docs/roadmap.md` to move LDIF import/export out of open roadmap
   status.
 - Update `README.md` or another operator-facing doc with concise command
   examples and security notes.
@@ -574,7 +574,7 @@ Likely files:
 
 - `tests/functional/`
 - `docs/internal/design-history/import-export-design.md`
-- `docs/ROADMAP.md`
+- `docs/roadmap.md`
 - `README.md`
 - `CHANGELOG.md`
 - `cmd/ldaplite/`

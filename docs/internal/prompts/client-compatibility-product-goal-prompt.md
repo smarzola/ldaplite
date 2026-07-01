@@ -138,7 +138,7 @@ Desired behavior:
 Acceptance criteria:
 
 - A new document exists under `docs/`, for example
-  `docs/CLIENT_COMPATIBILITY_MATRIX.md`.
+  `docs/client-compatibility.md`.
 - Each client entry separates confirmed behavior from assumptions.
 - The matrix links to integration recipe files once they exist.
 - No code behavior changes are made in this milestone unless needed to run
@@ -514,7 +514,7 @@ Desired behavior:
 Acceptance criteria:
 
 - README links to the compatibility matrix and integration recipes.
-- `docs/ROADMAP.md` reflects completed work and remaining follow-ups.
+- `docs/roadmap.md` reflects completed work and remaining follow-ups.
 - The compatibility matrix marks tested versus untested clients honestly.
 - `AGENTS.md` is updated only if agent operating guidance changed.
 - Full regression commands pass:

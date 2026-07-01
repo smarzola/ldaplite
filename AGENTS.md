@@ -161,7 +161,7 @@ Do not add a second CI or release workflow unless the existing `test.yml` and `r
 - Password hashing: `pkg/crypto/`
 - Web UI: `internal/web/`
 - Functional compatibility tests: `tests/functional/`
-- Roadmap and broader docs: `README.md`, `docs/ROADMAP.md`
+- Roadmap and broader docs: `README.md`, `docs/roadmap.md`
 
 ## Critical Invariants
 

@@ -9,7 +9,7 @@ LDAPLite's small deployment model, SQLite-backed storage, LDAP compatibility,
 password security, and shared directory validation.
 
 Track this work against GitHub issue `#7 Add SCIM 2.0 / REST provisioning API`
-and the Product Roadmap item in `docs/ROADMAP.md`.
+and the Product Roadmap item in `docs/roadmap.md`.
 
 ## Repository Rules
 
@@ -203,7 +203,7 @@ The goal is complete only when:
     silent partial behavior.
 11. Documentation explains endpoint paths, authentication, supported fields,
     examples, and intentional limits.
-12. `docs/ROADMAP.md`, `README.md`, and `CHANGELOG.md` reflect the completed
+12. `docs/roadmap.md`, `README.md`, and `CHANGELOG.md` reflect the completed
     provisioning API when the implementation is complete.
 13. Milestone checkboxes in this file are marked `[x]` as work completes.
 14. Each completed milestone has a focused commit.
@@ -591,7 +591,7 @@ Desired behavior:
 
 - Add SCIM provisioning documentation with endpoint examples, authentication
   model, supported fields, unsupported features, and security notes.
-- Update `README.md`, `docs/ROADMAP.md`, and `CHANGELOG.md`.
+- Update `README.md`, `docs/roadmap.md`, and `CHANGELOG.md`.
 - Include example curl requests for discovery, user create/list/update/delete,
   and group create/list/update/delete.
 - Make clear that SCIM is available on the existing embedded HTTP surface.
@@ -610,9 +610,9 @@ Acceptance criteria:
 
 Likely files:
 
-- `docs/SCIM.md` or `docs/provisioning/scim.md`
+- `docs/scim.md` or `docs/provisioning/scim.md`
 - `README.md`
-- `docs/ROADMAP.md`
+- `docs/roadmap.md`
 - `CHANGELOG.md`
 - `docs/internal/prompts/scim-provisioning-api-goal-prompt.md`
 

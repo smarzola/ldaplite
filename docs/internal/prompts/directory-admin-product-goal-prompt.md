@@ -822,8 +822,8 @@ Acceptance criteria:
 Likely files:
 
 - `README.md`
-- `docs/LDAP_AUTHORIZATION.md`
-- `docs/ROADMAP.md`
+- `docs/authorization.md`
+- `docs/roadmap.md`
 - `AGENTS.md`
 - `internal/web/frontend/src/`
 - `internal/web/`
@@ -860,7 +860,7 @@ Status note, 2026-06-23:
     workflows, contextual admin workflows, read-only lookup, account-only
     password self-service, same-origin write checks, and single-binary embedded
     frontend model.
-  - `docs/LDAP_AUTHORIZATION.md` describes admin, read-only, and password-only
+  - `docs/authorization.md` describes admin, read-only, and password-only
     Web UI behavior and direct API denial.
 - Verification commands run:
   - `npm ci` (passed; npm reported one existing low-severity audit finding and
