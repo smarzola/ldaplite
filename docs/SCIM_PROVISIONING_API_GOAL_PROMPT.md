@@ -645,7 +645,7 @@ Status note, 2026-07-01:
   network access. The full `go test -v -race ./...` regression was also run
   outside the sandbox because earlier sandbox attempts hit module-fetch and
   loopback-listener restrictions.
-- Commit: pending checkpoint commit.
+- Commit: `3b150fa`.
 
 Commit requirement:
 
