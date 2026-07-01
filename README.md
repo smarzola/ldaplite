@@ -187,6 +187,34 @@ dc=example,dc=com (base DN)
 
 The admin user is automatically added to the `ldaplite.admin` group, which grants directory write and full Web UI administration access.
 
+## LDIF Import And Export
+
+Use LDIF commands to seed or inspect a directory without driving LDAP write
+operations by hand:
+
+```bash
+LDAP_BASE_DN=dc=example,dc=com \
+LDAP_ADMIN_PASSWORD=YourSecurePassword \
+LDAP_DATABASE_PATH=/var/lib/ldaplite/ldaplite.db \
+ldaplite import ldif --file ./directory.ldif --dry-run
+
+ldaplite import ldif --file ./directory.ldif
+ldaplite export ldif --file -
+```
+
+Import validates the whole file before writing: DNs must be under the base DN,
+parents and group members must exist in the database or import batch, protected
+server-managed attributes are rejected, and `userPassword` values are processed
+through LDAPLite password hashing. Use `--replace-existing` to replace existing
+entries by DN, and `--allow-generated-passwords` to generate passwords for
+imported users that omit `userPassword`.
+
+Export writes parent-before-child LDIF and is safe by default: it omits
+`userPassword`, password hashes, and computed `memberOf`. Use
+`--include-operational` for safe operational fields such as `entryUUID` and
+timestamps, or `--include-password-placeholders` to emit redacted password
+placeholders.
+
 ## Testing Your Connection
 
 ```bash

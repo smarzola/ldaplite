@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,6 +58,36 @@ func TestExportLDIFWritesFileWithOptionalFields(t *testing.T) {
 	assert.Contains(t, output, "modifyTimestamp:")
 	assert.Contains(t, output, "userPassword: {REDACTED}")
 	assert.NotContains(t, output, "{ARGON2ID}")
+}
+
+func TestExportLDIFCanSeedFreshDatabaseWithGeneratedPasswords(t *testing.T) {
+	sourceDBPath := setupImportCommandEnv(t)
+	importFixtureForExportTest(t)
+
+	exportPath := filepath.Join(t.TempDir(), "export.ldif")
+	exportCmd := newExportCommand()
+	exportCmd.SetArgs([]string{"ldif", "--file", exportPath})
+	require.NoError(t, exportCmd.Execute())
+
+	destinationDBPath := filepath.Join(t.TempDir(), "ldaplite-copy.db")
+	t.Setenv("LDAP_DATABASE_PATH", destinationDBPath)
+	importCmd := newImportCommand()
+	importCmd.SetArgs([]string{"ldif", "--file", exportPath, "--replace-existing", "--allow-generated-passwords"})
+	require.NoError(t, importCmd.Execute())
+
+	t.Setenv("LDAP_DATABASE_PATH", sourceDBPath)
+	sourceStore := openTestStore(t, sourceDBPath)
+	defer sourceStore.Close()
+	sourceExists, err := sourceStore.EntryExists(context.Background(), "uid=imported,ou=users,dc=example,dc=com")
+	require.NoError(t, err)
+	require.True(t, sourceExists)
+
+	t.Setenv("LDAP_DATABASE_PATH", destinationDBPath)
+	destinationStore := openTestStore(t, destinationDBPath)
+	defer destinationStore.Close()
+	destinationExists, err := destinationStore.EntryExists(context.Background(), "uid=imported,ou=users,dc=example,dc=com")
+	require.NoError(t, err)
+	assert.True(t, destinationExists)
 }
 
 func importFixtureForExportTest(t *testing.T) {

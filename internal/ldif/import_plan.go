@@ -5,7 +5,6 @@ import (
 	crand "crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/smarzola/ldaplite/internal/ldapdn"
@@ -103,9 +102,10 @@ func PlanImport(ctx context.Context, lookup EntryLookup, records []Record, optio
 		}
 	}
 
-	sort.SliceStable(entries, func(i, j int) bool {
-		return dnDepth(entries[i].DN) < dnDepth(entries[j].DN)
-	})
+	entries, err := orderEntries(entries, batchDNs)
+	if err != nil {
+		return nil, err
+	}
 
 	return &ImportPlan{
 		Entries:            entries,
@@ -297,6 +297,54 @@ func validateGroupMembers(ctx context.Context, lookup EntryLookup, batchDNs map[
 		}
 	}
 	return nil
+}
+
+func orderEntries(entries []*models.Entry, batchDNs map[string]struct{}) ([]*models.Entry, error) {
+	ordered := make([]*models.Entry, 0, len(entries))
+	emitted := make(map[string]struct{}, len(entries))
+	remaining := append([]*models.Entry(nil), entries...)
+
+	for len(remaining) > 0 {
+		progress := false
+		next := remaining[:0]
+		for _, entry := range remaining {
+			if dependenciesSatisfied(entry, batchDNs, emitted) {
+				ordered = append(ordered, entry)
+				emitted[dnKey(entry.DN)] = struct{}{}
+				progress = true
+				continue
+			}
+			next = append(next, entry)
+		}
+		if !progress {
+			return nil, &ImportPlanError{Msg: "import batch has cyclic or unsatisfied internal dependencies"}
+		}
+		remaining = next
+	}
+
+	return ordered, nil
+}
+
+func dependenciesSatisfied(entry *models.Entry, batchDNs, emitted map[string]struct{}) bool {
+	parentKey := dnKey(entry.ParentDN)
+	if parentKey != "" {
+		if _, inBatch := batchDNs[parentKey]; inBatch {
+			if _, done := emitted[parentKey]; !done {
+				return false
+			}
+		}
+	}
+	if entry.IsGroup() {
+		for _, memberDN := range entry.GetAttributes("member") {
+			memberKey := dnKey(memberDN)
+			if _, inBatch := batchDNs[memberKey]; inBatch {
+				if _, done := emitted[memberKey]; !done {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 func dnKey(dn string) string {

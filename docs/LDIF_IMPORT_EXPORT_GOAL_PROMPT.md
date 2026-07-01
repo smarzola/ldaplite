@@ -191,7 +191,7 @@ When a milestone is complete:
 - [x] Milestone 3: Import Write Path And CLI Command
 - [x] Milestone 4: Export Path And CLI Command
 - [x] Milestone 5: Optional Import/Export Flags
-- [ ] Milestone 6: Functional Coverage, Docs, And Final Regression
+- [x] Milestone 6: Functional Coverage, Docs, And Final Regression
 
 ## Milestone 0: Baseline Contract And Fixtures
 
@@ -591,6 +591,25 @@ go vet ./...
 test -z "$(gofmt -l .)"
 go build -v ./...
 ```
+
+Status notes:
+
+- 2026-07-01: Added functional LDIF import coverage that imports into a
+  temporary SQLite database, starts the real LDAPLite server against it, binds
+  as imported users, verifies read-only app search access, and confirms writes
+  return `insufficientAccessRights`. Added a practical safe-export re-import
+  command test with `--replace-existing --allow-generated-passwords`, updated
+  README, roadmap, changelog, and import/export design docs, and fixed final
+  regression fallout by topologically ordering import plans so groups are
+  applied after batch member entries. Verification commands: `npm ci`;
+  `npm run build:css`; `go test -v -race ./...` (initially failed on exported
+  group/member ordering, then passed after the ordering fix);
+  `make test-functional` (initially failed due test Argon2 env mismatch, then
+  passed after aligning the server env); `go vet ./...`;
+  `test -z "$(gofmt -l .)"`; `go build -v ./...`; manual smoke with
+  `go run ./cmd/ldaplite import ldif --file /private/tmp/ldaplite-smoke.ldif --dry-run`,
+  `go run ./cmd/ldaplite import ldif --file /private/tmp/ldaplite-smoke.ldif`,
+  and `go run ./cmd/ldaplite export ldif --file -`; all final runs passed.
 
 Commit requirement:
 

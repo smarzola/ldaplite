@@ -31,6 +31,8 @@ This roadmap tracks current project direction after the security and interoperab
 - Meaningful database and LDAP listener healthcheck used by the Docker image.
 - Audit-grade LDAP/Web UI logging, optional OpenTelemetry metrics/tracing, and Prometheus-compatible scraping (#9).
 - SCIM-compatible user and group provisioning API on the embedded HTTP server (#7).
+- LDIF import/export commands for bootstrap, safe inspection, generated
+  passwords, and replace-existing workflows.
 
 ## Near-Term Hardening
 
@@ -42,7 +44,6 @@ This roadmap tracks current project direction after the security and interoperab
 ## Product Roadmap
 
 - User and group templates in the Web UI as structured presets over the attribute system (#8).
-- Implement LDIF import/export commands from [docs/IMPORT_EXPORT_DESIGN.md](IMPORT_EXPORT_DESIGN.md).
 
 ## GitHub Issue Cleanup
 

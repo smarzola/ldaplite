@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Import And Export
+
+- Added `ldaplite import ldif` for dry-run validation and importing LDIF users,
+  groups, organizational units, and base-compatible entries.
+- Added `ldaplite export ldif` for safe LDIF export with password hashes and
+  computed `memberOf` omitted by default.
+- Added optional import replacement, generated-password handling, operational
+  export fields, password placeholders, command tests, and functional coverage
+  for imported databases served by the real LDAP server.
+
 ## v0.15.0 - 2026-07-01
 
 ### Provisioning

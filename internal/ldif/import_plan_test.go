@@ -180,6 +180,34 @@ sn: User`)
 	assert.NotContains(t, plan.Entries[0].GetAttribute("userPassword"), plan.GeneratedPasswords[0].Password)
 }
 
+func TestPlanImportOrdersGroupAfterBatchMembers(t *testing.T) {
+	records, err := Parse(`dn: cn=early-group,ou=groups,dc=example,dc=com
+objectClass: groupOfNames
+cn: early-group
+member: uid=late-user,ou=users,dc=example,dc=com
+
+dn: uid=late-user,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: late-user
+cn: Late User
+sn: User
+userPassword: ChangeMe123!`)
+	require.NoError(t, err)
+
+	plan, err := PlanImport(context.Background(), fakeLookupWith(
+		"ou=users,dc=example,dc=com",
+		"ou=groups,dc=example,dc=com",
+	), records, ImportPlanOptions{
+		BaseDN: "dc=example,dc=com",
+		Hasher: testHasher(),
+	})
+
+	require.NoError(t, err)
+	require.Len(t, plan.Entries, 2)
+	assert.Equal(t, "uid=late-user,ou=users,dc=example,dc=com", plan.Entries[0].DN)
+	assert.Equal(t, "cn=early-group,ou=groups,dc=example,dc=com", plan.Entries[1].DN)
+}
+
 func TestPlanImportAllowsTopAlongsideStructuralObjectClass(t *testing.T) {
 	records, err := Parse(`dn: uid=top-user,ou=users,dc=example,dc=com
 objectClass: top
