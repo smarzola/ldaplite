@@ -28,7 +28,7 @@ objectClass: inetOrgPerson
 uid: appbind
 cn: Application Bind
 sn: Bind
-description: Imported application bind user with a folded
+description: Imported application bind user with a folded 
  line continuation for parser coverage
 userPassword: AppBind123!
 

@@ -186,7 +186,7 @@ When a milestone is complete:
    milestone.
 
 - [x] Milestone 0: Baseline Contract And Fixtures
-- [ ] Milestone 1: LDIF Parser And Writer Primitives
+- [x] Milestone 1: LDIF Parser And Writer Primitives
 - [ ] Milestone 2: Import Planning And Dry-Run Validation
 - [ ] Milestone 3: Import Write Path And CLI Command
 - [ ] Milestone 4: Export Path And CLI Command
@@ -285,6 +285,15 @@ Verification:
 ```bash
 go test ./internal/ldif
 ```
+
+Status notes:
+
+- 2026-07-01: Added `internal/ldif` parser and writer primitives with ordered
+  records, multi-value attributes, folded-line handling, base64 value decoding
+  and encoding, line-numbered parse errors, unsupported URL value rejection,
+  and unsupported changetype rejection. Verification command:
+  `go test ./internal/ldif`; initial runs caught an unused test import and a
+  line-number-sensitive round-trip assertion, then the command passed.
 
 Commit requirement:
 
