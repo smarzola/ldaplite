@@ -188,7 +188,7 @@ When a milestone is complete:
 - [x] Milestone 0: Baseline Contract And Fixtures
 - [x] Milestone 1: LDIF Parser And Writer Primitives
 - [x] Milestone 2: Import Planning And Dry-Run Validation
-- [ ] Milestone 3: Import Write Path And CLI Command
+- [x] Milestone 3: Import Write Path And CLI Command
 - [ ] Milestone 4: Export Path And CLI Command
 - [ ] Milestone 5: Optional Import/Export Flags
 - [ ] Milestone 6: Functional Coverage, Docs, And Final Regression
@@ -403,6 +403,17 @@ Verification:
 npm run build:css
 go test ./cmd/ldaplite ./internal/ldif ./internal/directory ./internal/store ./pkg/config ./pkg/crypto
 ```
+
+Status notes:
+
+- 2026-07-01: Added `ldaplite import ldif` with `--file` and `--dry-run`,
+  store initialization from existing environment config, parse/plan/apply flow,
+  add-only existing-entry validation, parent-before-child creates, concise
+  summaries, and command tests for dry-run, successful import, invalid input,
+  required file handling, and password isolation from generic attributes.
+  Verification commands: `npm run build:css` and
+  `go test ./cmd/ldaplite ./internal/ldif ./internal/directory ./internal/store ./pkg/config ./pkg/crypto`;
+  both passed.
 
 Commit requirement:
 

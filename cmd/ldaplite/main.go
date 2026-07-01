@@ -52,6 +52,7 @@ func init() {
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(healthcheckCmd)
+	rootCmd.AddCommand(newImportCommand())
 }
 
 func startServer() error {

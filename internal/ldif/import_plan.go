@@ -18,8 +18,9 @@ type EntryLookup interface {
 
 // ImportPlanOptions configures LDIF import planning.
 type ImportPlanOptions struct {
-	BaseDN string
-	Hasher *crypto.PasswordHasher
+	BaseDN          string
+	Hasher          *crypto.PasswordHasher
+	ReplaceExisting bool
 }
 
 // ImportPlan is a validated, ordered set of entries ready for a later write step.
@@ -75,6 +76,9 @@ func PlanImport(ctx context.Context, lookup EntryLookup, records []Record, optio
 	}
 
 	for _, entry := range entries {
+		if err := validateEntryDoesNotExist(ctx, lookup, options, entry); err != nil {
+			return nil, err
+		}
 		if err := validateParent(ctx, lookup, batchDNs, baseDN, entry); err != nil {
 			return nil, err
 		}
@@ -197,6 +201,20 @@ func validateModel(entry *models.Entry) error {
 	default:
 		return entry.Validate()
 	}
+}
+
+func validateEntryDoesNotExist(ctx context.Context, lookup EntryLookup, options ImportPlanOptions, entry *models.Entry) error {
+	if options.ReplaceExisting {
+		return nil
+	}
+	exists, err := lookup.EntryExists(ctx, entry.DN)
+	if err != nil {
+		return &ImportPlanError{DN: entry.DN, Msg: fmt.Sprintf("failed to check existing entry: %v", err)}
+	}
+	if exists {
+		return &ImportPlanError{DN: entry.DN, Msg: "entry already exists"}
+	}
+	return nil
 }
 
 func validateParent(ctx context.Context, lookup EntryLookup, batchDNs map[string]struct{}, baseDN string, entry *models.Entry) error {
