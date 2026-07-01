@@ -1,10 +1,13 @@
 # LDAPLite Roadmap
 
-Last updated: 2026-07-01
+Last updated: 2026-07-02
 
-This roadmap tracks current project direction after the security and interoperability review. Historical plans in this directory are useful design references, but this file is the current status source.
+This roadmap tracks current project direction after the security,
+interoperability, SCIM, and LDIF import/export work through `v0.16.0`.
+Historical prompts, audits, and design records live under `docs/internal/`; this
+file is the public status source.
 
-## Completed
+## Current Baseline
 
 - Embedded Web UI for users, groups, and organizational units.
 - Embedded SQLite migrations.
@@ -33,21 +36,47 @@ This roadmap tracks current project direction after the security and interoperab
 - SCIM-compatible user and group provisioning API on the embedded HTTP server (#7).
 - LDIF import/export commands for bootstrap, safe inspection, generated
   passwords, and replace-existing workflows.
+- Public operator documentation split from internal prompts and design history.
+
+## 1.0 Readiness
+
+LDAPLite is close to a practical 1.0 baseline for small-to-medium self-hosted
+directory deployments. Before cutting `v1.0.0`, keep the public docs, release
+notes, and examples aligned with the shipped behavior.
+
+Recommended final checks:
+
+- Verify README, quick start, operator docs, and integration recipes against the
+  current command set and release artifacts.
+- Confirm no public docs describe shipped features as pending.
+- Run the normal local validation suite and release workflow after the version
+  bump.
 
 ## Near-Term Hardening
 
-- Add compatibility tests against casing-sensitive LDAP clients (#11).
-- Revisit original presentation casing for custom attributes if compatibility tests show real client impact; current behavior stores and emits custom attributes using normalized names.
-- Add richer LDAP result mapping for store constraint errors.
-- Expand healthcheck modes if deployments need separate database, listener, and full LDAP bind/search readiness checks.
+- Add richer LDAP result mapping for store constraint errors where a known
+  storage or validation class can map to a more precise LDAP result code.
+- Expand healthcheck modes if deployments need separate database, listener, and
+  full LDAP bind/search readiness checks.
+- Revisit original presentation casing for custom attributes only if
+  compatibility tests show real client impact; current behavior stores and
+  emits custom attributes using normalized names.
 
-## Product Roadmap
+## Product Candidates
 
-- User and group templates in the Web UI as structured presets over the attribute system (#8).
+These are candidates for future issues, not active commitments:
 
-## GitHub Issue Cleanup
+- Backup and restore commands for consistent SQLite backup, validation, and
+  recovery workflows.
+- User and group templates in the Web UI as structured presets over the
+  attribute system.
+- Additional client-shaped functional gates for Authelia, Dex, Gitea/Forgejo,
+  Grafana, or Nextcloud if one becomes release-critical.
+- More granular authorization roles if deployments need permissions beyond
+  admin, read-only app bind users, and password-only users.
 
-Issue `#2 Future development` was closed on 2026-06-21 after the completed Web UI portion was separated from remaining roadmap work. Follow-up issues:
+## Issue Tracking
 
-- #8 User and group templates.
-- #11 LDAP client compatibility test matrix.
+There are no open GitHub roadmap issues as of 2026-07-02. Historical follow-up
+issues `#8` and `#11` are closed and should not be treated as active roadmap
+commitments.

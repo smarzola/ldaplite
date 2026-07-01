@@ -189,7 +189,7 @@ When a milestone is complete:
 - [x] Milestone 0: Inventory, Classification, And Link Map
 - [x] Milestone 1: Create Internal Documentation Layout And Move Historical Files
 - [x] Milestone 2: Normalize Public Documentation Names And Links
-- [ ] Milestone 3: Refresh Public Product Truth
+- [x] Milestone 3: Refresh Public Product Truth
 - [ ] Milestone 4: Root Documentation And Agent Guide Cleanup
 - [ ] Milestone 5: Final Link Audit, Regression Checks, And 1.0 Release Notes
 
@@ -450,7 +450,15 @@ grep -R "implementation is pending\\|planned work\\|PRODUCT_SUMMARY\\|GOAL_PROMP
 
 Status notes:
 
-- Pending.
+- 2026-07-02: Refreshed public product truth after `v0.16.0`. Verified with
+  GitHub that there are no open issues and that issue `#8` and issue `#11` are
+  closed. Updated `docs/roadmap.md` to remove stale active follow-up issue
+  references and frame future work as candidates. Updated
+  `docs/client-compatibility.md` so LDIF import/export is no longer listed as
+  pending. Updated README roadmap links to public docs. Verification command
+  run:
+  `grep -R "implementation is pending\\|planned work\\|PRODUCT_SUMMARY\\|GOAL_PROMPT\\|IMPORT_EXPORT_DESIGN" -n README.md docs/*.md docs/integrations docs/deployment || true`;
+  it returned no stale public-doc matches.
 
 Commit requirement:
 

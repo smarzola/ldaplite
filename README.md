@@ -562,11 +562,12 @@ Provisioning:
 
 ## Roadmap
 
-See [docs/roadmap.md](docs/roadmap.md) for current project status and planned work.
+See [docs/roadmap.md](docs/roadmap.md) for current project status and future candidates.
 See [docs/README.md](docs/README.md) for the full operator documentation index.
 
-- Enhanced ACLs for granular permissions
 - LDIF import/export commands are documented in [docs/import-export.md](docs/import-export.md)
+- Near-term hardening focuses on precise LDAP result mapping, healthcheck modes, and release-readiness documentation.
+- Future product candidates include backup/restore commands, Web UI templates, and additional client-shaped functional gates.
 
 ## Limitations
 
