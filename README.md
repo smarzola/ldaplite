@@ -58,6 +58,7 @@ directory operations as a hobby.
 - **Telemetry**: Audit-grade structured logs plus optional OpenTelemetry metrics/tracing and Prometheus-compatible scraping
 - **Least-privilege authorization**: Authenticated users can bind/search/compare and change their own password; directory writes require `cn=ldaplite.admin,ou=groups,<baseDN>`
 - **Explicit app-bind accounts**: Add service users to `cn=ldaplite.readonly,ou=groups,<baseDN>` to document read-only integration intent
+- **SCIM provisioning API**: HTTP Basic-authenticated SCIM-compatible user and group provisioning on the embedded HTTP server
 
 ### Storage & Deployment
 
@@ -527,15 +528,15 @@ See [docs/deployment/ldaps-tls-sidecar.md](docs/deployment/ldaps-tls-sidecar.md)
 - [Nextcloud](docs/integrations/nextcloud.md)
 - [Pocket ID](docs/integrations/pocket-id.md)
 
+Provisioning:
+
+- [SCIM provisioning API](docs/SCIM.md)
+
 ## Roadmap
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for current project status and planned work.
 See [docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md](docs/CLIENT_COMPATIBILITY_PRODUCT_SUMMARY.md) for the latest client-compatibility goal summary.
 
-- **SCIM 2.0 Support** - Modern API for user/group provisioning alongside LDAP
-  - RESTful HTTP interface (RFC 7643, RFC 7644)
-  - JSON payloads for easier integration
-  - Compatible with modern IdP systems
 - Enhanced ACLs for granular permissions
 - LDIF import/export commands from [docs/IMPORT_EXPORT_DESIGN.md](docs/IMPORT_EXPORT_DESIGN.md)
 

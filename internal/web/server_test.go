@@ -467,6 +467,292 @@ func TestPasswordOnlyUserCannotReachDirectorySearchOrDetailAPIs(t *testing.T) {
 	}
 }
 
+func TestSCIMDiscoveryRoutesRequireDirectoryRead(t *testing.T) {
+	srv, st := setupTestServer(t)
+	defer st.Close()
+
+	createTestUser(t, st, "regularuser", "RegularPassword123!")
+	createTestUser(t, st, "passworduser", "PasswordOnly123!")
+	createTestGroup(t, st, "ldaplite.password", "uid=passworduser,ou=users,dc=test,dc=com")
+
+	unauthReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/ServiceProviderConfig", nil)
+	unauthRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(unauthRR, unauthReq)
+
+	if unauthRR.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status = %d, want %d; body=%s", unauthRR.Code, http.StatusUnauthorized, unauthRR.Body.String())
+	}
+	if got := unauthRR.Header().Get("WWW-Authenticate"); got == "" {
+		t.Fatal("unauthenticated response missing WWW-Authenticate header")
+	}
+
+	readReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/ServiceProviderConfig", nil)
+	readReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	readRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(readRR, readReq)
+
+	if readRR.Code != http.StatusOK {
+		t.Fatalf("directory reader status = %d, want %d; body=%s", readRR.Code, http.StatusOK, readRR.Body.String())
+	}
+	if got := readRR.Header().Get("Content-Type"); got != "application/scim+json" {
+		t.Fatalf("Content-Type = %q, want application/scim+json", got)
+	}
+	var configResponse struct {
+		Schemas []string `json:"schemas"`
+		Patch   struct {
+			Supported bool `json:"supported"`
+		} `json:"patch"`
+	}
+	if err := json.Unmarshal(readRR.Body.Bytes(), &configResponse); err != nil {
+		t.Fatalf("failed to decode ServiceProviderConfig: %v", err)
+	}
+	if !containsString(configResponse.Schemas, "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig") {
+		t.Fatalf("schemas = %v, want ServiceProviderConfig", configResponse.Schemas)
+	}
+	if configResponse.Patch.Supported {
+		t.Fatal("patch.supported = true, want false")
+	}
+
+	passwordOnlyReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/ServiceProviderConfig", nil)
+	passwordOnlyReq.Header.Set("Authorization", basicAuth("passworduser:PasswordOnly123!"))
+	passwordOnlyRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(passwordOnlyRR, passwordOnlyReq)
+
+	if passwordOnlyRR.Code != http.StatusForbidden {
+		t.Fatalf("password-only status = %d, want %d; body=%s", passwordOnlyRR.Code, http.StatusForbidden, passwordOnlyRR.Body.String())
+	}
+}
+
+func TestSCIMDiscoveryRoutesReturnSCIMMethodErrors(t *testing.T) {
+	srv, st := setupTestServer(t)
+	defer st.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "http://ldaplite.test/scim/v2/ServiceProviderConfig", nil)
+	req.Header.Set("Authorization", basicAuth("admin:TestPassword123!"))
+	rr := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusMethodNotAllowed, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); got != "application/scim+json" {
+		t.Fatalf("Content-Type = %q, want application/scim+json", got)
+	}
+	var body struct {
+		Schemas []string `json:"schemas"`
+		Status  string   `json:"status"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode SCIM error: %v", err)
+	}
+	if body.Status != "405" || !containsString(body.Schemas, "urn:ietf:params:scim:api:messages:2.0:Error") {
+		t.Fatalf("SCIM error = %+v, want 405 error schema", body)
+	}
+}
+
+func TestSCIMUsersRouteUsesDirectoryReadAuthorization(t *testing.T) {
+	srv, st := setupTestServer(t)
+	defer st.Close()
+
+	createTestUser(t, st, "regularuser", "RegularPassword123!")
+	createTestUser(t, st, "passworduser", "PasswordOnly123!")
+	createTestGroup(t, st, "ldaplite.password", "uid=passworduser,ou=users,dc=test,dc=com")
+	createTestUserWithAttrs(t, st, "scimreader", "ReaderPassword123!", map[string][]string{
+		"cn":        {"SCIM Reader"},
+		"sn":        {"Reader"},
+		"givenName": {"SCIM"},
+		"mail":      {"scimreader@example.com"},
+	})
+
+	readReq := httptest.NewRequest(http.MethodGet, `http://ldaplite.test/scim/v2/Users?filter=userName+eq+%22scimreader%22`, nil)
+	readReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	readRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(readRR, readReq)
+
+	if readRR.Code != http.StatusOK {
+		t.Fatalf("directory reader status = %d, want %d; body=%s", readRR.Code, http.StatusOK, readRR.Body.String())
+	}
+	if strings.Contains(strings.ToLower(readRR.Body.String()), "userpassword") || strings.Contains(readRR.Body.String(), "ReaderPassword123") || strings.Contains(readRR.Body.String(), "ARGON2") {
+		t.Fatalf("SCIM users response leaked password material: %s", readRR.Body.String())
+	}
+	var users struct {
+		TotalResults int `json:"totalResults"`
+		Resources    []struct {
+			ID       string `json:"id"`
+			UserName string `json:"userName"`
+			Emails   []struct {
+				Value string `json:"value"`
+			} `json:"emails"`
+		} `json:"Resources"`
+	}
+	if err := json.Unmarshal(readRR.Body.Bytes(), &users); err != nil {
+		t.Fatalf("failed to decode SCIM users response: %v", err)
+	}
+	if users.TotalResults != 1 || len(users.Resources) != 1 || users.Resources[0].UserName != "scimreader" || users.Resources[0].ID == "" {
+		t.Fatalf("SCIM users response = %+v, want scimreader with stable id", users)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Users/"+users.Resources[0].ID, nil)
+	getReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	getRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(getRR, getReq)
+
+	if getRR.Code != http.StatusOK {
+		t.Fatalf("SCIM user get status = %d, want %d; body=%s", getRR.Code, http.StatusOK, getRR.Body.String())
+	}
+
+	passwordOnlyReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Users", nil)
+	passwordOnlyReq.Header.Set("Authorization", basicAuth("passworduser:PasswordOnly123!"))
+	passwordOnlyRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(passwordOnlyRR, passwordOnlyReq)
+
+	if passwordOnlyRR.Code != http.StatusForbidden {
+		t.Fatalf("password-only status = %d, want %d; body=%s", passwordOnlyRR.Code, http.StatusForbidden, passwordOnlyRR.Body.String())
+	}
+
+	nonAdminCreate := apiJSONRequest(t, http.MethodPost, "/scim/v2/Users", "regularuser:RegularPassword123!", map[string]any{
+		"userName":    "blockedscim",
+		"displayName": "Blocked SCIM",
+		"name": map[string]string{
+			"familyName": "SCIM",
+		},
+		"password": "BlockedPassword123!",
+	})
+	nonAdminCreateRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(nonAdminCreateRR, nonAdminCreate)
+
+	if nonAdminCreateRR.Code != http.StatusForbidden {
+		t.Fatalf("non-admin create status = %d, want %d; body=%s", nonAdminCreateRR.Code, http.StatusForbidden, nonAdminCreateRR.Body.String())
+	}
+
+	adminCreate := apiJSONRequest(t, http.MethodPost, "/scim/v2/Users", "admin:TestPassword123!", map[string]any{
+		"userName":    "adminscim",
+		"displayName": "Admin SCIM",
+		"name": map[string]string{
+			"givenName":  "Admin",
+			"familyName": "SCIM",
+		},
+		"emails": []map[string]any{
+			{"value": "adminscim@example.com", "primary": true},
+		},
+		"password": "AdminSCIMPassword123!",
+	})
+	adminCreateRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(adminCreateRR, adminCreate)
+
+	if adminCreateRR.Code != http.StatusCreated {
+		t.Fatalf("admin create status = %d, want %d; body=%s", adminCreateRR.Code, http.StatusCreated, adminCreateRR.Body.String())
+	}
+	if strings.Contains(adminCreateRR.Body.String(), "AdminSCIMPassword123!") || strings.Contains(adminCreateRR.Body.String(), "ARGON2") {
+		t.Fatalf("admin create leaked password material: %s", adminCreateRR.Body.String())
+	}
+	assertPasswordValid(t, st, "adminscim", "AdminSCIMPassword123!")
+}
+
+func TestSCIMGroupsRouteUsesDirectoryReadAuthorization(t *testing.T) {
+	srv, st := setupTestServer(t)
+	defer st.Close()
+
+	createTestUser(t, st, "regularuser", "RegularPassword123!")
+	createTestUser(t, st, "passworduser", "PasswordOnly123!")
+	createTestGroup(t, st, "ldaplite.password", "uid=passworduser,ou=users,dc=test,dc=com")
+	createTestUser(t, st, "scimmember", "MemberPassword123!")
+	createTestGroup(t, st, "scim-readers", "uid=scimmember,ou=users,dc=test,dc=com")
+
+	readReq := httptest.NewRequest(http.MethodGet, `http://ldaplite.test/scim/v2/Groups?filter=displayName+eq+%22scim-readers%22`, nil)
+	readReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	readRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(readRR, readReq)
+
+	if readRR.Code != http.StatusOK {
+		t.Fatalf("directory reader status = %d, want %d; body=%s", readRR.Code, http.StatusOK, readRR.Body.String())
+	}
+	if strings.Contains(readRR.Body.String(), "uid=scimmember") {
+		t.Fatalf("SCIM groups response leaked raw member DN: %s", readRR.Body.String())
+	}
+	var groups struct {
+		TotalResults int `json:"totalResults"`
+		Resources    []struct {
+			ID          string `json:"id"`
+			DisplayName string `json:"displayName"`
+			Members     []struct {
+				Value string `json:"value"`
+				Type  string `json:"type"`
+			} `json:"members"`
+		} `json:"Resources"`
+	}
+	if err := json.Unmarshal(readRR.Body.Bytes(), &groups); err != nil {
+		t.Fatalf("failed to decode SCIM groups response: %v", err)
+	}
+	if groups.TotalResults != 1 || len(groups.Resources) != 1 || groups.Resources[0].DisplayName != "scim-readers" || groups.Resources[0].ID == "" {
+		t.Fatalf("SCIM groups response = %+v, want scim-readers with stable id", groups)
+	}
+	if len(groups.Resources[0].Members) != 1 || groups.Resources[0].Members[0].Value == "" || groups.Resources[0].Members[0].Type != "User" {
+		t.Fatalf("SCIM group members = %+v, want stable User member id", groups.Resources[0].Members)
+	}
+
+	passwordOnlyReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Groups", nil)
+	passwordOnlyReq.Header.Set("Authorization", basicAuth("passworduser:PasswordOnly123!"))
+	passwordOnlyRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(passwordOnlyRR, passwordOnlyReq)
+
+	if passwordOnlyRR.Code != http.StatusForbidden {
+		t.Fatalf("password-only status = %d, want %d; body=%s", passwordOnlyRR.Code, http.StatusForbidden, passwordOnlyRR.Body.String())
+	}
+
+	nonAdminCreate := apiJSONRequest(t, http.MethodPost, "/scim/v2/Groups", "regularuser:RegularPassword123!", map[string]any{
+		"displayName": "blocked-group",
+		"members": []map[string]any{
+			{"value": groups.Resources[0].Members[0].Value},
+		},
+	})
+	nonAdminCreateRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(nonAdminCreateRR, nonAdminCreate)
+
+	if nonAdminCreateRR.Code != http.StatusForbidden {
+		t.Fatalf("non-admin create status = %d, want %d; body=%s", nonAdminCreateRR.Code, http.StatusForbidden, nonAdminCreateRR.Body.String())
+	}
+
+	adminCreate := apiJSONRequest(t, http.MethodPost, "/scim/v2/Groups", "admin:TestPassword123!", map[string]any{
+		"displayName": "admin-scim-group",
+		"members": []map[string]any{
+			{"value": groups.Resources[0].Members[0].Value},
+		},
+	})
+	adminCreateRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(adminCreateRR, adminCreate)
+
+	if adminCreateRR.Code != http.StatusCreated {
+		t.Fatalf("admin create status = %d, want %d; body=%s", adminCreateRR.Code, http.StatusCreated, adminCreateRR.Body.String())
+	}
+	var created struct {
+		ID          string `json:"id"`
+		DisplayName string `json:"displayName"`
+		Members     []struct {
+			Value string `json:"value"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal(adminCreateRR.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode created group: %v", err)
+	}
+	if created.ID == "" || created.DisplayName != "admin-scim-group" || len(created.Members) != 1 || created.Members[0].Value != groups.Resources[0].Members[0].Value {
+		t.Fatalf("created group = %+v, want admin-scim-group with stable member id", created)
+	}
+}
+
 func TestAdminDirectoryWriteAPI(t *testing.T) {
 	srv, st := setupTestServer(t)
 	defer st.Close()

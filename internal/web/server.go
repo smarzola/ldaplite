@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/smarzola/ldaplite/internal/authz"
+	"github.com/smarzola/ldaplite/internal/scim"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/internal/web/handlers"
 	"github.com/smarzola/ldaplite/internal/web/middleware"
@@ -70,6 +71,7 @@ func (s *Server) setupRoutes() {
 	groupHandler := handlers.NewGroupHandler(s.store, s.cfg, s.GetTemplate)
 	ouHandler := handlers.NewOUHandler(s.store, s.cfg, s.GetTemplate)
 	apiHandler := handlers.NewAPIHandler(s.store, s.cfg)
+	scimHandler := scim.NewHandler(s.store, s.cfg)
 	readProtected := func(handler http.HandlerFunc) http.Handler {
 		return auth.RequireCapability(authz.UIRead, handler)
 	}
@@ -120,6 +122,17 @@ func (s *Server) setupRoutes() {
 	s.mux.Handle("/api/account/password", passwordSelfProtected(apiHandler.ChangeOwnPassword))
 	s.mux.Handle("/api/users/password", passwordResetProtected(apiHandler.ResetPassword))
 
+	// SCIM discovery routes
+	s.mux.Handle("/scim/v2/ServiceProviderConfig", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.ServiceProviderConfig)))
+	s.mux.Handle("/scim/v2/Schemas", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.Schemas)))
+	s.mux.Handle("/scim/v2/ResourceTypes", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.ResourceTypes)))
+	scimUsers := methodCapabilityHandler(auth, authz.DirectoryRead, authz.DirectoryWrite, http.HandlerFunc(scimHandler.Users))
+	s.mux.Handle("/scim/v2/Users", scimUsers)
+	s.mux.Handle("/scim/v2/Users/", scimUsers)
+	scimGroups := methodCapabilityHandler(auth, authz.DirectoryRead, authz.DirectoryWrite, http.HandlerFunc(scimHandler.Groups))
+	s.mux.Handle("/scim/v2/Groups", scimGroups)
+	s.mux.Handle("/scim/v2/Groups/", scimGroups)
+
 	// User routes
 	s.mux.Handle("/users", readProtected(userHandler.List))
 	s.mux.Handle("/users/new", adminProtected(userHandler.New))
@@ -137,6 +150,16 @@ func (s *Server) setupRoutes() {
 	s.mux.Handle("/ous/new", adminProtected(ouHandler.New))
 	s.mux.Handle("/ous/edit", adminProtected(ouHandler.Edit))
 	s.mux.Handle("/ous/delete", adminProtected(ouHandler.Delete))
+}
+
+func methodCapabilityHandler(auth *middleware.Auth, readCapability, writeCapability authz.Capability, handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			auth.RequireCapability(readCapability, handler).ServeHTTP(w, r)
+			return
+		}
+		auth.RequireCapability(writeCapability, handler).ServeHTTP(w, r)
+	})
 }
 
 func mustSubFS(fsys fs.FS, dir string) fs.FS {

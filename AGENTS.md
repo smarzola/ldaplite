@@ -16,17 +16,10 @@ Key stack:
 
 ## Search And Editing Rules
 
-Use `ast-grep` for Go structural searches and refactors:
+Inspect current source, tests, and docs directly before editing.
 
-```bash
-ast-grep --lang=go --pattern 'func $NAME($$$) $$$' cmd internal pkg
-ast-grep --lang=go --pattern 'type $NAME struct { $$$ }' internal pkg
-ast-grep --lang=go --pattern '$OBJ.$METHOD($$$)' internal pkg
-```
-
-Use `rg` for ordinary text and file searches.
-
-Do not rely on stale line numbers in docs or comments. Prefer symbol names, tests, and direct source inspection.
+Do not rely on stale line numbers in docs or comments. Prefer symbol names,
+tests, and direct source inspection.
 
 ## Common Commands
 

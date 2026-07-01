@@ -1,6 +1,6 @@
 # LDAPLite Roadmap
 
-Last updated: 2026-06-23
+Last updated: 2026-07-01
 
 This roadmap tracks current project direction after the security and interoperability review. Historical plans in this directory are useful design references, but this file is the current status source.
 
@@ -30,6 +30,7 @@ This roadmap tracks current project direction after the security and interoperab
 - LDAP search response attribute selection, including `1.1`, `*`, and `+`.
 - Meaningful database and LDAP listener healthcheck used by the Docker image.
 - Audit-grade LDAP/Web UI logging, optional OpenTelemetry metrics/tracing, and Prometheus-compatible scraping (#9).
+- SCIM-compatible user and group provisioning API on the embedded HTTP server (#7).
 
 ## Near-Term Hardening
 
@@ -40,7 +41,6 @@ This roadmap tracks current project direction after the security and interoperab
 
 ## Product Roadmap
 
-- SCIM 2.0 or REST provisioning API on top of the shared directory service (#7).
 - User and group templates in the Web UI as structured presets over the attribute system (#8).
 - Implement LDIF import/export commands from [docs/IMPORT_EXPORT_DESIGN.md](IMPORT_EXPORT_DESIGN.md).
 
@@ -48,6 +48,5 @@ This roadmap tracks current project direction after the security and interoperab
 
 Issue `#2 Future development` was closed on 2026-06-21 after the completed Web UI portion was separated from remaining roadmap work. Follow-up issues:
 
-- #7 SCIM 2.0 / REST provisioning API.
 - #8 User and group templates.
 - #11 LDAP client compatibility test matrix.

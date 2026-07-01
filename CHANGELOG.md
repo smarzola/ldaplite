@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.15.0 - 2026-07-01
+
+### Provisioning
+
+- Added a SCIM-compatible HTTP provisioning API for user and group discovery,
+  listing, lookup, creation, replacement, and deletion.
+- Added SCIM discovery endpoints, SCIM error responses, pagination, stable
+  `entryUUID` resource IDs, and a documented filter subset.
+- Reused LDAPLite's shared directory service for SCIM writes so password
+  handling, group member validation, and referential integrity match LDAP and
+  Web UI behavior.
+- Documented endpoint paths, authentication, field mappings, examples, and
+  current SCIM limits.
+
 ## v0.14.0 - 2026-06-24
 
 ### Web UI
