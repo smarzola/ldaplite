@@ -83,6 +83,88 @@ member: uid=missing,ou=users,dc=example,dc=com`)
 	assert.Contains(t, err.Error(), "group member does not exist")
 }
 
+func TestImportLDIFRejectsExistingEntryWithoutReplace(t *testing.T) {
+	setupImportCommandEnv(t)
+	ldifPath := writeImportFixture(t, validCommandImportLDIF())
+	cmd := newImportCommand()
+	cmd.SetArgs([]string{"ldif", "--file", ldifPath})
+	require.NoError(t, cmd.Execute())
+
+	cmd = newImportCommand()
+	cmd.SetArgs([]string{"ldif", "--file", ldifPath})
+	err := cmd.Execute()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "uid=imported,ou=users,dc=example,dc=com")
+	assert.Contains(t, err.Error(), "entry already exists")
+}
+
+func TestImportLDIFReplaceExistingUpdatesEntry(t *testing.T) {
+	dbPath := setupImportCommandEnv(t)
+	ldifPath := writeImportFixture(t, validCommandImportLDIF())
+	cmd := newImportCommand()
+	cmd.SetArgs([]string{"ldif", "--file", ldifPath})
+	require.NoError(t, cmd.Execute())
+
+	replacePath := writeImportFixture(t, `dn: uid=imported,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: imported
+cn: Imported User Replaced
+sn: Replaced
+userPassword: Changed123!
+
+dn: cn=imported,ou=groups,dc=example,dc=com
+objectClass: groupOfNames
+cn: imported
+description: Replaced group
+member: uid=imported,ou=users,dc=example,dc=com`)
+	var out bytes.Buffer
+	cmd = newImportCommand()
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"ldif", "--file", replacePath, "--replace-existing"})
+
+	err := cmd.Execute()
+
+	require.NoError(t, err)
+	assert.Contains(t, out.String(), "LDIF import successful: records=2 imported=2")
+	st := openTestStore(t, dbPath)
+	defer st.Close()
+	user, err := st.GetEntryWithOptions(context.Background(), "uid=imported,ou=users,dc=example,dc=com", store.EntryOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	assert.Equal(t, "Imported User Replaced", user.GetAttribute("cn"))
+	group, err := st.GetEntry(context.Background(), "cn=imported,ou=groups,dc=example,dc=com")
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	assert.Equal(t, "Replaced group", group.GetAttribute("description"))
+}
+
+func TestImportLDIFAllowGeneratedPasswords(t *testing.T) {
+	dbPath := setupImportCommandEnv(t)
+	ldifPath := writeImportFixture(t, `dn: uid=generated,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: generated
+cn: Generated User
+sn: User`)
+	var out bytes.Buffer
+	cmd := newImportCommand()
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"ldif", "--file", ldifPath, "--allow-generated-passwords"})
+
+	err := cmd.Execute()
+
+	require.NoError(t, err)
+	output := out.String()
+	assert.Contains(t, output, "Generated passwords:")
+	assert.Contains(t, output, "uid=generated,ou=users,dc=example,dc=com:")
+	st := openTestStore(t, dbPath)
+	defer st.Close()
+	hash, _, err := st.GetUserPasswordHashByDN(context.Background(), "uid=generated,ou=users,dc=example,dc=com")
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(hash, crypto.SchemeArgon2ID))
+	assert.False(t, strings.Contains(output, hash))
+}
+
 func TestImportLDIFRequiresFile(t *testing.T) {
 	setupImportCommandEnv(t)
 	cmd := newImportCommand()

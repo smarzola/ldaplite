@@ -12,8 +12,10 @@ import (
 )
 
 type importLDIFOptions struct {
-	file   string
-	dryRun bool
+	file                    string
+	dryRun                  bool
+	replaceExisting         bool
+	allowGeneratedPasswords bool
 }
 
 func newImportCommand() *cobra.Command {
@@ -36,6 +38,8 @@ func newImportLDIFCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&options.file, "file", "", "LDIF file to import")
 	cmd.Flags().BoolVar(&options.dryRun, "dry-run", false, "Parse and validate without writing")
+	cmd.Flags().BoolVar(&options.replaceExisting, "replace-existing", false, "Replace existing entries by DN")
+	cmd.Flags().BoolVar(&options.allowGeneratedPasswords, "allow-generated-passwords", false, "Generate random passwords for imported users missing userPassword")
 	return cmd
 }
 
@@ -65,8 +69,10 @@ func runImportLDIF(cmd *cobra.Command, options *importLDIFOptions) error {
 	defer st.Close()
 
 	plan, err := ldif.PlanImport(cmd.Context(), st, records, ldif.ImportPlanOptions{
-		BaseDN: cfg.LDAP.BaseDN,
-		Hasher: crypto.NewPasswordHasher(cfg.Security.Argon2Config),
+		BaseDN:                  cfg.LDAP.BaseDN,
+		Hasher:                  crypto.NewPasswordHasher(cfg.Security.Argon2Config),
+		ReplaceExisting:         options.replaceExisting,
+		AllowGeneratedPasswords: options.allowGeneratedPasswords,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to validate LDIF import: %w", err)
@@ -74,6 +80,9 @@ func runImportLDIF(cmd *cobra.Command, options *importLDIFOptions) error {
 
 	if options.dryRun {
 		fmt.Fprintf(cmd.OutOrStdout(), "LDIF dry-run successful: records=%d planned=%d\n", len(records), len(plan.Entries))
+		if len(plan.GeneratedPasswords) > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "Generated passwords: %d (not shown during dry-run)\n", len(plan.GeneratedPasswords))
+		}
 		return nil
 	}
 
@@ -81,5 +90,11 @@ func runImportLDIF(cmd *cobra.Command, options *importLDIFOptions) error {
 		return fmt.Errorf("failed to import LDIF: %w", err)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "LDIF import successful: records=%d imported=%d\n", len(records), len(plan.Entries))
+	if len(plan.GeneratedPasswords) > 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "Generated passwords:")
+		for _, generated := range plan.GeneratedPasswords {
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", generated.DN, generated.Password)
+		}
+	}
 	return nil
 }

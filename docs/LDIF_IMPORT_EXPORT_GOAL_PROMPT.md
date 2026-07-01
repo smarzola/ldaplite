@@ -190,7 +190,7 @@ When a milestone is complete:
 - [x] Milestone 2: Import Planning And Dry-Run Validation
 - [x] Milestone 3: Import Write Path And CLI Command
 - [x] Milestone 4: Export Path And CLI Command
-- [ ] Milestone 5: Optional Import/Export Flags
+- [x] Milestone 5: Optional Import/Export Flags
 - [ ] Milestone 6: Functional Coverage, Docs, And Final Regression
 
 ## Milestone 0: Baseline Contract And Fixtures
@@ -523,6 +523,19 @@ Verification:
 npm run build:css
 go test ./cmd/ldaplite ./internal/ldif ./internal/directory ./internal/store ./pkg/crypto
 ```
+
+Status notes:
+
+- 2026-07-01: Completed optional flag behavior. Export optional flags were
+  implemented in Milestone 4. Added import `--replace-existing` with same-object
+  replacement through `UpdateEntry`, add-only existing-entry rejection before
+  writes, and `--allow-generated-passwords` with generated plaintext printed
+  once after real imports and hidden during dry-run. Added planner and command
+  tests for duplicate rejection, replace-existing updates, generated password
+  hashing, and no plaintext/hash leakage into generic output. Verification
+  commands: `npm run build:css` and
+  `go test ./cmd/ldaplite ./internal/ldif ./internal/directory ./internal/store ./pkg/crypto`;
+  both passed.
 
 Commit requirement:
 

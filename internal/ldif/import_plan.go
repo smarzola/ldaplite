@@ -2,12 +2,15 @@ package ldif
 
 import (
 	"context"
+	crand "crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/smarzola/ldaplite/internal/ldapdn"
 	"github.com/smarzola/ldaplite/internal/models"
+	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/crypto"
 )
 
@@ -18,14 +21,23 @@ type EntryLookup interface {
 
 // ImportPlanOptions configures LDIF import planning.
 type ImportPlanOptions struct {
-	BaseDN          string
-	Hasher          *crypto.PasswordHasher
-	ReplaceExisting bool
+	BaseDN                  string
+	Hasher                  *crypto.PasswordHasher
+	ReplaceExisting         bool
+	AllowGeneratedPasswords bool
 }
 
 // ImportPlan is a validated, ordered set of entries ready for a later write step.
 type ImportPlan struct {
-	Entries []*models.Entry
+	Entries            []*models.Entry
+	ReplaceExisting    bool
+	GeneratedPasswords []GeneratedPassword
+}
+
+// GeneratedPassword is a plaintext password generated for a missing userPassword.
+type GeneratedPassword struct {
+	DN       string
+	Password string
 }
 
 // ImportPlanError reports a validation error for one LDIF record.
@@ -67,16 +79,20 @@ func PlanImport(ctx context.Context, lookup EntryLookup, records []Record, optio
 	}
 
 	entries := make([]*models.Entry, 0, len(records))
+	generatedPasswords := make([]GeneratedPassword, 0)
 	for _, record := range records {
-		entry, err := entryFromRecord(record, baseDN, options.Hasher)
+		entry, generated, err := entryFromRecord(record, baseDN, options)
 		if err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
+		if generated != nil {
+			generatedPasswords = append(generatedPasswords, *generated)
+		}
 	}
 
 	for _, entry := range entries {
-		if err := validateEntryDoesNotExist(ctx, lookup, options, entry); err != nil {
+		if err := validateExistingEntry(ctx, lookup, options, entry); err != nil {
 			return nil, err
 		}
 		if err := validateParent(ctx, lookup, batchDNs, baseDN, entry); err != nil {
@@ -91,20 +107,24 @@ func PlanImport(ctx context.Context, lookup EntryLookup, records []Record, optio
 		return dnDepth(entries[i].DN) < dnDepth(entries[j].DN)
 	})
 
-	return &ImportPlan{Entries: entries}, nil
+	return &ImportPlan{
+		Entries:            entries,
+		ReplaceExisting:    options.ReplaceExisting,
+		GeneratedPasswords: generatedPasswords,
+	}, nil
 }
 
-func entryFromRecord(record Record, baseDN string, hasher *crypto.PasswordHasher) (*models.Entry, error) {
+func entryFromRecord(record Record, baseDN string, options ImportPlanOptions) (*models.Entry, *GeneratedPassword, error) {
 	if !ldapdn.WithinBase(record.DN, baseDN) {
-		return nil, &ImportPlanError{DN: record.DN, Msg: fmt.Sprintf("DN is outside base DN %s", baseDN)}
+		return nil, nil, &ImportPlanError{DN: record.DN, Msg: fmt.Sprintf("DN is outside base DN %s", baseDN)}
 	}
 
 	objectClass, err := primaryObjectClass(record, baseDN)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := rejectProtectedAttributes(record); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	entry := models.NewEntry(record.DN, objectClass)
@@ -118,27 +138,36 @@ func entryFromRecord(record Record, baseDN string, hasher *crypto.PasswordHasher
 		entry.AddAttribute(attr.Name, attr.Value)
 	}
 
+	var generated *GeneratedPassword
 	if entry.IsUser() {
 		passwords := record.Values("userPassword")
 		if len(passwords) == 0 {
-			return nil, &ImportPlanError{DN: record.DN, Msg: "userPassword is required for user import"}
+			if !options.AllowGeneratedPasswords {
+				return nil, nil, &ImportPlanError{DN: record.DN, Msg: "userPassword is required for user import"}
+			}
+			password, err := generatePassword()
+			if err != nil {
+				return nil, nil, &ImportPlanError{DN: record.DN, Msg: fmt.Sprintf("failed to generate password: %v", err)}
+			}
+			passwords = []string{password}
+			generated = &GeneratedPassword{DN: record.DN, Password: password}
 		}
 		if len(passwords) > 1 {
-			return nil, &ImportPlanError{DN: record.DN, Msg: "userPassword must be single-valued"}
+			return nil, nil, &ImportPlanError{DN: record.DN, Msg: "userPassword must be single-valued"}
 		}
-		processed, err := hasher.ProcessPassword(passwords[0])
+		processed, err := options.Hasher.ProcessPassword(passwords[0])
 		if err != nil {
-			return nil, &ImportPlanError{DN: record.DN, Msg: err.Error()}
+			return nil, nil, &ImportPlanError{DN: record.DN, Msg: err.Error()}
 		}
 		entry.SetAttribute("userPassword", processed)
 	} else if len(record.Values("userPassword")) > 0 {
-		return nil, &ImportPlanError{DN: record.DN, Msg: "userPassword is only supported on inetOrgPerson entries"}
+		return nil, nil, &ImportPlanError{DN: record.DN, Msg: "userPassword is only supported on inetOrgPerson entries"}
 	}
 
 	if err := validateModel(entry); err != nil {
-		return nil, &ImportPlanError{DN: record.DN, Msg: err.Error()}
+		return nil, nil, &ImportPlanError{DN: record.DN, Msg: err.Error()}
 	}
-	return entry, nil
+	return entry, generated, nil
 }
 
 func primaryObjectClass(record Record, baseDN string) (string, error) {
@@ -203,16 +232,29 @@ func validateModel(entry *models.Entry) error {
 	}
 }
 
-func validateEntryDoesNotExist(ctx context.Context, lookup EntryLookup, options ImportPlanOptions, entry *models.Entry) error {
-	if options.ReplaceExisting {
-		return nil
-	}
+func validateExistingEntry(ctx context.Context, lookup EntryLookup, options ImportPlanOptions, entry *models.Entry) error {
 	exists, err := lookup.EntryExists(ctx, entry.DN)
 	if err != nil {
 		return &ImportPlanError{DN: entry.DN, Msg: fmt.Sprintf("failed to check existing entry: %v", err)}
 	}
-	if exists {
+	if !exists {
+		return nil
+	}
+	if !options.ReplaceExisting {
 		return &ImportPlanError{DN: entry.DN, Msg: "entry already exists"}
+	}
+	reader, ok := lookup.(interface {
+		GetEntryWithOptions(ctx context.Context, dn string, options store.EntryOptions) (*models.Entry, error)
+	})
+	if !ok {
+		return nil
+	}
+	current, err := reader.GetEntryWithOptions(ctx, entry.DN, store.EntryOptions{IncludeMemberOf: false})
+	if err != nil {
+		return &ImportPlanError{DN: entry.DN, Msg: fmt.Sprintf("failed to read existing entry: %v", err)}
+	}
+	if current != nil && current.ObjectClass != entry.ObjectClass {
+		return &ImportPlanError{DN: entry.DN, Msg: fmt.Sprintf("cannot replace %s entry with %s", current.ObjectClass, entry.ObjectClass)}
 	}
 	return nil
 }
@@ -266,4 +308,12 @@ func dnDepth(dn string) int {
 		return 0
 	}
 	return strings.Count(dn, ",") + 1
+}
+
+func generatePassword() (string, error) {
+	data := make([]byte, 24)
+	if _, err := crand.Read(data); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(data), nil
 }

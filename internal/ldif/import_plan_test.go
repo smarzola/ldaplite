@@ -137,6 +137,49 @@ userPassword: ChangeMe123!`,
 	}
 }
 
+func TestPlanImportRejectsExistingEntryWithoutReplace(t *testing.T) {
+	records, err := Parse(`dn: uid=existing,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: existing
+cn: Existing User
+sn: User
+userPassword: ChangeMe123!`)
+	require.NoError(t, err)
+
+	_, err = PlanImport(context.Background(), fakeLookupWith(
+		"ou=users,dc=example,dc=com",
+		"uid=existing,ou=users,dc=example,dc=com",
+	), records, ImportPlanOptions{
+		BaseDN: "dc=example,dc=com",
+		Hasher: testHasher(),
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "entry already exists")
+}
+
+func TestPlanImportAllowsGeneratedPasswords(t *testing.T) {
+	records, err := Parse(`dn: uid=generated,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: generated
+cn: Generated User
+sn: User`)
+	require.NoError(t, err)
+
+	plan, err := PlanImport(context.Background(), fakeLookupWith("ou=users,dc=example,dc=com"), records, ImportPlanOptions{
+		BaseDN:                  "dc=example,dc=com",
+		Hasher:                  testHasher(),
+		AllowGeneratedPasswords: true,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, plan.GeneratedPasswords, 1)
+	assert.Equal(t, "uid=generated,ou=users,dc=example,dc=com", plan.GeneratedPasswords[0].DN)
+	assert.NotEmpty(t, plan.GeneratedPasswords[0].Password)
+	assert.True(t, strings.HasPrefix(plan.Entries[0].GetAttribute("userPassword"), crypto.SchemeArgon2ID))
+	assert.NotContains(t, plan.Entries[0].GetAttribute("userPassword"), plan.GeneratedPasswords[0].Password)
+}
+
 func TestPlanImportAllowsTopAlongsideStructuralObjectClass(t *testing.T) {
 	records, err := Parse(`dn: uid=top-user,ou=users,dc=example,dc=com
 objectClass: top
