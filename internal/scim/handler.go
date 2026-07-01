@@ -3,9 +3,14 @@ package scim
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"sort"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/smarzola/ldaplite/internal/directory"
+	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/config"
 )
@@ -38,7 +43,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Schemas(w, r)
 	case BasePath + "/ResourceTypes":
 		h.ResourceTypes(w, r)
+	case BasePath + "/Users":
+		h.Users(w, r)
 	default:
+		if strings.HasPrefix(r.URL.Path, BasePath+"/Users/") {
+			h.Users(w, r)
+			return
+		}
 		writeSCIMError(w, http.StatusNotImplemented, "SCIM endpoint is not implemented yet")
 	}
 }
@@ -132,6 +143,116 @@ func (h *Handler) ResourceTypes(w http.ResponseWriter, r *http.Request) {
 	writeSCIMJSON(w, http.StatusOK, newListResponse(resources, 1))
 }
 
+func (h *Handler) Users(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeSCIMError(w, http.StatusNotImplemented, "SCIM user writes are not implemented yet")
+		return
+	}
+	if r.URL.Path == BasePath+"/Users" {
+		h.listUsers(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, BasePath+"/Users/") {
+		h.getUser(w, r)
+		return
+	}
+	writeSCIMError(w, http.StatusNotFound, "SCIM user endpoint not found")
+}
+
+func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
+	filter, err := userLDAPFilter(r.URL.Query().Get("filter"))
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	startIndex, count, err := parsePagination(r)
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	entries, err := h.store.SearchEntriesWithOptions(r.Context(), store.SearchOptions{
+		BaseDN:          h.cfg.LDAP.BaseDN,
+		Filter:          filter,
+		Scope:           store.SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		writeSCIMError(w, http.StatusInternalServerError, "Failed to search SCIM users")
+		return
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return strings.ToLower(entries[i].DN) < strings.ToLower(entries[j].DN)
+	})
+
+	total := len(entries)
+	pageEntries := pageEntries(entries, startIndex, count)
+	resources := make([]userResource, 0, len(pageEntries))
+	for _, entry := range pageEntries {
+		resources = append(resources, h.userResource(r, entry))
+	}
+	writeSCIMJSON(w, http.StatusOK, newListResponsePage(resources, total, startIndex))
+}
+
+func (h *Handler) getUser(w http.ResponseWriter, r *http.Request) {
+	id, err := pathResourceID(r.URL.Path, BasePath+"/Users/")
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	entry, ok, err := h.userByID(r, id)
+	if err != nil {
+		writeSCIMError(w, http.StatusInternalServerError, "Failed to load SCIM user")
+		return
+	}
+	if !ok {
+		writeSCIMError(w, http.StatusNotFound, "SCIM user not found")
+		return
+	}
+	writeSCIMJSON(w, http.StatusOK, h.userResource(r, entry))
+}
+
+func (h *Handler) userByID(r *http.Request, id string) (*models.Entry, bool, error) {
+	entries, err := h.store.SearchEntriesWithOptions(r.Context(), store.SearchOptions{
+		BaseDN:          h.cfg.LDAP.BaseDN,
+		Filter:          "(&(objectClass=inetOrgPerson)(entryUUID=" + escapeLDAPFilterAssertionValue(id) + "))",
+		Scope:           store.SearchScopeWholeSubtree,
+		IncludeMemberOf: false,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	if len(entries) == 0 {
+		return nil, false, nil
+	}
+	return entries[0], true, nil
+}
+
+func (h *Handler) userResource(r *http.Request, entry *models.Entry) userResource {
+	id := entry.GetAttribute("entryUUID")
+	resource := userResource{
+		Schemas:     []string{userSchema},
+		ID:          id,
+		UserName:    entry.GetAttribute("uid"),
+		DisplayName: entry.GetAttribute("cn"),
+		Name: nameResource{
+			GivenName:  entry.GetAttribute("givenName"),
+			FamilyName: entry.GetAttribute("sn"),
+			Formatted:  entry.GetAttribute("cn"),
+		},
+		Meta: metaResource{
+			ResourceType: "User",
+			Created:      formatSCIMTime(entry.CreatedAt),
+			LastModified: formatSCIMTime(entry.UpdatedAt),
+			Location:     absoluteURL(r, BasePath+"/Users/"+url.PathEscape(id)),
+		},
+	}
+	if mail := entry.GetAttribute("mail"); mail != "" {
+		resource.Emails = []emailResource{{Value: mail, Primary: true}}
+	}
+	return resource
+}
+
 func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {
 	if r.Method == method {
 		return true
@@ -156,16 +277,163 @@ func writeSCIMError(w http.ResponseWriter, status int, detail string) {
 }
 
 func newListResponse[T any](resources []T, startIndex int) listResponse[T] {
+	return newListResponsePage(resources, len(resources), startIndex)
+}
+
+func newListResponsePage[T any](resources []T, totalResults, startIndex int) listResponse[T] {
 	if startIndex < 1 {
 		startIndex = 1
 	}
 	return listResponse[T]{
 		Schemas:      []string{listResponseSchema},
-		TotalResults: len(resources),
+		TotalResults: totalResults,
 		Resources:    resources,
 		StartIndex:   startIndex,
 		ItemsPerPage: len(resources),
 	}
+}
+
+func parsePagination(r *http.Request) (startIndex int, count int, err error) {
+	query := r.URL.Query()
+	startIndex = 1
+	count = 100
+	if raw := strings.TrimSpace(query.Get("startIndex")); raw != "" {
+		startIndex, err = strconv.Atoi(raw)
+		if err != nil || startIndex < 1 {
+			return 0, 0, errInvalidPagination("startIndex must be a positive integer")
+		}
+	}
+	if raw := strings.TrimSpace(query.Get("count")); raw != "" {
+		count, err = strconv.Atoi(raw)
+		if err != nil || count < 0 {
+			return 0, 0, errInvalidPagination("count must be a non-negative integer")
+		}
+		if count > 200 {
+			count = 200
+		}
+	}
+	return startIndex, count, nil
+}
+
+func pageEntries(entries []*models.Entry, startIndex, count int) []*models.Entry {
+	if count == 0 || startIndex > len(entries) {
+		return []*models.Entry{}
+	}
+	start := startIndex - 1
+	end := start + count
+	if end > len(entries) {
+		end = len(entries)
+	}
+	return entries[start:end]
+}
+
+type requestError string
+
+func (e requestError) Error() string {
+	return string(e)
+}
+
+func errInvalidPagination(message string) error {
+	return requestError(message)
+}
+
+func userLDAPFilter(rawFilter string) (string, error) {
+	attr, value, ok, err := parseSimpleEqualityFilter(rawFilter)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "(objectClass=inetOrgPerson)", nil
+	}
+
+	var ldapAttr string
+	switch attr {
+	case "id":
+		ldapAttr = "entryUUID"
+	case "userName":
+		ldapAttr = "uid"
+	case "displayName":
+		ldapAttr = "cn"
+	default:
+		return "", requestError("Unsupported SCIM user filter")
+	}
+	return "(&(objectClass=inetOrgPerson)(" + ldapAttr + "=" + escapeLDAPFilterAssertionValue(value) + "))", nil
+}
+
+func parseSimpleEqualityFilter(rawFilter string) (attr string, value string, ok bool, err error) {
+	rawFilter = strings.TrimSpace(rawFilter)
+	if rawFilter == "" {
+		return "", "", false, nil
+	}
+	parts := strings.SplitN(rawFilter, " eq ", 2)
+	if len(parts) != 2 {
+		return "", "", false, requestError("Only simple SCIM eq filters are supported")
+	}
+	attr = strings.TrimSpace(parts[0])
+	quotedValue := strings.TrimSpace(parts[1])
+	value, err = strconv.Unquote(quotedValue)
+	if err != nil {
+		return "", "", false, requestError("SCIM filter value must be a quoted string")
+	}
+	return attr, value, true, nil
+}
+
+func pathResourceID(path, prefix string) (string, error) {
+	escapedID := strings.TrimPrefix(path, prefix)
+	if escapedID == "" || escapedID == path || strings.Contains(escapedID, "/") {
+		return "", requestError("SCIM resource id is required")
+	}
+	id, err := url.PathUnescape(escapedID)
+	if err != nil || strings.TrimSpace(id) == "" {
+		return "", requestError("Invalid SCIM resource id")
+	}
+	return id, nil
+}
+
+func escapeLDAPFilterAssertionValue(value string) string {
+	var escaped strings.Builder
+	for _, r := range value {
+		switch r {
+		case '*':
+			escaped.WriteString(`\2a`)
+		case '(':
+			escaped.WriteString(`\28`)
+		case ')':
+			escaped.WriteString(`\29`)
+		case '\\':
+			escaped.WriteString(`\5c`)
+		case 0:
+			escaped.WriteString(`\00`)
+		default:
+			escaped.WriteRune(r)
+		}
+	}
+	return escaped.String()
+}
+
+func absoluteURL(r *http.Request, path string) string {
+	scheme := r.URL.Scheme
+	if scheme == "" {
+		if forwarded := r.Header.Get("X-Forwarded-Proto"); forwarded != "" {
+			scheme = forwarded
+		} else if r.TLS != nil {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+	}
+	host := r.Host
+	if host == "" {
+		host = r.URL.Host
+	}
+	return scheme + "://" + host + path
+}
+
+func formatSCIMTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 type serviceProviderConfigResponse struct {
@@ -207,6 +475,34 @@ type listResponse[T any] struct {
 	Resources    []T      `json:"Resources"`
 	StartIndex   int      `json:"startIndex"`
 	ItemsPerPage int      `json:"itemsPerPage"`
+}
+
+type userResource struct {
+	Schemas     []string        `json:"schemas"`
+	ID          string          `json:"id"`
+	UserName    string          `json:"userName"`
+	Name        nameResource    `json:"name"`
+	DisplayName string          `json:"displayName"`
+	Emails      []emailResource `json:"emails,omitempty"`
+	Meta        metaResource    `json:"meta"`
+}
+
+type nameResource struct {
+	Formatted  string `json:"formatted,omitempty"`
+	GivenName  string `json:"givenName,omitempty"`
+	FamilyName string `json:"familyName,omitempty"`
+}
+
+type emailResource struct {
+	Value   string `json:"value"`
+	Primary bool   `json:"primary"`
+}
+
+type metaResource struct {
+	ResourceType string `json:"resourceType"`
+	Created      string `json:"created,omitempty"`
+	LastModified string `json:"lastModified,omitempty"`
+	Location     string `json:"location"`
 }
 
 type schemaResource struct {

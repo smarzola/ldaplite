@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/config"
 )
@@ -61,12 +63,12 @@ func TestHandlerCanBeConstructedWithSQLiteStore(t *testing.T) {
 	}
 }
 
-func TestHandlerReturnsDeliberateNotImplementedBeforeRoutesAreMounted(t *testing.T) {
+func TestHandlerReturnsDeliberateNotImplementedForUnknownRoutes(t *testing.T) {
 	cfg, st := setupTestStore(t)
 	defer st.Close()
 	handler := NewHandler(st, cfg)
 
-	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Users", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Groups", nil)
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)
@@ -211,6 +213,141 @@ func TestDiscoveryRejectsUnsupportedMethodsWithSCIMError(t *testing.T) {
 	}
 }
 
+func TestUsersListSupportsPaginationAndSafeMapping(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+	createSCIMTestUser(t, st, "anna", "Anna Operator", "Operator", "Anna", "anna@example.com")
+	createSCIMTestUser(t, st, "brian", "Brian Builder", "Builder", "Brian", "brian@example.com")
+
+	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Users?startIndex=1&count=1", nil)
+	rr := httptest.NewRecorder()
+
+	handler.Users(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if strings.Contains(strings.ToLower(rr.Body.String()), "userpassword") || strings.Contains(rr.Body.String(), "ARGON2") {
+		t.Fatalf("SCIM user list leaked password material: %s", rr.Body.String())
+	}
+
+	var body listResponse[userResource]
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode Users list: %v", err)
+	}
+	if !contains(body.Schemas, listResponseSchema) {
+		t.Fatalf("schemas = %v, want %s", body.Schemas, listResponseSchema)
+	}
+	if body.TotalResults < 2 || body.StartIndex != 1 || body.ItemsPerPage != 1 || len(body.Resources) != 1 {
+		t.Fatalf("list response = %+v, want one paged resource from at least two users", body)
+	}
+	if body.Resources[0].ID == "" || body.Resources[0].UserName == "" || body.Resources[0].Meta.Location == "" {
+		t.Fatalf("SCIM user resource missing identity/meta: %+v", body.Resources[0])
+	}
+}
+
+func TestUsersListSupportsSimpleFilters(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+	createSCIMTestUser(t, st, "filteruser", "Filter User", "User", "Filter", "filter@example.com")
+
+	req := httptest.NewRequest(http.MethodGet, `http://ldaplite.test/scim/v2/Users?filter=userName+eq+%22filteruser%22`, nil)
+	rr := httptest.NewRecorder()
+
+	handler.Users(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var body listResponse[userResource]
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode filtered Users list: %v", err)
+	}
+	if body.TotalResults != 1 || len(body.Resources) != 1 {
+		t.Fatalf("filtered list = %+v, want exactly one resource", body)
+	}
+	if got := body.Resources[0]; got.UserName != "filteruser" || got.DisplayName != "Filter User" || len(got.Emails) != 1 || got.Emails[0].Value != "filter@example.com" {
+		t.Fatalf("filtered user = %+v, want filteruser mapping", got)
+	}
+}
+
+func TestUserGetByStableID(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+	user := createSCIMTestUser(t, st, "iduser", "ID User", "User", "ID", "id@example.com")
+	id := user.GetAttribute("entryUUID")
+
+	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Users/"+id, nil)
+	rr := httptest.NewRecorder()
+
+	handler.Users(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var body userResource
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode SCIM user: %v", err)
+	}
+	if body.ID != id || body.UserName != "iduser" || body.Name.FamilyName != "User" || body.Name.GivenName != "ID" {
+		t.Fatalf("SCIM user = %+v, want iduser with stable id %s", body, id)
+	}
+	if body.Meta.ResourceType != "User" || !strings.Contains(body.Meta.Location, "/scim/v2/Users/"+id) {
+		t.Fatalf("meta = %+v, want User location with id", body.Meta)
+	}
+}
+
+func TestUsersReturnSCIMErrorsForUnsupportedReadInputs(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+
+	tests := []struct {
+		name       string
+		target     string
+		wantStatus int
+	}{
+		{
+			name:       "unsupported filter",
+			target:     `http://ldaplite.test/scim/v2/Users?filter=emails.value+eq+%22a@example.com%22`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing user",
+			target:     "http://ldaplite.test/scim/v2/Users/not-a-real-id",
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:       "bad pagination",
+			target:     "http://ldaplite.test/scim/v2/Users?startIndex=0",
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
+			rr := httptest.NewRecorder()
+
+			handler.Users(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", rr.Code, tt.wantStatus, rr.Body.String())
+			}
+			var body errorResponse
+			if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+				t.Fatalf("failed to decode SCIM error: %v", err)
+			}
+			if !contains(body.Schemas, errorSchema) {
+				t.Fatalf("schemas = %v, want SCIM error schema", body.Schemas)
+			}
+		})
+	}
+}
+
 func setupTestStore(t *testing.T) (*config.Config, store.Store) {
 	t.Helper()
 	t.Setenv("LDAP_ADMIN_PASSWORD", "TestPassword123!")
@@ -241,6 +378,24 @@ func setupTestStore(t *testing.T) (*config.Config, store.Store) {
 		t.Fatalf("Initialize() failed: %v", err)
 	}
 	return cfg, st
+}
+
+func createSCIMTestUser(t *testing.T, st store.Store, uid, cn, sn, givenName, mail string) *models.Entry {
+	t.Helper()
+
+	user := models.NewUser("ou=users,dc=test,dc=com", uid, cn, sn, mail)
+	user.SetPassword("{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=2$dummyhash$dummyhash")
+	if givenName != "" {
+		user.Entry.SetAttribute("givenName", givenName)
+	}
+	if err := st.CreateEntry(context.Background(), user.Entry); err != nil {
+		t.Fatalf("CreateEntry(%s) failed: %v", uid, err)
+	}
+	entry, err := st.GetEntry(context.Background(), user.DN)
+	if err != nil {
+		t.Fatalf("GetEntry(%s) failed: %v", user.DN, err)
+	}
+	return entry
 }
 
 func contains(values []string, want string) bool {

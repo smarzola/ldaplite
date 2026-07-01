@@ -554,6 +554,70 @@ func TestSCIMDiscoveryRoutesReturnSCIMMethodErrors(t *testing.T) {
 	}
 }
 
+func TestSCIMUsersRouteUsesDirectoryReadAuthorization(t *testing.T) {
+	srv, st := setupTestServer(t)
+	defer st.Close()
+
+	createTestUser(t, st, "regularuser", "RegularPassword123!")
+	createTestUser(t, st, "passworduser", "PasswordOnly123!")
+	createTestGroup(t, st, "ldaplite.password", "uid=passworduser,ou=users,dc=test,dc=com")
+	createTestUserWithAttrs(t, st, "scimreader", "ReaderPassword123!", map[string][]string{
+		"cn":        {"SCIM Reader"},
+		"sn":        {"Reader"},
+		"givenName": {"SCIM"},
+		"mail":      {"scimreader@example.com"},
+	})
+
+	readReq := httptest.NewRequest(http.MethodGet, `http://ldaplite.test/scim/v2/Users?filter=userName+eq+%22scimreader%22`, nil)
+	readReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	readRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(readRR, readReq)
+
+	if readRR.Code != http.StatusOK {
+		t.Fatalf("directory reader status = %d, want %d; body=%s", readRR.Code, http.StatusOK, readRR.Body.String())
+	}
+	if strings.Contains(strings.ToLower(readRR.Body.String()), "userpassword") || strings.Contains(readRR.Body.String(), "ReaderPassword123") || strings.Contains(readRR.Body.String(), "ARGON2") {
+		t.Fatalf("SCIM users response leaked password material: %s", readRR.Body.String())
+	}
+	var users struct {
+		TotalResults int `json:"totalResults"`
+		Resources    []struct {
+			ID       string `json:"id"`
+			UserName string `json:"userName"`
+			Emails   []struct {
+				Value string `json:"value"`
+			} `json:"emails"`
+		} `json:"Resources"`
+	}
+	if err := json.Unmarshal(readRR.Body.Bytes(), &users); err != nil {
+		t.Fatalf("failed to decode SCIM users response: %v", err)
+	}
+	if users.TotalResults != 1 || len(users.Resources) != 1 || users.Resources[0].UserName != "scimreader" || users.Resources[0].ID == "" {
+		t.Fatalf("SCIM users response = %+v, want scimreader with stable id", users)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Users/"+users.Resources[0].ID, nil)
+	getReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	getRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(getRR, getReq)
+
+	if getRR.Code != http.StatusOK {
+		t.Fatalf("SCIM user get status = %d, want %d; body=%s", getRR.Code, http.StatusOK, getRR.Body.String())
+	}
+
+	passwordOnlyReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Users", nil)
+	passwordOnlyReq.Header.Set("Authorization", basicAuth("passworduser:PasswordOnly123!"))
+	passwordOnlyRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(passwordOnlyRR, passwordOnlyReq)
+
+	if passwordOnlyRR.Code != http.StatusForbidden {
+		t.Fatalf("password-only status = %d, want %d; body=%s", passwordOnlyRR.Code, http.StatusForbidden, passwordOnlyRR.Body.String())
+	}
+}
+
 func TestAdminDirectoryWriteAPI(t *testing.T) {
 	srv, st := setupTestServer(t)
 	defer st.Close()

@@ -126,6 +126,8 @@ func (s *Server) setupRoutes() {
 	s.mux.Handle("/scim/v2/ServiceProviderConfig", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.ServiceProviderConfig)))
 	s.mux.Handle("/scim/v2/Schemas", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.Schemas)))
 	s.mux.Handle("/scim/v2/ResourceTypes", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.ResourceTypes)))
+	s.mux.Handle("/scim/v2/Users", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.Users)))
+	s.mux.Handle("/scim/v2/Users/", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.Users)))
 
 	// User routes
 	s.mux.Handle("/users", readProtected(userHandler.List))
