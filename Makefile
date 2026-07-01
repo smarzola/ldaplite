@@ -2,7 +2,7 @@
 
 # Variables
 BINARY_NAME=ldaplite
-VERSION?=0.15.0
+VERSION?=0.16.0
 GO=go
 DOCKER=docker
 LDFLAGS=-ldflags "-w -s"
