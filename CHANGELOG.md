@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Documentation
+
+- Reorganized public operator documentation away from internal prompts, design
+  history, audits, and goal-loop summaries.
+- Added a public documentation index and LDIF import/export reference.
+- Refreshed roadmap, compatibility, quick start, and agent-guide documentation
+  for post-`v0.16.0` release readiness.
+
 ## v0.16.0 - 2026-07-02
 
 ### Import And Export
@@ -216,5 +226,5 @@ This release is a security and interoperability hardening release.
 
 - Updated `picomatch` to `2.3.2`.
 - Aligned Go version claims across CI, release builds, Docker, README, and QUICKSTART.
-- Added `docs/ROADMAP.md` and split the broad future-development issue into focused roadmap issues.
+- Added `docs/roadmap.md` and split the broad future-development issue into focused roadmap issues.
 - Marked stale planning docs as historical.

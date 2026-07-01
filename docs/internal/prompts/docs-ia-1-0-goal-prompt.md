@@ -191,7 +191,7 @@ When a milestone is complete:
 - [x] Milestone 2: Normalize Public Documentation Names And Links
 - [x] Milestone 3: Refresh Public Product Truth
 - [x] Milestone 4: Root Documentation And Agent Guide Cleanup
-- [ ] Milestone 5: Final Link Audit, Regression Checks, And 1.0 Release Notes
+- [x] Milestone 5: Final Link Audit, Regression Checks, And 1.0 Release Notes
 
 ## Milestone 0: Inventory, Classification, And Link Map
 
@@ -511,7 +511,7 @@ Status notes:
   duplicated. Updated `AGENTS.md` source map for the public docs index and
   internal prompts. Verification commands run:
   `find . -maxdepth 2 -name '*.md' -type f | sort` and
-  `grep -R "CLAUDE.md\\|CLIENT_COMPATIBILITY_PRODUCT_SUMMARY\\|docs/ROADMAP.md\\|docs/SCIM.md" -n README.md AGENTS.md QUICKSTART.md docs || true`.
+  `grep -R "CLAUDE.md\\|client-compatibility-product-summary\\|docs/roadmap.md\\|docs/scim.md" -n README.md AGENTS.md QUICKSTART.md docs || true`.
   The grep output only reported `CLAUDE.md` mentions inside internal historical
   docs and this active prompt.
 
@@ -571,7 +571,22 @@ embedded assets, commands, release metadata, or code changed.
 
 Status notes:
 
-- Pending.
+- 2026-07-02: Added an `Unreleased` changelog entry for the documentation IA
+  cleanup. Ran the final path audits:
+  `find . -maxdepth 4 -name '*.md' -type f | sort`,
+  `grep -R "docs/[A-Z_][A-Z_]*\\.md\\|GOAL_PROMPT\\|PRODUCT_SUMMARY\\|IMPORT_EXPORT_DESIGN" -n README.md docs/*.md docs/deployment docs/integrations AGENTS.md || true`,
+  a targeted `rg` check for legacy moved documentation paths,
+  and
+  `rg -n "\\]\\((docs/internal/|internal/)" README.md docs/*.md docs/deployment docs/integrations AGENTS.md || true`.
+  The old moved-path audit returned no matches. The broad uppercase-doc grep
+  only reported intentional conventional `docs/README.md` references. The
+  public-to-internal link check only reported the explicit `docs/README.md`
+  note that internal implementation material lives under `internal/`.
+
+  Regression verification: the first sandboxed `make test` built the Web UI
+  assets but failed because Go could not access the normal build cache
+  (`operation not permitted`). Reran `make test` outside the sandbox and it
+  passed. Ran `make test-functional` outside the sandbox and it passed.
 
 Commit requirement:
 
