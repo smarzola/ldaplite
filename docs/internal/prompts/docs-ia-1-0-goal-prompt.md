@@ -190,7 +190,7 @@ When a milestone is complete:
 - [x] Milestone 1: Create Internal Documentation Layout And Move Historical Files
 - [x] Milestone 2: Normalize Public Documentation Names And Links
 - [x] Milestone 3: Refresh Public Product Truth
-- [ ] Milestone 4: Root Documentation And Agent Guide Cleanup
+- [x] Milestone 4: Root Documentation And Agent Guide Cleanup
 - [ ] Milestone 5: Final Link Audit, Regression Checks, And 1.0 Release Notes
 
 ## Milestone 0: Inventory, Classification, And Link Map
@@ -505,7 +505,15 @@ grep -R "CLAUDE.md\\|CLIENT_COMPATIBILITY_PRODUCT_SUMMARY\\|docs/roadmap.md\\|do
 
 Status notes:
 
-- Pending.
+- 2026-07-02: Refreshed `QUICKSTART.md` around current Docker Compose, local
+  binary, Web UI, LDAP smoke-test, and LDIF import/export flows. Reduced
+  `CLAUDE.md` to a pointer to `AGENTS.md` so repository guidance is not
+  duplicated. Updated `AGENTS.md` source map for the public docs index and
+  internal prompts. Verification commands run:
+  `find . -maxdepth 2 -name '*.md' -type f | sort` and
+  `grep -R "CLAUDE.md\\|CLIENT_COMPATIBILITY_PRODUCT_SUMMARY\\|docs/ROADMAP.md\\|docs/SCIM.md" -n README.md AGENTS.md QUICKSTART.md docs || true`.
+  The grep output only reported `CLAUDE.md` mentions inside internal historical
+  docs and this active prompt.
 
 Commit requirement:
 
