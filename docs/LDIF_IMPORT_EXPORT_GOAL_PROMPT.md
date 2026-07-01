@@ -189,7 +189,7 @@ When a milestone is complete:
 - [x] Milestone 1: LDIF Parser And Writer Primitives
 - [x] Milestone 2: Import Planning And Dry-Run Validation
 - [x] Milestone 3: Import Write Path And CLI Command
-- [ ] Milestone 4: Export Path And CLI Command
+- [x] Milestone 4: Export Path And CLI Command
 - [ ] Milestone 5: Optional Import/Export Flags
 - [ ] Milestone 6: Functional Coverage, Docs, And Final Regression
 
@@ -461,6 +461,17 @@ Verification:
 npm run build:css
 go test ./cmd/ldaplite ./internal/ldif ./internal/store ./internal/models
 ```
+
+Status notes:
+
+- 2026-07-01: Added safe LDIF export record building and `ldaplite export ldif`
+  with stdout/file output, parent-before-child ordering, password/hash
+  redaction by default, computed `memberOf` omission, and opt-in operational
+  attributes plus redacted password placeholders. Added internal and command
+  tests for safe stdout export, file export, optional fields, parseable output,
+  and ordering. Verification commands: `npm run build:css` and
+  `go test ./cmd/ldaplite ./internal/ldif ./internal/store ./internal/models`;
+  both passed.
 
 Commit requirement:
 
