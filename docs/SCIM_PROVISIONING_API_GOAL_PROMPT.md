@@ -224,7 +224,7 @@ When a milestone is complete:
    milestone.
 
 - [x] Milestone 0: Baseline contract and test harness.
-- [ ] Milestone 1: SCIM discovery, shared response types, and error handling.
+- [x] Milestone 1: SCIM discovery, shared response types, and error handling.
 - [ ] Milestone 2: User read/list/filter endpoints.
 - [ ] Milestone 3: User provisioning writes.
 - [ ] Milestone 4: Group read/list/filter endpoints.
@@ -277,7 +277,7 @@ Status note, 2026-07-01:
 - Result: passed. The first sandboxed test attempt could not resolve
   `proxy.golang.org` while populating the temporary module cache; the command
   passed after rerunning with network access.
-- Commit: pending checkpoint commit.
+- Commit: `b995bbb`.
 
 Commit requirement:
 
@@ -323,6 +323,15 @@ Verification:
 ```bash
 go test ./internal/scim ./internal/web
 ```
+
+Status note, 2026-07-01:
+
+- Commands run:
+  `/opt/homebrew/opt/go@1.25/bin/gofmt -w internal/scim/contract.go internal/scim/handler.go internal/scim/handler_test.go internal/web/server.go internal/web/server_test.go`
+  and
+  `GOCACHE=/private/tmp/ldaplite-go-cache GOMODCACHE=/private/tmp/ldaplite-go-mod /opt/homebrew/opt/go@1.25/bin/go test ./internal/scim ./internal/web`.
+- Result: passed.
+- Commit: pending checkpoint commit.
 
 Commit requirement:
 

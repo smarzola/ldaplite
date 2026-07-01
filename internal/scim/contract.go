@@ -6,7 +6,13 @@ const (
 	BasePath    = "/scim/v2"
 	ContentType = "application/scim+json"
 
-	errorSchema = "urn:ietf:params:scim:api:messages:2.0:Error"
+	errorSchema                 = "urn:ietf:params:scim:api:messages:2.0:Error"
+	listResponseSchema          = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+	serviceProviderConfigSchema = "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"
+	schemaSchema                = "urn:ietf:params:scim:schemas:core:2.0:Schema"
+	resourceTypeSchema          = "urn:ietf:params:scim:schemas:core:2.0:ResourceType"
+	userSchema                  = "urn:ietf:params:scim:schemas:core:2.0:User"
+	groupSchema                 = "urn:ietf:params:scim:schemas:core:2.0:Group"
 )
 
 type Contract struct {

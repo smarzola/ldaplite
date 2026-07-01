@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/smarzola/ldaplite/internal/authz"
+	"github.com/smarzola/ldaplite/internal/scim"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/internal/web/handlers"
 	"github.com/smarzola/ldaplite/internal/web/middleware"
@@ -70,6 +71,7 @@ func (s *Server) setupRoutes() {
 	groupHandler := handlers.NewGroupHandler(s.store, s.cfg, s.GetTemplate)
 	ouHandler := handlers.NewOUHandler(s.store, s.cfg, s.GetTemplate)
 	apiHandler := handlers.NewAPIHandler(s.store, s.cfg)
+	scimHandler := scim.NewHandler(s.store, s.cfg)
 	readProtected := func(handler http.HandlerFunc) http.Handler {
 		return auth.RequireCapability(authz.UIRead, handler)
 	}
@@ -119,6 +121,11 @@ func (s *Server) setupRoutes() {
 	s.mux.Handle("/api/ous", adminProtected(apiHandler.OUs))
 	s.mux.Handle("/api/account/password", passwordSelfProtected(apiHandler.ChangeOwnPassword))
 	s.mux.Handle("/api/users/password", passwordResetProtected(apiHandler.ResetPassword))
+
+	// SCIM discovery routes
+	s.mux.Handle("/scim/v2/ServiceProviderConfig", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.ServiceProviderConfig)))
+	s.mux.Handle("/scim/v2/Schemas", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.Schemas)))
+	s.mux.Handle("/scim/v2/ResourceTypes", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.ResourceTypes)))
 
 	// User routes
 	s.mux.Handle("/users", readProtected(userHandler.List))

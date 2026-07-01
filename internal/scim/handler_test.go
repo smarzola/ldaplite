@@ -90,6 +90,127 @@ func TestHandlerReturnsDeliberateNotImplementedBeforeRoutesAreMounted(t *testing
 	}
 }
 
+func TestServiceProviderConfigDiscovery(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/ServiceProviderConfig", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServiceProviderConfig(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); got != ContentType {
+		t.Fatalf("Content-Type = %q, want %q", got, ContentType)
+	}
+
+	var body serviceProviderConfigResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode ServiceProviderConfig: %v", err)
+	}
+	if !contains(body.Schemas, serviceProviderConfigSchema) {
+		t.Fatalf("schemas = %v, want %s", body.Schemas, serviceProviderConfigSchema)
+	}
+	if body.Patch.Supported {
+		t.Fatal("patch.supported = true, want false")
+	}
+	if body.Bulk.Supported {
+		t.Fatal("bulk.supported = true, want false")
+	}
+	if !body.Filter.Supported {
+		t.Fatal("filter.supported = false, want true")
+	}
+	if len(body.AuthenticationSchemes) != 1 || body.AuthenticationSchemes[0].Type != "httpbasic" || !body.AuthenticationSchemes[0].Primary {
+		t.Fatalf("authenticationSchemes = %+v, want primary httpbasic", body.AuthenticationSchemes)
+	}
+}
+
+func TestSchemasDiscovery(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Schemas", nil)
+	rr := httptest.NewRecorder()
+
+	handler.Schemas(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var body listResponse[schemaResource]
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode Schemas response: %v", err)
+	}
+	if !contains(body.Schemas, listResponseSchema) {
+		t.Fatalf("schemas = %v, want %s", body.Schemas, listResponseSchema)
+	}
+	if body.TotalResults != 2 || body.ItemsPerPage != 2 || body.StartIndex != 1 {
+		t.Fatalf("list metadata = %+v, want two resources at start index 1", body)
+	}
+	if body.Resources[0].ID != userSchema || body.Resources[1].ID != groupSchema {
+		t.Fatalf("schema resource ids = %+v, want user and group schemas", body.Resources)
+	}
+}
+
+func TestResourceTypesDiscovery(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/ResourceTypes", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ResourceTypes(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var body listResponse[resourceTypeResource]
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode ResourceTypes response: %v", err)
+	}
+	if body.TotalResults != 2 || len(body.Resources) != 2 {
+		t.Fatalf("resource types = %+v, want two resources", body)
+	}
+	if body.Resources[0].Endpoint != BasePath+"/Users" || body.Resources[0].Schema != userSchema {
+		t.Fatalf("user resource type = %+v, want Users endpoint and user schema", body.Resources[0])
+	}
+	if body.Resources[1].Endpoint != BasePath+"/Groups" || body.Resources[1].Schema != groupSchema {
+		t.Fatalf("group resource type = %+v, want Groups endpoint and group schema", body.Resources[1])
+	}
+}
+
+func TestDiscoveryRejectsUnsupportedMethodsWithSCIMError(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+
+	req := httptest.NewRequest(http.MethodPost, "http://ldaplite.test/scim/v2/ServiceProviderConfig", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServiceProviderConfig(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusMethodNotAllowed, rr.Body.String())
+	}
+	if got := rr.Header().Get("Allow"); got != http.MethodGet {
+		t.Fatalf("Allow = %q, want GET", got)
+	}
+	var body errorResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode SCIM error: %v", err)
+	}
+	if body.Status != "405" || !contains(body.Schemas, errorSchema) {
+		t.Fatalf("error response = %+v, want SCIM 405", body)
+	}
+}
+
 func setupTestStore(t *testing.T) (*config.Config, store.Store) {
 	t.Helper()
 	t.Setenv("LDAP_ADMIN_PASSWORD", "TestPassword123!")

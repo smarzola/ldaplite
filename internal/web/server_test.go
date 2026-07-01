@@ -467,6 +467,93 @@ func TestPasswordOnlyUserCannotReachDirectorySearchOrDetailAPIs(t *testing.T) {
 	}
 }
 
+func TestSCIMDiscoveryRoutesRequireDirectoryRead(t *testing.T) {
+	srv, st := setupTestServer(t)
+	defer st.Close()
+
+	createTestUser(t, st, "regularuser", "RegularPassword123!")
+	createTestUser(t, st, "passworduser", "PasswordOnly123!")
+	createTestGroup(t, st, "ldaplite.password", "uid=passworduser,ou=users,dc=test,dc=com")
+
+	unauthReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/ServiceProviderConfig", nil)
+	unauthRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(unauthRR, unauthReq)
+
+	if unauthRR.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status = %d, want %d; body=%s", unauthRR.Code, http.StatusUnauthorized, unauthRR.Body.String())
+	}
+	if got := unauthRR.Header().Get("WWW-Authenticate"); got == "" {
+		t.Fatal("unauthenticated response missing WWW-Authenticate header")
+	}
+
+	readReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/ServiceProviderConfig", nil)
+	readReq.Header.Set("Authorization", basicAuth("regularuser:RegularPassword123!"))
+	readRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(readRR, readReq)
+
+	if readRR.Code != http.StatusOK {
+		t.Fatalf("directory reader status = %d, want %d; body=%s", readRR.Code, http.StatusOK, readRR.Body.String())
+	}
+	if got := readRR.Header().Get("Content-Type"); got != "application/scim+json" {
+		t.Fatalf("Content-Type = %q, want application/scim+json", got)
+	}
+	var configResponse struct {
+		Schemas []string `json:"schemas"`
+		Patch   struct {
+			Supported bool `json:"supported"`
+		} `json:"patch"`
+	}
+	if err := json.Unmarshal(readRR.Body.Bytes(), &configResponse); err != nil {
+		t.Fatalf("failed to decode ServiceProviderConfig: %v", err)
+	}
+	if !containsString(configResponse.Schemas, "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig") {
+		t.Fatalf("schemas = %v, want ServiceProviderConfig", configResponse.Schemas)
+	}
+	if configResponse.Patch.Supported {
+		t.Fatal("patch.supported = true, want false")
+	}
+
+	passwordOnlyReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/ServiceProviderConfig", nil)
+	passwordOnlyReq.Header.Set("Authorization", basicAuth("passworduser:PasswordOnly123!"))
+	passwordOnlyRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(passwordOnlyRR, passwordOnlyReq)
+
+	if passwordOnlyRR.Code != http.StatusForbidden {
+		t.Fatalf("password-only status = %d, want %d; body=%s", passwordOnlyRR.Code, http.StatusForbidden, passwordOnlyRR.Body.String())
+	}
+}
+
+func TestSCIMDiscoveryRoutesReturnSCIMMethodErrors(t *testing.T) {
+	srv, st := setupTestServer(t)
+	defer st.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "http://ldaplite.test/scim/v2/ServiceProviderConfig", nil)
+	req.Header.Set("Authorization", basicAuth("admin:TestPassword123!"))
+	rr := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusMethodNotAllowed, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); got != "application/scim+json" {
+		t.Fatalf("Content-Type = %q, want application/scim+json", got)
+	}
+	var body struct {
+		Schemas []string `json:"schemas"`
+		Status  string   `json:"status"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode SCIM error: %v", err)
+	}
+	if body.Status != "405" || !containsString(body.Schemas, "urn:ietf:params:scim:api:messages:2.0:Error") {
+		t.Fatalf("SCIM error = %+v, want 405 error schema", body)
+	}
+}
+
 func TestAdminDirectoryWriteAPI(t *testing.T) {
 	srv, st := setupTestServer(t)
 	defer st.Close()
