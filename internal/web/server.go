@@ -126,8 +126,9 @@ func (s *Server) setupRoutes() {
 	s.mux.Handle("/scim/v2/ServiceProviderConfig", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.ServiceProviderConfig)))
 	s.mux.Handle("/scim/v2/Schemas", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.Schemas)))
 	s.mux.Handle("/scim/v2/ResourceTypes", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.ResourceTypes)))
-	s.mux.Handle("/scim/v2/Users", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.Users)))
-	s.mux.Handle("/scim/v2/Users/", auth.RequireCapability(authz.DirectoryRead, http.HandlerFunc(scimHandler.Users)))
+	scimUsers := methodCapabilityHandler(auth, authz.DirectoryRead, authz.DirectoryWrite, http.HandlerFunc(scimHandler.Users))
+	s.mux.Handle("/scim/v2/Users", scimUsers)
+	s.mux.Handle("/scim/v2/Users/", scimUsers)
 
 	// User routes
 	s.mux.Handle("/users", readProtected(userHandler.List))
@@ -146,6 +147,16 @@ func (s *Server) setupRoutes() {
 	s.mux.Handle("/ous/new", adminProtected(ouHandler.New))
 	s.mux.Handle("/ous/edit", adminProtected(ouHandler.Edit))
 	s.mux.Handle("/ous/delete", adminProtected(ouHandler.Delete))
+}
+
+func methodCapabilityHandler(auth *middleware.Auth, readCapability, writeCapability authz.Capability, handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			auth.RequireCapability(readCapability, handler).ServeHTTP(w, r)
+			return
+		}
+		auth.RequireCapability(writeCapability, handler).ServeHTTP(w, r)
+	})
 }
 
 func mustSubFS(fsys fs.FS, dir string) fs.FS {

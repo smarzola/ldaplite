@@ -2,6 +2,7 @@ package scim
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"sort"
@@ -144,19 +145,20 @@ func (h *Handler) ResourceTypes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Users(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeSCIMError(w, http.StatusNotImplemented, "SCIM user writes are not implemented yet")
-		return
-	}
-	if r.URL.Path == BasePath+"/Users" {
+	switch {
+	case r.Method == http.MethodGet && r.URL.Path == BasePath+"/Users":
 		h.listUsers(w, r)
-		return
-	}
-	if strings.HasPrefix(r.URL.Path, BasePath+"/Users/") {
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, BasePath+"/Users/"):
 		h.getUser(w, r)
-		return
+	case r.Method == http.MethodPost && r.URL.Path == BasePath+"/Users":
+		h.createUser(w, r)
+	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, BasePath+"/Users/"):
+		h.replaceUser(w, r)
+	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, BasePath+"/Users/"):
+		h.deleteUser(w, r)
+	default:
+		writeSCIMError(w, http.StatusMethodNotAllowed, "Method not allowed")
 	}
-	writeSCIMError(w, http.StatusNotFound, "SCIM user endpoint not found")
 }
 
 func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
@@ -212,6 +214,81 @@ func (h *Handler) getUser(w http.ResponseWriter, r *http.Request) {
 	writeSCIMJSON(w, http.StatusOK, h.userResource(r, entry))
 }
 
+func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
+	var input userRequest
+	if !decodeSCIMJSON(w, r, &input) {
+		return
+	}
+	directoryInput, err := h.userDirectoryInput(input, "", true)
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	entry, err := h.service.CreateUser(r.Context(), directoryInput)
+	if err != nil {
+		writeDirectoryError(w, err)
+		return
+	}
+	resource := h.userResource(r, entry)
+	w.Header().Set("Location", resource.Meta.Location)
+	writeSCIMJSON(w, http.StatusCreated, resource)
+}
+
+func (h *Handler) replaceUser(w http.ResponseWriter, r *http.Request) {
+	id, err := pathResourceID(r.URL.Path, BasePath+"/Users/")
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	entry, ok, err := h.userByID(r, id)
+	if err != nil {
+		writeSCIMError(w, http.StatusInternalServerError, "Failed to load SCIM user")
+		return
+	}
+	if !ok {
+		writeSCIMError(w, http.StatusNotFound, "SCIM user not found")
+		return
+	}
+
+	var input userRequest
+	if !decodeSCIMJSON(w, r, &input) {
+		return
+	}
+	directoryInput, err := h.userDirectoryInput(input, entry.GetAttribute("uid"), false)
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated, err := h.service.UpdateUser(r.Context(), entry.DN, directoryInput)
+	if err != nil {
+		writeDirectoryError(w, err)
+		return
+	}
+	writeSCIMJSON(w, http.StatusOK, h.userResource(r, updated))
+}
+
+func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request) {
+	id, err := pathResourceID(r.URL.Path, BasePath+"/Users/")
+	if err != nil {
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	entry, ok, err := h.userByID(r, id)
+	if err != nil {
+		writeSCIMError(w, http.StatusInternalServerError, "Failed to load SCIM user")
+		return
+	}
+	if !ok {
+		writeSCIMError(w, http.StatusNotFound, "SCIM user not found")
+		return
+	}
+	if err := h.service.DeleteEntry(r.Context(), entry.DN); err != nil {
+		writeDirectoryError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) userByID(r *http.Request, id string) (*models.Entry, bool, error) {
 	entries, err := h.store.SearchEntriesWithOptions(r.Context(), store.SearchOptions{
 		BaseDN:          h.cfg.LDAP.BaseDN,
@@ -253,6 +330,38 @@ func (h *Handler) userResource(r *http.Request, entry *models.Entry) userResourc
 	return resource
 }
 
+func (h *Handler) userDirectoryInput(input userRequest, existingUID string, requirePassword bool) (directory.UserInput, error) {
+	if input.Active != nil {
+		return directory.UserInput{}, requestError("SCIM active state changes are not supported")
+	}
+	uid := strings.TrimSpace(input.UserName)
+	if uid == "" {
+		return directory.UserInput{}, requestError("userName is required")
+	}
+	if existingUID != "" && !strings.EqualFold(uid, existingUID) {
+		return directory.UserInput{}, requestError("Changing userName is not supported")
+	}
+
+	cn := strings.TrimSpace(input.DisplayName)
+	if cn == "" {
+		cn = strings.TrimSpace(input.Name.Formatted)
+	}
+	sn := strings.TrimSpace(input.Name.FamilyName)
+	if requirePassword && strings.TrimSpace(input.Password) == "" {
+		return directory.UserInput{}, requestError("password is required")
+	}
+
+	return directory.UserInput{
+		ParentDN:  "ou=users," + h.cfg.LDAP.BaseDN,
+		UID:       uid,
+		CN:        cn,
+		SN:        sn,
+		GivenName: input.Name.GivenName,
+		Mail:      primaryEmail(input.Emails),
+		Password:  input.Password,
+	}, nil
+}
+
 func requireMethod(w http.ResponseWriter, r *http.Request, method string) bool {
 	if r.Method == method {
 		return true
@@ -274,6 +383,35 @@ func writeSCIMError(w http.ResponseWriter, status int, detail string) {
 		Detail:  detail,
 		Status:  strconv.Itoa(status),
 	})
+}
+
+func writeDirectoryError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, directory.ErrInvalidRequest),
+		errors.Is(err, directory.ErrProtectedAttribute),
+		errors.Is(err, directory.ErrUnsupportedObject),
+		errors.Is(err, directory.ErrPasswordNotProvided),
+		errors.Is(err, store.ErrConstraintViolation),
+		errors.Is(err, store.ErrObjectClassViolation):
+		writeSCIMError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, store.ErrNoSuchObject):
+		writeSCIMError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, store.ErrEntryAlreadyExists):
+		writeSCIMError(w, http.StatusConflict, err.Error())
+	default:
+		writeSCIMError(w, http.StatusInternalServerError, "SCIM directory operation failed")
+	}
+}
+
+func decodeSCIMJSON(w http.ResponseWriter, r *http.Request, target any) bool {
+	defer r.Body.Close()
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		writeSCIMError(w, http.StatusBadRequest, "Invalid SCIM JSON request")
+		return false
+	}
+	return true
 }
 
 func newListResponse[T any](resources []T, startIndex int) listResponse[T] {
@@ -436,6 +574,20 @@ func formatSCIMTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
+func primaryEmail(emails []emailResource) string {
+	for _, email := range emails {
+		if email.Primary && strings.TrimSpace(email.Value) != "" {
+			return strings.TrimSpace(email.Value)
+		}
+	}
+	for _, email := range emails {
+		if strings.TrimSpace(email.Value) != "" {
+			return strings.TrimSpace(email.Value)
+		}
+	}
+	return ""
+}
+
 type serviceProviderConfigResponse struct {
 	Schemas               []string               `json:"schemas"`
 	Patch                 supportedConfig        `json:"patch"`
@@ -485,6 +637,16 @@ type userResource struct {
 	DisplayName string          `json:"displayName"`
 	Emails      []emailResource `json:"emails,omitempty"`
 	Meta        metaResource    `json:"meta"`
+}
+
+type userRequest struct {
+	Schemas     []string        `json:"schemas,omitempty"`
+	UserName    string          `json:"userName"`
+	Name        nameResource    `json:"name"`
+	DisplayName string          `json:"displayName"`
+	Emails      []emailResource `json:"emails,omitempty"`
+	Password    string          `json:"password,omitempty"`
+	Active      *bool           `json:"active,omitempty"`
 }
 
 type nameResource struct {

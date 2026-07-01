@@ -12,6 +12,7 @@ import (
 	"github.com/smarzola/ldaplite/internal/models"
 	"github.com/smarzola/ldaplite/internal/store"
 	"github.com/smarzola/ldaplite/pkg/config"
+	"github.com/smarzola/ldaplite/pkg/crypto"
 )
 
 func TestDefaultContractCapturesBaselineScope(t *testing.T) {
@@ -348,6 +349,139 @@ func TestUsersReturnSCIMErrorsForUnsupportedReadInputs(t *testing.T) {
 	}
 }
 
+func TestUserCreateReplaceAndDeleteUseDirectoryService(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+
+	createReq := scimJSONRequest(t, http.MethodPost, "http://ldaplite.test/scim/v2/Users", userRequest{
+		UserName:    "provisioned",
+		DisplayName: "Provisioned User",
+		Name: nameResource{
+			GivenName:  "Provisioned",
+			FamilyName: "User",
+		},
+		Emails:   []emailResource{{Value: "provisioned@example.com", Primary: true}},
+		Password: "ProvisionedPassword123!",
+	})
+	createRR := httptest.NewRecorder()
+
+	handler.Users(createRR, createReq)
+
+	if createRR.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d; body=%s", createRR.Code, http.StatusCreated, createRR.Body.String())
+	}
+	if strings.Contains(createRR.Body.String(), "ProvisionedPassword123!") || strings.Contains(createRR.Body.String(), "ARGON2") {
+		t.Fatalf("create response leaked password material: %s", createRR.Body.String())
+	}
+	var created userResource
+	if err := json.Unmarshal(createRR.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode created user: %v", err)
+	}
+	if created.ID == "" || created.UserName != "provisioned" || createRR.Header().Get("Location") == "" {
+		t.Fatalf("created user = %+v Location=%q, want id, username, and Location", created, createRR.Header().Get("Location"))
+	}
+	assertPasswordValid(t, st, "provisioned", "ProvisionedPassword123!")
+
+	replaceReq := scimJSONRequest(t, http.MethodPut, "http://ldaplite.test/scim/v2/Users/"+created.ID, userRequest{
+		UserName:    "provisioned",
+		DisplayName: "Provisioned Renamed",
+		Name: nameResource{
+			GivenName:  "Renamed",
+			FamilyName: "Person",
+		},
+		Emails:   []emailResource{{Value: "renamed@example.com", Primary: true}},
+		Password: "ProvisionedChanged123!",
+	})
+	replaceRR := httptest.NewRecorder()
+
+	handler.Users(replaceRR, replaceReq)
+
+	if replaceRR.Code != http.StatusOK {
+		t.Fatalf("replace status = %d, want %d; body=%s", replaceRR.Code, http.StatusOK, replaceRR.Body.String())
+	}
+	var replaced userResource
+	if err := json.Unmarshal(replaceRR.Body.Bytes(), &replaced); err != nil {
+		t.Fatalf("failed to decode replaced user: %v", err)
+	}
+	if replaced.ID != created.ID || replaced.DisplayName != "Provisioned Renamed" || replaced.Name.FamilyName != "Person" || len(replaced.Emails) != 1 || replaced.Emails[0].Value != "renamed@example.com" {
+		t.Fatalf("replaced user = %+v, want renamed user with stable id %s", replaced, created.ID)
+	}
+	assertPasswordValid(t, st, "provisioned", "ProvisionedChanged123!")
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "http://ldaplite.test/scim/v2/Users/"+created.ID, nil)
+	deleteRR := httptest.NewRecorder()
+
+	handler.Users(deleteRR, deleteReq)
+
+	if deleteRR.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d; body=%s", deleteRR.Code, http.StatusNoContent, deleteRR.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "http://ldaplite.test/scim/v2/Users/"+created.ID, nil)
+	getRR := httptest.NewRecorder()
+
+	handler.Users(getRR, getReq)
+
+	if getRR.Code != http.StatusNotFound {
+		t.Fatalf("get deleted status = %d, want %d; body=%s", getRR.Code, http.StatusNotFound, getRR.Body.String())
+	}
+}
+
+func TestUserWritesRejectUnsupportedFields(t *testing.T) {
+	cfg, st := setupTestStore(t)
+	defer st.Close()
+	handler := NewHandler(st, cfg)
+	user := createSCIMTestUser(t, st, "blockedwrite", "Blocked Write", "Write", "Blocked", "blocked@example.com")
+
+	tests := []struct {
+		name   string
+		method string
+		target string
+		body   string
+	}{
+		{
+			name:   "active state",
+			method: http.MethodPost,
+			target: "http://ldaplite.test/scim/v2/Users",
+			body:   `{"userName":"activeuser","displayName":"Active User","name":{"familyName":"User"},"password":"Secret123!","active":true}`,
+		},
+		{
+			name:   "unknown protected-looking field",
+			method: http.MethodPost,
+			target: "http://ldaplite.test/scim/v2/Users",
+			body:   `{"userName":"badfield","displayName":"Bad Field","name":{"familyName":"Field"},"password":"Secret123!","entryUUID":"client"}`,
+		},
+		{
+			name:   "rename userName",
+			method: http.MethodPut,
+			target: "http://ldaplite.test/scim/v2/Users/" + user.GetAttribute("entryUUID"),
+			body:   `{"userName":"renameduid","displayName":"Blocked Write","name":{"familyName":"Write"}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.target, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", ContentType)
+			rr := httptest.NewRecorder()
+
+			handler.Users(rr, req)
+
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d; body=%s", rr.Code, http.StatusBadRequest, rr.Body.String())
+			}
+			var body errorResponse
+			if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+				t.Fatalf("failed to decode SCIM error: %v", err)
+			}
+			if !contains(body.Schemas, errorSchema) {
+				t.Fatalf("schemas = %v, want SCIM error schema", body.Schemas)
+			}
+		})
+	}
+}
+
 func setupTestStore(t *testing.T) (*config.Config, store.Store) {
 	t.Helper()
 	t.Setenv("LDAP_ADMIN_PASSWORD", "TestPassword123!")
@@ -396,6 +530,41 @@ func createSCIMTestUser(t *testing.T, st store.Store, uid, cn, sn, givenName, ma
 		t.Fatalf("GetEntry(%s) failed: %v", user.DN, err)
 	}
 	return entry
+}
+
+func scimJSONRequest(t *testing.T, method, target string, payload any) *http.Request {
+	t.Helper()
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("Marshal(%T) failed: %v", payload, err)
+	}
+	req := httptest.NewRequest(method, target, strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", ContentType)
+	return req
+}
+
+func assertPasswordValid(t *testing.T, st store.Store, uid, password string) {
+	t.Helper()
+
+	hash, _, err := st.GetUserPasswordHash(context.Background(), uid)
+	if err != nil {
+		t.Fatalf("GetUserPasswordHash(%s) failed: %v", uid, err)
+	}
+	hasher := crypto.NewPasswordHasher(config.Argon2Config{
+		Memory:      64,
+		Iterations:  1,
+		Parallelism: 1,
+		SaltLength:  16,
+		KeyLength:   32,
+	})
+	valid, err := hasher.Verify(password, hash)
+	if err != nil {
+		t.Fatalf("Verify(%s) failed: %v", uid, err)
+	}
+	if !valid {
+		t.Fatalf("password for %s was not updated to expected value", uid)
+	}
 }
 
 func contains(values []string, want string) bool {

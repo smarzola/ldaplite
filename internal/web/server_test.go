@@ -616,6 +616,46 @@ func TestSCIMUsersRouteUsesDirectoryReadAuthorization(t *testing.T) {
 	if passwordOnlyRR.Code != http.StatusForbidden {
 		t.Fatalf("password-only status = %d, want %d; body=%s", passwordOnlyRR.Code, http.StatusForbidden, passwordOnlyRR.Body.String())
 	}
+
+	nonAdminCreate := apiJSONRequest(t, http.MethodPost, "/scim/v2/Users", "regularuser:RegularPassword123!", map[string]any{
+		"userName":    "blockedscim",
+		"displayName": "Blocked SCIM",
+		"name": map[string]string{
+			"familyName": "SCIM",
+		},
+		"password": "BlockedPassword123!",
+	})
+	nonAdminCreateRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(nonAdminCreateRR, nonAdminCreate)
+
+	if nonAdminCreateRR.Code != http.StatusForbidden {
+		t.Fatalf("non-admin create status = %d, want %d; body=%s", nonAdminCreateRR.Code, http.StatusForbidden, nonAdminCreateRR.Body.String())
+	}
+
+	adminCreate := apiJSONRequest(t, http.MethodPost, "/scim/v2/Users", "admin:TestPassword123!", map[string]any{
+		"userName":    "adminscim",
+		"displayName": "Admin SCIM",
+		"name": map[string]string{
+			"givenName":  "Admin",
+			"familyName": "SCIM",
+		},
+		"emails": []map[string]any{
+			{"value": "adminscim@example.com", "primary": true},
+		},
+		"password": "AdminSCIMPassword123!",
+	})
+	adminCreateRR := httptest.NewRecorder()
+
+	srv.mux.ServeHTTP(adminCreateRR, adminCreate)
+
+	if adminCreateRR.Code != http.StatusCreated {
+		t.Fatalf("admin create status = %d, want %d; body=%s", adminCreateRR.Code, http.StatusCreated, adminCreateRR.Body.String())
+	}
+	if strings.Contains(adminCreateRR.Body.String(), "AdminSCIMPassword123!") || strings.Contains(adminCreateRR.Body.String(), "ARGON2") {
+		t.Fatalf("admin create leaked password material: %s", adminCreateRR.Body.String())
+	}
+	assertPasswordValid(t, st, "adminscim", "AdminSCIMPassword123!")
 }
 
 func TestAdminDirectoryWriteAPI(t *testing.T) {
