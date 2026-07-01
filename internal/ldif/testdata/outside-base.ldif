@@ -1,0 +1,6 @@
+dn: uid=outside,ou=users,dc=other,dc=com
+objectClass: inetOrgPerson
+uid: outside
+cn: Outside User
+sn: User
+userPassword: ChangeMe123!

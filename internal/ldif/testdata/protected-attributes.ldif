@@ -1,0 +1,9 @@
+dn: uid=protected,ou=users,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: protected
+cn: Protected User
+sn: User
+entryUUID: 00000000-0000-0000-0000-000000000000
+createTimestamp: 20260701000000Z
+memberOf: cn=engineering,ou=groups,dc=example,dc=com
+userPassword: ChangeMe123!
